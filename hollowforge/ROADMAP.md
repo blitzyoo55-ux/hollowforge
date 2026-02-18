@@ -104,6 +104,22 @@
   - 조치: 구버전 라벨 `com.hollowforge.backend` bootout + plist 제거, 신버전 `com.mori.hollowforge.backend` 단일화
   - 검증: `launchctl` 상태 `running`, 단일 PID 리스닝, `/api/v1/system/health` = `healthy`
 
+## Infra: Cloudflare Zero Trust Remote Access — COMPLETED (2026-02-18)
+- [x] Cloudflare Tunnel + local nginx reverse proxy 구성 완료
+  - public hostname: `https://sec.hlfglll.com`
+  - tunnel ingress: `sec.hlfglll.com` -> `http://localhost:8080`
+  - nginx upstream: `/api` + `/data` -> `127.0.0.1:8000`
+- [x] launchd 상시 실행 구성
+  - `~/Library/LaunchAgents/com.mori.hollowforge.nginx.cloudflare.plist`
+  - `~/Library/LaunchAgents/com.mori.hollowforge.cloudflared.plist`
+- [x] Cloudflare Access(Self-hosted) 로그인 보호 적용
+  - 앱: `HollowForge`
+  - 정책: owner email allow + Google login
+  - 상태: Google 로그인 후 정상 접근 확인
+- [x] 보안 정리
+  - 실토큰 파일 git 제외 (`deploy/cloudflared/.env.cloudflared`)
+  - 토큰 로테이션 후 터널 재연결 검증 (`Registered tunnel connection`)
+
 ---
 
 ## Phase 7: Polish + Production Readiness — FUTURE
