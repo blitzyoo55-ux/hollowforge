@@ -187,10 +187,20 @@ export interface LoraGuideStrengthExample {
 
 export interface LoraGuideResponse {
   generated_at: string;
+  active_checkpoint?: string | null;
   max_total_strength: number;
   checkpoints: LoraGuideCheckpoint[];
   loras: LoraGuideEntry[];
   strength_examples: LoraGuideStrengthExample[];
+  cache?: {
+    hit: boolean;
+    ttl_sec: number;
+  };
+}
+
+export interface LoraGuideQuery {
+  checkpoint?: string;
+  refresh?: boolean;
 }
 
 export interface MoodSelectRequest {
@@ -344,9 +354,12 @@ export async function selectLoras(data: MoodSelectRequest): Promise<MoodSelectRe
   return res.data;
 }
 
-export async function getLoraGuide(checkpoint?: string): Promise<LoraGuideResponse> {
+export async function getLoraGuide(query: LoraGuideQuery = {}): Promise<LoraGuideResponse> {
+  const params: Record<string, string | boolean> = {};
+  if (query.checkpoint) params.checkpoint = query.checkpoint;
+  if (query.refresh) params.refresh = true;
   const res = await api.get<LoraGuideResponse>('/loras/guide', {
-    params: checkpoint ? { checkpoint } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   });
   return res.data;
 }

@@ -8,6 +8,8 @@ type RankedLora = LoraGuideEntry & {
   activeFit?: LoraGuideCheckpointFit
 }
 
+type SortMode = 'fit' | 'usage' | 'name'
+
 const CATEGORY_BADGE: Record<string, string> = {
   style: 'bg-blue-600/20 text-blue-300 border border-blue-500/40',
   eyes: 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40',
@@ -28,34 +30,58 @@ function formatDecimal(value: number | null, digits = 2): string {
 export default function LoraGuide() {
   const navigate = useNavigate()
   const [selectedCheckpoint, setSelectedCheckpoint] = useState('')
-  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sortMode, setSortMode] = useState<SortMode>('fit')
+  const [historyOnly, setHistoryOnly] = useState(false)
+  const [showReasons, setShowReasons] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ['lora-guide'],
-    queryFn: () => getLoraGuide(),
-    staleTime: 60_000,
+  const debouncedSearch = useDebounce(searchInput, 220)
+  const forceRefresh = refreshTick > 0
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ['lora-guide', refreshTick],
+    queryFn: () => getLoraGuide({ refresh: forceRefresh }),
+    staleTime: 90_000,
   })
 
   useEffect(() => {
-    if (!selectedCheckpoint && data?.checkpoints.length) {
+    if (!data?.checkpoints.length) return
+    if (!selectedCheckpoint) {
+      setSelectedCheckpoint(data.active_checkpoint ?? data.checkpoints[0]!.name)
+      return
+    }
+    const exists = data.checkpoints.some((cp) => cp.name === selectedCheckpoint)
+    if (!exists) {
       setSelectedCheckpoint(data.checkpoints[0]!.name)
     }
   }, [data, selectedCheckpoint])
 
   const activeCheckpoint = selectedCheckpoint || data?.checkpoints[0]?.name || ''
-
   const activeCheckpointInfo = useMemo(
     () => data?.checkpoints.find((cp) => cp.name === activeCheckpoint),
     [data, activeCheckpoint],
   )
 
+  const availableCategories = useMemo(() => {
+    if (!data) return []
+    const set = new Set(data.loras.map((lora) => lora.category))
+    return Array.from(set).sort()
+  }, [data])
+
   const rankedLoras = useMemo<RankedLora[]>(() => {
     if (!data || !activeCheckpoint) return []
-    const query = search.trim().toLowerCase()
+    const query = debouncedSearch.trim().toLowerCase()
 
-    return data.loras
+    const filtered = data.loras
       .filter((lora) => lora.compatible_checkpoints.includes(activeCheckpoint))
+      .filter((lora) => (categoryFilter === 'all' ? true : lora.category === categoryFilter))
+      .filter((lora) => {
+        if (!historyOnly) return true
+        return lora.usage.total_runs > 0
+      })
       .filter((lora) => {
         if (!query) return true
         return (
@@ -68,17 +94,29 @@ export default function LoraGuide() {
         ...lora,
         activeFit: lora.checkpoint_fits.find((fit) => fit.checkpoint === activeCheckpoint),
       }))
-      .sort((a, b) => {
+
+    filtered.sort((a, b) => {
+      if (sortMode === 'usage') {
+        const usageGap = b.usage.total_runs - a.usage.total_runs
+        if (usageGap !== 0) return usageGap
+      } else if (sortMode === 'name') {
+        const nameGap = a.display_name.localeCompare(b.display_name)
+        if (nameGap !== 0) return nameGap
+      } else {
         const scoreGap = (b.activeFit?.score ?? 0) - (a.activeFit?.score ?? 0)
         if (Math.abs(scoreGap) > 0.01) return scoreGap
-        const runsGap = (b.activeFit?.runs ?? 0) - (a.activeFit?.runs ?? 0)
-        if (runsGap !== 0) return runsGap
-        return a.display_name.localeCompare(b.display_name)
-      })
-  }, [data, activeCheckpoint, search])
+      }
+
+      const fitRunsGap = (b.activeFit?.runs ?? 0) - (a.activeFit?.runs ?? 0)
+      if (fitRunsGap !== 0) return fitRunsGap
+      return a.display_name.localeCompare(b.display_name)
+    })
+
+    return filtered
+  }, [data, activeCheckpoint, debouncedSearch, categoryFilter, sortMode, historyOnly])
 
   const visibleLoras = useMemo(
-    () => (showAll ? rankedLoras : rankedLoras.slice(0, 18)),
+    () => (showAll ? rankedLoras : rankedLoras.slice(0, 20)),
     [rankedLoras, showAll],
   )
 
@@ -94,6 +132,11 @@ export default function LoraGuide() {
         .slice(0, 8),
     [rankedLoras],
   )
+
+  const generatedAtLabel = useMemo(() => {
+    if (!data?.generated_at) return '-'
+    return new Date(data.generated_at).toLocaleString()
+  }, [data?.generated_at])
 
   if (isLoading) {
     return (
@@ -120,7 +163,7 @@ export default function LoraGuide() {
           <div className="mt-4">
             <button
               type="button"
-              onClick={() => refetch()}
+              onClick={() => setRefreshTick((v) => v + 1)}
               className="px-4 py-2 rounded-lg bg-red-600/20 border border-red-500/50 text-red-200 hover:bg-red-600/30 transition-colors"
             >
               Retry
@@ -137,16 +180,23 @@ export default function LoraGuide() {
         <div>
           <h2 className="text-2xl font-bold text-gray-100">LoRA Guide</h2>
           <p className="text-sm text-gray-400 mt-1">
-            Checkpoint compatibility, strength behavior, and real output examples from your local history.
+            체크포인트-로라 상성, 강도 변화, 실출력 예시를 한 화면에서 튜닝할 수 있도록 최적화했습니다.
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Updated: <span className="text-gray-300">{generatedAtLabel}</span>
+            {' · '}
+            Cache: <span className="text-gray-300">{data.cache?.hit ? 'HIT' : 'MISS'}</span>
+            {' · '}
+            TTL: <span className="text-gray-300">{data.cache?.ttl_sec ?? 0}s</span>
           </p>
         </div>
         <button
           type="button"
-          onClick={() => refetch()}
+          onClick={() => setRefreshTick((v) => v + 1)}
           className="px-3 py-2 rounded-lg border border-gray-700 bg-gray-900 text-sm text-gray-200 hover:bg-gray-800 transition-colors"
           disabled={isFetching}
         >
-          {isFetching ? 'Refreshing...' : 'Refresh Guide'}
+          {isFetching ? 'Refreshing...' : 'Hard Refresh Guide'}
         </button>
       </div>
 
@@ -170,8 +220,8 @@ export default function LoraGuide() {
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="min-w-[240px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div>
             <label className="text-xs text-gray-400 block mb-1">Checkpoint</label>
             <select
               value={activeCheckpoint}
@@ -188,18 +238,75 @@ export default function LoraGuide() {
               ))}
             </select>
           </div>
-          <div className="min-w-[260px] flex-1">
+          <div>
             <label className="text-xs text-gray-400 block mb-1">Search LoRA</label>
             <input
               type="text"
-              value={search}
+              value={searchInput}
               onChange={(e) => {
-                setSearch(e.target.value)
+                setSearchInput(e.target.value)
                 setShowAll(false)
               }}
               placeholder="Name, file, category..."
               className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 focus:outline-none"
             />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Category</label>
+            <select
+              value={categoryFilter}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value)
+                setShowAll(false)
+              }}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 focus:outline-none"
+            >
+              <option value="all">all categories</option>
+              {availableCategories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Sort</label>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 focus:outline-none"
+            >
+              <option value="fit">fit score</option>
+              <option value="usage">usage volume</option>
+              <option value="name">name</option>
+            </select>
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryOnly((v) => !v)
+                setShowAll(false)
+              }}
+              className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
+                historyOnly
+                  ? 'bg-violet-600/20 border-violet-500/50 text-violet-200'
+                  : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              history only
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowReasons((v) => !v)}
+              className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
+                showReasons
+                  ? 'bg-violet-600/20 border-violet-500/50 text-violet-200'
+                  : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              reason detail
+            </button>
           </div>
         </div>
 
@@ -210,7 +317,7 @@ export default function LoraGuide() {
               {' · '}
               Local completed runs: <span className="text-gray-200">{activeCheckpointInfo.completed_generations}</span>
               {' · '}
-              Compatible LoRAs: <span className="text-gray-200">{rankedLoras.length}</span>
+              Filtered LoRAs: <span className="text-gray-200">{rankedLoras.length}</span>
             </>
           ) : (
             'Select a checkpoint to review compatible LoRAs.'
@@ -221,9 +328,9 @@ export default function LoraGuide() {
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-3">
         <h3 className="text-lg font-semibold text-gray-100">Negative Strength Playbook (-)</h3>
         <p className="text-xs text-gray-400">
-          Negative strength is useful for suppressing an over-dominant style or texture. Start near
+          과적용된 스타일/소재를 눌러야 할 때 음수 강도를 사용합니다. 보통
           <span className="text-gray-200 font-mono"> -0.15 ~ -0.30 </span>
-          and expand only if needed.
+          에서 시작해 단계적으로 내리는 방식이 안정적입니다.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           {negativeCandidates.map((lora) => (
@@ -249,13 +356,13 @@ export default function LoraGuide() {
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-100">Checkpoint-Compatible LoRAs</h3>
-          {rankedLoras.length > 18 && (
+          {rankedLoras.length > 20 && (
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
               className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
             >
-              {showAll ? 'Show Top 18' : `Show All (${rankedLoras.length})`}
+              {showAll ? 'Show Top 20' : `Show All (${rankedLoras.length})`}
             </button>
           )}
         </div>
@@ -309,13 +416,15 @@ export default function LoraGuide() {
                 <p><span className="text-gray-500">Lower:</span> {lora.lower_effect}</p>
               </div>
 
-              <div className="space-y-1">
-                {(lora.activeFit?.reasons ?? ['No checkpoint-specific rationale available']).map((reason, idx) => (
-                  <p key={`${lora.filename}-reason-${idx}`} className="text-[11px] text-gray-400">
-                    - {reason}
-                  </p>
-                ))}
-              </div>
+              {showReasons && (
+                <div className="space-y-1">
+                  {(lora.activeFit?.reasons ?? ['No checkpoint-specific rationale available']).map((reason, idx) => (
+                    <p key={`${lora.filename}-reason-${idx}`} className="text-[11px] text-gray-400">
+                      - {reason}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -324,7 +433,7 @@ export default function LoraGuide() {
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-4">
         <h3 className="text-lg font-semibold text-gray-100">Total |strength| by Real Outputs</h3>
         <p className="text-xs text-gray-400">
-          Each card is auto-linked to a real generation sample in your DB. Click image to open the corresponding Gallery detail.
+          실제 생성 이력을 구간별로 매칭한 카드입니다. 이미지를 클릭하면 Gallery 상세로 바로 이동합니다.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {data.strength_examples.map((example) => (
@@ -376,4 +485,15 @@ export default function LoraGuide() {
       </div>
     </div>
   )
+}
+
+function useDebounce(value: string, delay: number): string {
+  const [debounced, setDebounced] = useState(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(handler)
+  }, [value, delay])
+
+  return debounced
 }

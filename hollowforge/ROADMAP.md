@@ -129,6 +129,11 @@
   - 체크포인트 선택 시 호환 LoRA만 정렬 노출 + 근거(reason) 표시
   - 음수 strength 사용 가이드(카테고리별 시작값/한계값) 섹션 추가
   - `Total |strength|` 구간별 실제 썸네일 예시 자동 매핑 + Gallery 상세 이동 연결
+- [x] Guide 성능/가시성 최적화 (2026-02-18)
+  - `/api/v1/loras/guide` 120초 TTL 캐시 + `refresh=true` 강제 재계산 지원
+  - 가이드 계산 대상 generations 스캔 상한 최적화 (`LIMIT 500`)
+  - UI 필터 확장: category / sort / history-only / reason detail 토글
+  - 헤더에 cache hit/ttl 및 마지막 갱신 시각 표시
 
 ---
 
