@@ -122,8 +122,75 @@ export interface LoraProfileResponse {
   default_strength: number;
   tags: string | null;
   notes: string | null;
-  compatible_checkpoints: string | null;
+  compatible_checkpoints: string[] | null;
   created_at: string;
+}
+
+export interface LoraGuideCheckpoint {
+  name: string;
+  architecture: string;
+  completed_generations: number;
+}
+
+export interface LoraGuideStrength {
+  low: number;
+  base: number;
+  high: number;
+  reverse_start: number;
+  reverse_limit: number;
+}
+
+export interface LoraGuideUsage {
+  total_runs: number;
+  avg_strength: number | null;
+  avg_abs_strength: number | null;
+  negative_runs: number;
+  min_strength: number | null;
+  max_strength: number | null;
+}
+
+export interface LoraGuideCheckpointFit {
+  checkpoint: string;
+  score: number;
+  runs: number;
+  avg_strength: number | null;
+  reasons: string[];
+}
+
+export interface LoraGuideEntry {
+  id?: string;
+  filename: string;
+  display_name: string;
+  category: string;
+  architecture: string;
+  compatible_checkpoints: string[];
+  strength: LoraGuideStrength;
+  usage: LoraGuideUsage;
+  raise_effect: string;
+  lower_effect: string;
+  checkpoint_fits: LoraGuideCheckpointFit[];
+}
+
+export interface LoraGuideStrengthExample {
+  bucket_id: string;
+  label: string;
+  min_total: number;
+  max_total: number | null;
+  guidance: string;
+  generation_id: string | null;
+  checkpoint: string | null;
+  total_abs_strength: number | null;
+  thumbnail_path: string | null;
+  prompt: string | null;
+  loras: LoraInput[];
+}
+
+export interface LoraGuideResponse {
+  generated_at: string;
+  max_total_strength: number;
+  checkpoints: LoraGuideCheckpoint[];
+  loras: LoraGuideEntry[];
+  strength_examples: LoraGuideStrengthExample[];
 }
 
 export interface MoodSelectRequest {
@@ -183,6 +250,9 @@ export interface SyncResponse {
   schedulers: string[];
   lora_files: string[];
   new_loras: number;
+  compatibility_updated: number;
+  incompatible_loras: number;
+  checkpoint_arches: Record<string, string>;
   synced: boolean;
 }
 
@@ -262,13 +332,22 @@ export async function deletePreset(id: string): Promise<void> {
   await api.delete(`/presets/${id}`);
 }
 
-export async function getLoras(): Promise<LoraProfileResponse[]> {
-  const res = await api.get<LoraProfileResponse[]>('/loras');
+export async function getLoras(checkpoint?: string | null): Promise<LoraProfileResponse[]> {
+  const res = await api.get<LoraProfileResponse[]>('/loras', {
+    params: checkpoint ? { checkpoint } : undefined,
+  });
   return res.data;
 }
 
 export async function selectLoras(data: MoodSelectRequest): Promise<MoodSelectResponse> {
   const res = await api.post<MoodSelectResponse>('/loras/select', data);
+  return res.data;
+}
+
+export async function getLoraGuide(checkpoint?: string): Promise<LoraGuideResponse> {
+  const res = await api.get<LoraGuideResponse>('/loras/guide', {
+    params: checkpoint ? { checkpoint } : undefined,
+  });
   return res.data;
 }
 

@@ -120,6 +120,16 @@
   - 실토큰 파일 git 제외 (`deploy/cloudflared/.env.cloudflared`)
   - 토큰 로테이션 후 터널 재연결 검증 (`Registered tunnel connection`)
 
+## Phase 5c: LoRA Guide & Data-Driven Tuning UX — COMPLETED (2026-02-18)
+- [x] `GET /api/v1/loras/guide` 추가
+  - 체크포인트-로라 아키텍처 정합 근거 + 로컬 생성 이력 기반 fit score 계산
+  - LoRA별 권장 strength 구간(+low/base/high) 및 reverse(-start/-limit) 안내값 제공
+  - LoRA 강도 상/하향 시 예상 변화 설명(`raise_effect`, `lower_effect`) 제공
+- [x] `LoRA Guide` 프론트 페이지 추가 (`/lora-guide`)
+  - 체크포인트 선택 시 호환 LoRA만 정렬 노출 + 근거(reason) 표시
+  - 음수 strength 사용 가이드(카테고리별 시작값/한계값) 섹션 추가
+  - `Total |strength|` 구간별 실제 썸네일 예시 자동 매핑 + Gallery 상세 이동 연결
+
 ---
 
 ## Phase 7: Polish + Production Readiness — FUTURE
