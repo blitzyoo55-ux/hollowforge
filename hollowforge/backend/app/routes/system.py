@@ -10,8 +10,28 @@ from fastapi import APIRouter, Request
 from app.db import get_db
 from app.models import ComfyUIConfigUpdate, SystemHealth
 from app.services.comfyui_client import ComfyUIClient
+from app.services.model_compatibility import (
+    build_lora_compatibility_snapshot,
+    dump_compatible_checkpoints,
+)
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+_NON_IMAGE_ARCHES = {"WAN-I2V-14B", "SVD-XT"}
+
+
+def _split_checkpoints_by_image_capability(
+    checkpoints: list[str], checkpoint_arches: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    image: list[str] = []
+    non_image: list[str] = []
+    for checkpoint in checkpoints:
+        arch = checkpoint_arches.get(checkpoint, "Unknown")
+        if arch in _NON_IMAGE_ARCHES:
+            non_image.append(checkpoint)
+        else:
+            image.append(checkpoint)
+    return image, non_image
 
 
 @router.post("/sync")
@@ -22,8 +42,16 @@ async def sync_models(request: Request) -> dict:
     samplers = await client.get_samplers()
     schedulers = await client.get_schedulers()
     lora_files = await client.get_lora_files()
+    checkpoint_arches, lora_analysis = build_lora_compatibility_snapshot(
+        checkpoints, lora_files
+    )
+    image_checkpoints, non_image_checkpoints = _split_checkpoints_by_image_capability(
+        checkpoints, checkpoint_arches
+    )
 
     new_loras = 0
+    compatibility_updated = 0
+    incompatible_loras = 0
     async with get_db() as db:
         cursor = await db.execute("SELECT filename FROM lora_profiles")
         rows = await cursor.fetchall()
@@ -39,6 +67,11 @@ async def sync_models(request: Request) -> dict:
             if display_name.endswith(".safetensors"):
                 display_name = display_name[: -len(".safetensors")]
             display_name = display_name.replace("_", " ")
+            analysis = lora_analysis.get(filename)
+            category = analysis.category if analysis else "style"
+            default_strength = (
+                analysis.default_strength if analysis else 0.5
+            )
 
             await db.execute(
                 """
@@ -46,19 +79,51 @@ async def sync_models(request: Request) -> dict:
                     (id, display_name, filename, category, default_strength, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (str(uuid4()), display_name, filename, "style", 0.5, now),
+                (
+                    str(uuid4()),
+                    display_name,
+                    filename,
+                    category,
+                    default_strength,
+                    now,
+                ),
             )
             new_loras += 1
+            existing_filenames.add(filename)
 
-        if new_loras > 0:
+        for filename in lora_files:
+            if filename not in existing_filenames:
+                continue
+            analysis = lora_analysis.get(filename)
+            compatible = (
+                analysis.compatible_checkpoints if analysis else list(checkpoints)
+            )
+            await db.execute(
+                """
+                UPDATE lora_profiles
+                SET compatible_checkpoints = ?
+                WHERE filename = ?
+                """,
+                (dump_compatible_checkpoints(compatible), filename),
+            )
+            compatibility_updated += 1
+            if not compatible:
+                incompatible_loras += 1
+
+        if new_loras > 0 or compatibility_updated > 0:
             await db.commit()
 
     return {
-        "checkpoints": checkpoints,
+        "checkpoints": image_checkpoints if image_checkpoints else checkpoints,
+        "checkpoints_all": checkpoints,
+        "non_image_checkpoints": non_image_checkpoints,
         "samplers": samplers,
         "schedulers": schedulers,
         "lora_files": lora_files,
         "new_loras": new_loras,
+        "compatibility_updated": compatibility_updated,
+        "incompatible_loras": incompatible_loras,
+        "checkpoint_arches": checkpoint_arches,
         "synced": True,
     }
 
@@ -118,8 +183,15 @@ async def list_models(request: Request) -> dict:
     samplers = await client.get_samplers()
     schedulers = await client.get_schedulers()
     lora_files = await client.get_lora_files()
+    checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
+    image_checkpoints, non_image_checkpoints = _split_checkpoints_by_image_capability(
+        checkpoints, checkpoint_arches
+    )
     return {
-        "checkpoints": checkpoints,
+        "checkpoints": image_checkpoints if image_checkpoints else checkpoints,
+        "checkpoints_all": checkpoints,
+        "non_image_checkpoints": non_image_checkpoints,
+        "checkpoint_arches": checkpoint_arches,
         "samplers": samplers,
         "schedulers": schedulers,
         "lora_files": lora_files,

@@ -249,6 +249,9 @@ export interface ComfyUIStatus {
 
 export interface ModelsResponse {
   checkpoints: string[];
+  checkpoints_all?: string[];
+  non_image_checkpoints?: string[];
+  checkpoint_arches?: Record<string, string>;
   samplers: string[];
   schedulers: string[];
   lora_files: string[];
@@ -256,6 +259,8 @@ export interface ModelsResponse {
 
 export interface SyncResponse {
   checkpoints: string[];
+  checkpoints_all?: string[];
+  non_image_checkpoints?: string[];
   samplers: string[];
   schedulers: string[];
   lora_files: string[];

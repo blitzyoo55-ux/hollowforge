@@ -25,6 +25,9 @@ export default function Settings() {
     queryKey: ['models'],
     queryFn: getModels,
   })
+  const imageCheckpoints = models?.checkpoints ?? []
+  const allCheckpoints = models?.checkpoints_all ?? imageCheckpoints
+  const excludedCheckpoints = models?.non_image_checkpoints ?? []
 
   useEffect(() => {
     if (!syncResult) return
@@ -65,7 +68,12 @@ export default function Settings() {
       await queryClient.invalidateQueries({ queryKey: ['loras'] })
       setSyncResult({
         ok: true,
-        message: `Synced! ${result.new_loras} new LoRAs registered`,
+        message:
+          `Synced! ${result.new_loras} new LoRAs, ` +
+          `${result.compatibility_updated} compatibility profiles refreshed` +
+          (result.incompatible_loras > 0
+            ? ` (${result.incompatible_loras} currently have no compatible checkpoint)`
+            : ''),
       })
     } catch {
       setSyncResult({ ok: false, message: 'Sync failed' })
@@ -151,14 +159,14 @@ export default function Settings() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <h4 className="text-sm font-medium text-gray-100">
-              Checkpoints ({models?.checkpoints?.length ?? 0})
+              Image Checkpoints ({imageCheckpoints.length})
             </h4>
             <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950 p-3">
               {modelsLoading ? (
                 <p className="text-xs text-gray-500">Loading checkpoints...</p>
-              ) : (models?.checkpoints?.length ?? 0) > 0 ? (
+              ) : imageCheckpoints.length > 0 ? (
                 <ul className="space-y-1">
-                  {(models?.checkpoints ?? []).map((name) => (
+                  {imageCheckpoints.map((name) => (
                     <li key={name} className="text-xs text-gray-300 font-mono break-all">{name}</li>
                   ))}
                 </ul>
@@ -166,6 +174,20 @@ export default function Settings() {
                 <p className="text-xs text-gray-500">No checkpoints found</p>
               )}
             </div>
+            <p className="text-[11px] text-gray-500">
+              Total discovered: {allCheckpoints.length}
+              {excludedCheckpoints.length > 0 ? ` · Excluded (video/non-image): ${excludedCheckpoints.length}` : ''}
+            </p>
+            {excludedCheckpoints.length > 0 && (
+              <div className="max-h-24 overflow-y-auto rounded-lg border border-amber-900/40 bg-amber-950/20 p-2.5">
+                <p className="text-[11px] text-amber-300 mb-1">Excluded from Generate/Presets</p>
+                <ul className="space-y-1">
+                  {excludedCheckpoints.map((name) => (
+                    <li key={name} className="text-[11px] text-amber-200/90 font-mono break-all">{name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -272,7 +294,7 @@ export default function Settings() {
             <div><span className="bg-violet-600/20 text-violet-400 px-1.5 py-0.5 rounded">latex</span> <span className="text-gray-500">→ shiny clothes + latex catsuit</span></div>
             <div><span className="bg-violet-600/20 text-violet-400 px-1.5 py-0.5 rounded">bondage</span> <span className="text-gray-500">→ harness + panel gag</span></div>
           </div>
-          <p className="text-xs text-gray-500 mt-1">Category slots: style(1) + eyes(1) + material(0-1) + fetish(0-2). Max total strength: 2.4</p>
+          <p className="text-xs text-gray-500 mt-1">Category slots: style(1) + eyes(1) + material(0-1) + fetish(0-2). Max |strength| total: 2.4</p>
         </div>
 
         {/* Workflow */}

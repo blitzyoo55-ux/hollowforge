@@ -67,6 +67,7 @@ export default function Gallery() {
     queryKey: ['models'],
     queryFn: getModels,
   })
+  const filterableCheckpoints = models?.checkpoints_all ?? models?.checkpoints ?? []
 
   const visiblePages = useMemo(() => {
     if (!data) return []
@@ -118,7 +119,7 @@ export default function Gallery() {
             className="bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 focus:outline-none"
           >
             <option value="">All checkpoints</option>
-            {models?.checkpoints.map((cp) => (
+            {filterableCheckpoints.map((cp) => (
               <option key={cp} value={cp}>{cp}</option>
             ))}
           </select>

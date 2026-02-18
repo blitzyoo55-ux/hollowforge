@@ -139,6 +139,9 @@
   - 가이드 계산 대상 generations 스캔 상한 최적화 (`LIMIT 500`)
   - UI 필터 확장: category / sort / history-only / reason detail 토글
   - 헤더에 cache hit/ttl 및 마지막 갱신 시각 표시
+- [x] 체크포인트 안전 필터링 (2026-02-18)
+  - `/api/v1/system/models`가 video/non-image 체크포인트(WAN-I2V/SVD)를 자동 분리
+  - Generate/Presets는 image-checkpoint만 노출, Gallery/Settings는 전체 목록 유지
 
 ---
 
