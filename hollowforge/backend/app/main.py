@@ -31,7 +31,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_db()
 
     # Ensure data directories exist
-    for d in (settings.IMAGES_DIR, settings.THUMBS_DIR, settings.WORKFLOWS_DIR):
+    for d in (
+        settings.IMAGES_DIR,
+        settings.IMAGES_DIR / "upscaled",
+        settings.THUMBS_DIR,
+        settings.WORKFLOWS_DIR,
+    ):
         d.mkdir(parents=True, exist_ok=True)
 
     # ComfyUI client
@@ -41,6 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Generation service + background worker
     gen_service = GenerationService()
     app.state.generation_service = gen_service
+    stale_count = await gen_service.cleanup_stale()
+    logger.info("Startup stale generation cleanup complete: %d record(s) marked failed.", stale_count)
     gen_service.start_worker()
     logger.info("Generation worker started.")
 
@@ -72,8 +79,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for generated images, thumbnails, workflows
-app.mount("/data", StaticFiles(directory=str(settings.DATA_DIR)), name="data")
+# Static files: expose only public assets, not the whole data directory.
+app.mount(
+    "/data/images", StaticFiles(directory=str(settings.IMAGES_DIR)), name="data-images"
+)
+app.mount(
+    "/data/thumbs", StaticFiles(directory=str(settings.THUMBS_DIR)), name="data-thumbs"
+)
+app.mount(
+    "/data/workflows",
+    StaticFiles(directory=str(settings.WORKFLOWS_DIR)),
+    name="data-workflows",
+)
 
 # Routers
 app.include_router(system.router)

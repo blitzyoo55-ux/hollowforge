@@ -3,7 +3,14 @@
 import random
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+MAX_GENERATION_STEPS = 150
+MAX_GENERATION_CFG = 30.0
+MIN_GENERATION_DIM = 256
+MAX_GENERATION_DIM = 1536
+MAX_GENERATION_PIXELS = 2_359_296  # 1536 * 1536
 
 
 # ---------------------------------------------------------------------------
@@ -11,8 +18,8 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class LoraInput(BaseModel):
-    filename: str
-    strength: float
+    filename: str = Field(min_length=1, max_length=255)
+    strength: float = Field(ge=-2.0, le=2.0)
     category: Optional[str] = None
 
 
@@ -21,18 +28,34 @@ class GenerationCreate(BaseModel):
     negative_prompt: Optional[str] = None
     checkpoint: str
     loras: List[LoraInput] = Field(default_factory=list)
-    seed: Optional[int] = Field(default=None, description="Auto-random if None")
-    steps: int = 28
-    cfg: float = 7.0
-    width: int = 832
-    height: int = 1216
+    seed: Optional[int] = Field(
+        default=None,
+        description="Auto-random if None",
+        ge=-1,
+        le=2**31 - 1,
+    )
+    steps: int = Field(default=28, ge=1, le=MAX_GENERATION_STEPS)
+    cfg: float = Field(default=7.0, ge=1.0, le=MAX_GENERATION_CFG)
+    width: int = Field(default=832, ge=MIN_GENERATION_DIM, le=MAX_GENERATION_DIM)
+    height: int = Field(default=1216, ge=MIN_GENERATION_DIM, le=MAX_GENERATION_DIM)
     sampler: str = "euler"
     scheduler: str = "normal"
-    clip_skip: Optional[int] = None
+    clip_skip: Optional[int] = Field(default=None, ge=1, le=12)
     tags: Optional[List[str]] = None
     preset_id: Optional[str] = None
     notes: Optional[str] = None
     source_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_generation_shape(self) -> "GenerationCreate":
+        # Keep requests on practical bounds for single-device inference.
+        if self.width % 8 != 0 or self.height % 8 != 0:
+            raise ValueError("width and height must be multiples of 8")
+        if self.width * self.height > MAX_GENERATION_PIXELS:
+            raise ValueError(
+                f"width * height must be <= {MAX_GENERATION_PIXELS} pixels"
+            )
+        return self
 
     def resolved_seed(self) -> int:
         if self.seed is None or self.seed == -1:
@@ -164,7 +187,7 @@ class LoraProfileResponse(BaseModel):
     default_strength: float
     tags: Optional[str] = None
     notes: Optional[str] = None
-    compatible_checkpoints: Optional[str] = None
+    compatible_checkpoints: Optional[List[str]] = None
     created_at: str
 
 

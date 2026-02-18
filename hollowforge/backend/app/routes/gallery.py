@@ -2,6 +2,7 @@
 
 import json
 import math
+from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -54,6 +55,22 @@ def _row_to_response(row: dict) -> GenerationResponse:
         created_at=row["created_at"],
         completed_at=row.get("completed_at"),
     )
+
+
+def _resolve_public_file(base_dir: Path, rel: str) -> Path | None:
+    rel_path = Path(rel)
+    if rel_path.is_absolute() or not rel_path.parts:
+        return None
+    if rel_path.parts[0] not in {"images", "thumbs", "workflows"}:
+        return None
+
+    full_path = (base_dir / rel_path).resolve()
+    try:
+        full_path.relative_to(base_dir.resolve())
+    except ValueError:
+        return None
+
+    return full_path
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -152,8 +169,8 @@ async def delete_generation(generation_id: str) -> dict:
         for field in ("image_path", "upscaled_image_path", "thumbnail_path", "workflow_path"):
             rel = row.get(field)
             if rel:
-                full = settings.DATA_DIR / rel
-                if full.exists():
+                full = _resolve_public_file(settings.DATA_DIR, rel)
+                if full and full.exists() and full.is_file():
                     full.unlink(missing_ok=True)
 
         await db.execute(

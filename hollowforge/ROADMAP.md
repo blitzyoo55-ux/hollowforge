@@ -89,8 +89,8 @@
     - 포트: `127.0.0.1:8188`
     - 로그: `pinokio/api/comfy.git/logs/launchd_stdout.log`, `pinokio/api/comfy.git/logs/launchd_stderr.log`
   - `~/Library/LaunchAgents/com.mori.hollowforge.backend.plist`
-    - 실행: HollowForge FastAPI (`uvicorn app.main:app --host 0.0.0.0 --port 8000`)
-    - 포트: `0.0.0.0:8000`
+    - 실행: HollowForge FastAPI (`uvicorn app.main:app --host 127.0.0.1 --port 8000`)
+    - 포트: `127.0.0.1:8000` (로컬 전용 바인딩)
     - 로그: `hollowforge/backend/logs/launchd_stdout.log`, `hollowforge/backend/logs/launchd_stderr.log`
   - `~/Library/LaunchAgents/com.mori.hollowforge.frontend.plist`
     - 실행: Vite dev server (`npm run dev -- --host 127.0.0.1 --port 5173`)
@@ -119,6 +119,11 @@
 - [x] 보안 정리
   - 실토큰 파일 git 제외 (`deploy/cloudflared/.env.cloudflared`)
   - 토큰 로테이션 후 터널 재연결 검증 (`Registered tunnel connection`)
+- [x] 보안 하드닝 (2026-02-18)
+  - backend 바인딩을 `127.0.0.1:8000`로 제한 (직접 LAN 접근 차단)
+  - FastAPI 정적 파일 공개 경로를 `/data/images|thumbs|workflows`로 제한
+  - 생성 API 서버측 파라미터 상한 검증 추가 (steps/cfg/dimensions/clip_skip/LoRA strength)
+  - nginx 보안 헤더(CSP 포함) + `/api` 요청 레이트리밋 적용
 
 ## Phase 5c: LoRA Guide & Data-Driven Tuning UX — COMPLETED (2026-02-18)
 - [x] `GET /api/v1/loras/guide` 추가
