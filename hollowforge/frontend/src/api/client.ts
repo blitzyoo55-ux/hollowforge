@@ -317,6 +317,35 @@ export interface QualityProfilesResponse {
   profiles: Record<string, CheckpointQualityProfile>;
 }
 
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  text: string;
+  description: string;
+}
+
+export interface PromptTemplateVariable {
+  token: string;
+  description: string;
+  example: string;
+}
+
+export interface CheckpointPromptTemplates {
+  checkpoint: string;
+  architecture: string;
+  default_positive_template_id: string;
+  default_negative_template_id: string;
+  positive_templates: PromptTemplate[];
+  negative_templates: PromptTemplate[];
+  guidance: string[];
+}
+
+export interface PromptTemplatesResponse {
+  generated_at: string;
+  variables: PromptTemplateVariable[];
+  templates: Record<string, CheckpointPromptTemplates>;
+}
+
 export interface ReproduceRequest {
   mode: 'exact' | 'variation';
   seed?: number | null;
@@ -455,5 +484,10 @@ export async function getUpscaleModels(): Promise<UpscaleModelsResponse> {
 
 export async function getQualityProfiles(): Promise<QualityProfilesResponse> {
   const res = await api.get<QualityProfilesResponse>('/system/quality-profiles');
+  return res.data;
+}
+
+export async function getPromptTemplates(): Promise<PromptTemplatesResponse> {
+  const res = await api.get<PromptTemplatesResponse>('/system/prompt-templates');
   return res.data;
 }

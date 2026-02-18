@@ -170,6 +170,20 @@
 
 ---
 
+## Phase 5e: Model-Aware Prompt Template System — COMPLETED (2026-02-18)
+- [x] 모델별 프롬프트 템플릿 API 추가
+  - `GET /api/v1/system/prompt-templates`
+  - 체크포인트 아키텍처(SDXL/SD1.5/FLUX) 기반으로 positive/negative 템플릿 분리 제공
+  - checkpoint별 기본 템플릿 ID + `{subject}`, `{scene}`, `{pose}` 등 변수 가이드 제공
+- [x] Generate 페이지 템플릿 적용 UX 추가
+  - 체크포인트 선택 시 해당 모델 템플릿 자동 로드
+  - Positive/Negative 각각 선택 적용 + `Replace`/`Append` 모드 지원
+  - 적용 후 기존 Prompt/Negative Prompt textarea에서 바로 편집 가능한 워크플로우 유지
+- [x] LoRA Guide 페이지에 모델별 프롬프트 전략 섹션 추가
+  - 모델별 프롬프트 구분이 결과(재현성/안정성)에 미치는 영향 설명
+  - 올바른 사용 순서(체크포인트 → 템플릿 → LoRA 튜닝 → 미세 편집) 안내
+  - 활성 체크포인트 기준 추천 Positive/Negative 템플릿 실시간 노출
+
 ## Phase 7: Polish + Production Readiness — FUTURE
 - [ ] 에러 처리 UX 개선 (toast notifications, retry buttons)
 - [ ] 빈 상태(empty state) 일러스트 개선
@@ -180,7 +194,7 @@
 
 ## Phase 8: Advanced Features — FUTURE
 - [x] 배치 생성 (한 번에 N장, 시드 자동 증가) — 2026-02-18 완료
-- [ ] 프롬프트 템플릿 변수 ({quality}, {character_name} 등)
+- [x] 모델별 프롬프트 템플릿(positive/negative 분리 + 변수 가이드) — 2026-02-18 완료
 - [ ] LoRA 프로필 CRUD (현재 DB seed만, UI 편집 없음)
 - [ ] Mood mapping CRUD (현재 DB seed만)
 - [ ] 이미지 비교 뷰 (A/B side-by-side)

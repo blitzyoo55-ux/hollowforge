@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { getLoraGuide } from '../api/client'
-import type { LoraGuideCheckpointFit, LoraGuideEntry } from '../api/client'
+import { getLoraGuide, getPromptTemplates } from '../api/client'
+import type {
+  CheckpointPromptTemplates,
+  LoraGuideCheckpointFit,
+  LoraGuideEntry,
+  PromptTemplate,
+} from '../api/client'
 
 type RankedLora = LoraGuideEntry & {
   activeFit?: LoraGuideCheckpointFit
@@ -27,6 +32,10 @@ function formatDecimal(value: number | null, digits = 2): string {
   return value.toFixed(digits)
 }
 
+function findTemplateById(templates: PromptTemplate[], templateId: string): PromptTemplate | undefined {
+  return templates.find((tpl) => tpl.id === templateId)
+}
+
 export default function LoraGuide() {
   const navigate = useNavigate()
   const [selectedCheckpoint, setSelectedCheckpoint] = useState('')
@@ -47,6 +56,12 @@ export default function LoraGuide() {
     staleTime: 90_000,
   })
 
+  const { data: promptTemplateData } = useQuery({
+    queryKey: ['prompt-templates'],
+    queryFn: getPromptTemplates,
+    staleTime: 120_000,
+  })
+
   useEffect(() => {
     if (!data?.checkpoints.length) return
     if (!selectedCheckpoint) {
@@ -64,6 +79,8 @@ export default function LoraGuide() {
     () => data?.checkpoints.find((cp) => cp.name === activeCheckpoint),
     [data, activeCheckpoint],
   )
+  const activePromptTemplates: CheckpointPromptTemplates | undefined =
+    activeCheckpoint ? promptTemplateData?.templates?.[activeCheckpoint] : undefined
 
   const availableCategories = useMemo(() => {
     if (!data) return []
@@ -323,6 +340,84 @@ export default function LoraGuide() {
             'Select a checkpoint to review compatible LoRAs.'
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-3">
+        <h3 className="text-lg font-semibold text-gray-100">Model Prompt Strategy</h3>
+        <p className="text-xs text-gray-400">
+          체크포인트 아키텍처에 따라 프롬프트 해석 방식이 다릅니다. 같은 문장이라도 SDXL/SD1.5/FLUX에서 결과가 달라지므로,
+          모델별 템플릿을 기준으로 시작한 뒤 필요한 부분만 편집하는 방식이 가장 안정적입니다.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+            <p className="text-gray-200 font-medium">Why It Matters</p>
+            <p className="text-gray-400 mt-1">
+              같은 LoRA 조합이라도 프롬프트 구조가 맞지 않으면 인물/재질/구도가 불안정해지고 재현성이 떨어집니다.
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+            <p className="text-gray-200 font-medium">Correct Flow</p>
+            <p className="text-gray-400 mt-1">
+              1) 체크포인트 선택 2) 모델 템플릿 적용 3) LoRA 강도 조절 4) 생성 결과 기준으로 프롬프트를 미세 수정합니다.
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+            <p className="text-gray-200 font-medium">Editing Rule</p>
+            <p className="text-gray-400 mt-1">
+              핵심 구도/피사체는 앞쪽, 스타일/재질은 뒤쪽에 두면 충돌이 줄어듭니다. 부정 프롬프트는 과도하게 길지 않게 유지합니다.
+            </p>
+          </div>
+        </div>
+
+        {activePromptTemplates && (
+          <div className="rounded-lg border border-cyan-700/40 bg-cyan-900/10 p-4 space-y-3">
+            <p className="text-sm text-cyan-200 font-medium">
+              Active Checkpoint Template ({activePromptTemplates.architecture})
+            </p>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="rounded-md border border-cyan-800/50 bg-gray-950/70 p-3">
+                <p className="text-xs text-cyan-300 mb-1">Recommended Positive</p>
+                <p className="text-xs text-gray-300 font-medium">
+                  {findTemplateById(
+                    activePromptTemplates.positive_templates,
+                    activePromptTemplates.default_positive_template_id,
+                  )?.name ?? '-'}
+                </p>
+                <p className="text-[11px] text-gray-400 mt-1 font-mono break-all">
+                  {findTemplateById(
+                    activePromptTemplates.positive_templates,
+                    activePromptTemplates.default_positive_template_id,
+                  )?.text ?? '-'}
+                </p>
+              </div>
+              <div className="rounded-md border border-cyan-800/50 bg-gray-950/70 p-3">
+                <p className="text-xs text-cyan-300 mb-1">Recommended Negative</p>
+                <p className="text-xs text-gray-300 font-medium">
+                  {findTemplateById(
+                    activePromptTemplates.negative_templates,
+                    activePromptTemplates.default_negative_template_id,
+                  )?.name ?? '-'}
+                </p>
+                <p className="text-[11px] text-gray-400 mt-1 font-mono break-all">
+                  {findTemplateById(
+                    activePromptTemplates.negative_templates,
+                    activePromptTemplates.default_negative_template_id,
+                  )?.text ?? '-'}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-1">
+              {activePromptTemplates.guidance.map((line) => (
+                <p key={line} className="text-[11px] text-cyan-200/80">
+                  - {line}
+                </p>
+              ))}
+            </div>
+            <p className="text-[11px] text-cyan-200/90">
+              Tokens: {promptTemplateData?.variables.map((item) => `${item.token}=${item.example}`).join(' · ')}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-3">

@@ -101,6 +101,142 @@ def _quality_profile_for_arch(
     }
 
 
+def _prompt_template(
+    template_id: str,
+    name: str,
+    text: str,
+    description: str,
+) -> dict[str, str]:
+    return {
+        "id": template_id,
+        "name": name,
+        "text": text,
+        "description": description,
+    }
+
+
+def _prompt_templates_for_arch(architecture: str) -> dict[str, Any]:
+    if architecture == "SD1.5":
+        positive = [
+            _prompt_template(
+                "sd15-tag-character",
+                "SD1.5 Tag Character",
+                "masterpiece, best quality, 1girl, {subject}, {outfit}, {pose}, detailed face, detailed eyes, soft lighting, sharp focus, high detail",
+                "Tag-heavy baseline for SD1.5 anime checkpoints. Keep tokens short and comma-separated.",
+            ),
+            _prompt_template(
+                "sd15-studio-portrait",
+                "SD1.5 Studio Portrait",
+                "masterpiece, best quality, portrait, {subject}, {emotion}, clean background, studio light, skin detail, depth of field",
+                "Stable portrait baseline with fewer concept tokens to reduce drift.",
+            ),
+        ]
+        negative = [
+            _prompt_template(
+                "sd15-safe-cleanup",
+                "SD1.5 Cleanup",
+                "worst quality, low quality, lowres, blurry, bad anatomy, bad hands, extra fingers, missing fingers, deformed, text, watermark, logo, jpeg artifacts",
+                "Default cleanup for anatomy and artifact suppression.",
+            ),
+            _prompt_template(
+                "sd15-style-suppress",
+                "SD1.5 Style Suppress",
+                "flat lighting, washed colors, overexposed, underexposed, noisy background, duplicate face, distorted body, malformed limbs",
+                "Use when style LoRA overpowers composition or tone.",
+            ),
+        ]
+        return {
+            "default_positive_template_id": "sd15-tag-character",
+            "default_negative_template_id": "sd15-safe-cleanup",
+            "positive_templates": positive,
+            "negative_templates": negative,
+            "guidance": [
+                "SD1.5 usually responds best to compact tag sequences.",
+                "Too many long natural-language clauses can reduce prompt adherence.",
+            ],
+        }
+
+    if architecture == "FLUX":
+        positive = [
+            _prompt_template(
+                "flux-natural-portrait",
+                "FLUX Natural Portrait",
+                "A high-detail portrait of {subject} in {scene}. Natural skin texture, realistic lighting, balanced contrast, shallow depth of field, 50mm lens look.",
+                "Natural-language baseline for FLUX checkpoints.",
+            ),
+            _prompt_template(
+                "flux-cinematic-scene",
+                "FLUX Cinematic Scene",
+                "A cinematic still of {subject} in {scene}, dramatic key light, volumetric atmosphere, rich color separation, fine texture detail, clean composition.",
+                "Use complete sentences and concrete scene cues.",
+            ),
+        ]
+        negative = [
+            _prompt_template(
+                "flux-light-negative",
+                "FLUX Light Negative",
+                "blurry, low detail, artifacts, deformed anatomy, extra limbs, text, watermark",
+                "Keep negatives shorter on FLUX workflows to avoid over-constraint.",
+            ),
+            _prompt_template(
+                "flux-composition-guard",
+                "FLUX Composition Guard",
+                "cluttered frame, subject cut off, duplicate body, distorted perspective, messy background",
+                "Use when subject framing and geometry are unstable.",
+            ),
+        ]
+        return {
+            "default_positive_template_id": "flux-natural-portrait",
+            "default_negative_template_id": "flux-light-negative",
+            "positive_templates": positive,
+            "negative_templates": negative,
+            "guidance": [
+                "FLUX generally prefers sentence-style prompts over long tag lists.",
+                "If true CFG mode is used, negative prompt influence may differ from SDXL/SD1.5.",
+            ],
+        }
+
+    # Default: SDXL-family and unknown image checkpoints
+    positive = [
+        _prompt_template(
+            "sdxl-cinematic-portrait",
+            "SDXL Cinematic Portrait",
+            "masterpiece, best quality, {subject}, {pose}, {scene}, cinematic lighting, detailed skin texture, depth of field, high contrast, ultra detailed",
+            "Balanced SDXL baseline for character-focused outputs.",
+        ),
+        _prompt_template(
+            "sdxl-editorial-fashion",
+            "SDXL Editorial Fashion",
+            "masterpiece, best quality, editorial photo of {subject}, {outfit}, studio softbox light, clean composition, realistic materials, premium color grading",
+            "Useful for material and outfit detail with controlled background.",
+        ),
+    ]
+    negative = [
+        _prompt_template(
+            "sdxl-cleanup",
+            "SDXL Cleanup",
+            "lowres, blurry, bad anatomy, extra fingers, missing fingers, deformed hands, text, watermark, logo, jpeg artifacts, worst quality",
+            "Default SDXL artifact suppression.",
+        ),
+        _prompt_template(
+            "sdxl-overstyle-control",
+            "SDXL Overstyle Control",
+            "oversaturated, plastic skin, over-sharpened, noisy shadows, muddy details, duplicate subject, background clutter",
+            "Use when LoRA stacking causes over-stylized or noisy results.",
+        ),
+    ]
+    return {
+        "default_positive_template_id": "sdxl-cinematic-portrait",
+        "default_negative_template_id": "sdxl-cleanup",
+        "positive_templates": positive,
+        "negative_templates": negative,
+        "guidance": [
+            "SDXL handles richer descriptors than SD1.5 but still benefits from concise structure.",
+            "Set composition early, then append style/material details at the end.",
+        ],
+    }
+
+
 def _split_checkpoints_by_image_capability(
     checkpoints: list[str], checkpoint_arches: dict[str, str]
 ) -> tuple[list[str], list[str]]:
@@ -309,4 +445,53 @@ async def list_quality_profiles(request: Request) -> dict:
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "profiles": profiles,
+    }
+
+
+@router.get("/prompt-templates")
+async def list_prompt_templates(request: Request) -> dict:
+    """Return checkpoint-specific positive/negative prompt templates."""
+    client: ComfyUIClient = request.app.state.comfyui_client
+    checkpoints = await client.get_models()
+    checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
+
+    templates: dict[str, dict[str, Any]] = {}
+    for checkpoint in checkpoints:
+        arch = checkpoint_arches.get(checkpoint, "Unknown")
+        templates[checkpoint] = {
+            "checkpoint": checkpoint,
+            "architecture": arch,
+            **_prompt_templates_for_arch(arch),
+        }
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "variables": [
+            {
+                "token": "{subject}",
+                "description": "Core subject identity (character/person/object).",
+                "example": "futuristic android heroine",
+            },
+            {
+                "token": "{scene}",
+                "description": "Environment/background context.",
+                "example": "neon-lit cyberpunk alley at night",
+            },
+            {
+                "token": "{pose}",
+                "description": "Body pose or camera framing cue.",
+                "example": "waist-up portrait, looking at camera",
+            },
+            {
+                "token": "{outfit}",
+                "description": "Main wardrobe or material details.",
+                "example": "black tactical jacket with reflective accents",
+            },
+            {
+                "token": "{emotion}",
+                "description": "Facial expression or mood keyword.",
+                "example": "confident subtle smile",
+            },
+        ],
+        "templates": templates,
     }

@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getModels, getPresets, getQualityProfiles } from '../api/client'
-import type { GenerationCreate, GenerationResponse, LoraInput } from '../api/client'
+import {
+  getModels,
+  getPresets,
+  getPromptTemplates,
+  getQualityProfiles,
+} from '../api/client'
+import type {
+  CheckpointPromptTemplates,
+  GenerationCreate,
+  GenerationResponse,
+  LoraInput,
+  PromptTemplate,
+} from '../api/client'
 import LoraSelector from './LoraSelector'
 
 export interface GenerateSubmitPayload {
@@ -19,6 +30,7 @@ interface GenerateFormProps {
 }
 
 const MOODS = ['cyberpunk', 'dungeon', 'lab', 'latex', 'bondage'] as const
+type TemplateApplyMode = 'replace' | 'append'
 
 export default function GenerateForm({
   initialValues,
@@ -57,6 +69,9 @@ export default function GenerateForm({
   const [batchCount, setBatchCount] = useState(1)
   const [autoQualityProfile, setAutoQualityProfile] = useState(true)
   const [appliedQualityProfile, setAppliedQualityProfile] = useState<string>('')
+  const [selectedPositiveTemplateId, setSelectedPositiveTemplateId] = useState('')
+  const [selectedNegativeTemplateId, setSelectedNegativeTemplateId] = useState('')
+  const [templateApplyMode, setTemplateApplyMode] = useState<TemplateApplyMode>('replace')
 
   const { data: models } = useQuery({
     queryKey: ['models'],
@@ -72,6 +87,15 @@ export default function GenerateForm({
     queryKey: ['presets'],
     queryFn: getPresets,
   })
+
+  const { data: promptTemplates } = useQuery({
+    queryKey: ['prompt-templates'],
+    queryFn: getPromptTemplates,
+    staleTime: 120_000,
+  })
+
+  const checkpointTemplates: CheckpointPromptTemplates | undefined =
+    checkpoint ? promptTemplates?.templates?.[checkpoint] : undefined
 
   const applyQualityProfile = useCallback((checkpointName: string) => {
     const profile = qualityProfiles?.profiles?.[checkpointName]
@@ -95,6 +119,28 @@ export default function GenerateForm({
     if (!autoQualityProfile || !checkpoint || !qualityProfiles?.profiles) return
     applyQualityProfile(checkpoint)
   }, [autoQualityProfile, checkpoint, qualityProfiles, applyQualityProfile])
+
+  useEffect(() => {
+    if (!checkpointTemplates) {
+      setSelectedPositiveTemplateId('')
+      setSelectedNegativeTemplateId('')
+      return
+    }
+
+    setSelectedPositiveTemplateId((prev) => {
+      if (checkpointTemplates.positive_templates.some((tpl) => tpl.id === prev)) {
+        return prev
+      }
+      return checkpointTemplates.default_positive_template_id
+    })
+
+    setSelectedNegativeTemplateId((prev) => {
+      if (checkpointTemplates.negative_templates.some((tpl) => tpl.id === prev)) {
+        return prev
+      }
+      return checkpointTemplates.default_negative_template_id
+    })
+  }, [checkpointTemplates])
 
   const toggleMood = (mood: string) => {
     setSelectedMoods((prev) =>
@@ -126,6 +172,52 @@ export default function GenerateForm({
   const randomizeSeed = () => {
     const next = Math.floor(Math.random() * 2147483647)
     setSeed(String(next))
+  }
+
+  const appendTemplateText = (current: string, next: string): string => {
+    const currentTrimmed = current.trim()
+    const nextTrimmed = next.trim()
+    if (!nextTrimmed) return currentTrimmed
+    if (!currentTrimmed) return nextTrimmed
+    if (currentTrimmed.includes(nextTrimmed)) return currentTrimmed
+    return `${currentTrimmed}, ${nextTrimmed}`
+  }
+
+  const findPromptTemplate = (
+    templates: PromptTemplate[],
+    templateId: string,
+  ): PromptTemplate | undefined => templates.find((tpl) => tpl.id === templateId)
+
+  const applyPromptTemplate = (target: 'positive' | 'negative') => {
+    if (!checkpointTemplates) return
+    if (target === 'positive') {
+      const template = findPromptTemplate(
+        checkpointTemplates.positive_templates,
+        selectedPositiveTemplateId,
+      )
+      if (!template) return
+      setPrompt((prev) =>
+        templateApplyMode === 'replace'
+          ? template.text
+          : appendTemplateText(prev, template.text),
+      )
+      return
+    }
+    const template = findPromptTemplate(
+      checkpointTemplates.negative_templates,
+      selectedNegativeTemplateId,
+    )
+    if (!template) return
+    setNegativePrompt((prev) =>
+      templateApplyMode === 'replace'
+        ? template.text
+        : appendTemplateText(prev, template.text),
+    )
+  }
+
+  const applyBothPromptTemplates = () => {
+    applyPromptTemplate('positive')
+    applyPromptTemplate('negative')
   }
 
   const buildData = (): GenerationCreate => ({
@@ -286,6 +378,111 @@ export default function GenerateForm({
           2+ 입력 시 seed가 자동으로 1씩 증가하며 N장 큐잉됩니다.
         </p>
       </div>
+
+      {/* Prompt */}
+      {checkpointTemplates && (
+        <div className="rounded-xl border border-cyan-700/40 bg-cyan-900/10 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-cyan-200">Model Prompt Templates</p>
+              <p className="text-xs text-cyan-300/80 mt-0.5">
+                Architecture: {checkpointTemplates.architecture}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-cyan-200">Apply mode</label>
+              <select
+                value={templateApplyMode}
+                onChange={(e) => setTemplateApplyMode(e.target.value as TemplateApplyMode)}
+                className="bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-2.5 py-1.5 text-xs focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+              >
+                <option value="replace">Replace</option>
+                <option value="append">Append</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <label className="text-xs text-cyan-200 block">Positive Template</label>
+              <select
+                value={selectedPositiveTemplateId}
+                onChange={(e) => setSelectedPositiveTemplateId(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+              >
+                {checkpointTemplates.positive_templates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-cyan-300/80 min-h-[2rem]">
+                {findPromptTemplate(
+                  checkpointTemplates.positive_templates,
+                  selectedPositiveTemplateId,
+                )?.description ?? 'Select a positive template'}
+              </p>
+              <button
+                type="button"
+                onClick={() => applyPromptTemplate('positive')}
+                className="text-xs px-3 py-1.5 rounded-lg border border-cyan-500/50 text-cyan-200 hover:bg-cyan-600/20 transition-colors"
+              >
+                Apply Positive
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs text-cyan-200 block">Negative Template</label>
+              <select
+                value={selectedNegativeTemplateId}
+                onChange={(e) => setSelectedNegativeTemplateId(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+              >
+                {checkpointTemplates.negative_templates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-cyan-300/80 min-h-[2rem]">
+                {findPromptTemplate(
+                  checkpointTemplates.negative_templates,
+                  selectedNegativeTemplateId,
+                )?.description ?? 'Select a negative template'}
+              </p>
+              <button
+                type="button"
+                onClick={() => applyPromptTemplate('negative')}
+                className="text-xs px-3 py-1.5 rounded-lg border border-cyan-500/50 text-cyan-200 hover:bg-cyan-600/20 transition-colors"
+              >
+                Apply Negative
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={applyBothPromptTemplates}
+              className="text-xs px-3 py-1.5 rounded-lg bg-cyan-600/20 border border-cyan-500/60 text-cyan-100 hover:bg-cyan-600/30 transition-colors"
+            >
+              Apply Both Templates
+            </button>
+            <div className="text-[11px] text-cyan-200/90">
+              {promptTemplates?.variables
+                .map((item) => `${item.token}=${item.example}`)
+                .join(' · ')}
+            </div>
+          </div>
+          <div className="space-y-1">
+            {checkpointTemplates.guidance.map((line) => (
+              <p key={line} className="text-[11px] text-cyan-200/80">
+                - {line}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Prompt */}
       <div>
