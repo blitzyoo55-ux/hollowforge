@@ -15,6 +15,7 @@ export default function GlobalGenerationIndicator() {
   const queryClient = useQueryClient()
   const [nowMs, setNowMs] = useState(Date.now())
   const [expanded, setExpanded] = useState(false)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   const { data: activeGenerations } = useQuery({
     queryKey: ['active-generations'],
@@ -68,6 +69,9 @@ export default function GlobalGenerationIndicator() {
 
   const cancelMutation = useMutation({
     mutationFn: cancelGeneration,
+    onSettled: () => {
+      setCancellingId(null)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['active-generations'] })
       queryClient.invalidateQueries({ queryKey: ['system-health'] })
@@ -121,14 +125,15 @@ export default function GlobalGenerationIndicator() {
         </button>
         <button
           type="button"
-          disabled={!cancelTarget || cancelMutation.isPending}
+          disabled={!cancelTarget || cancellingId !== null}
           onClick={() => {
             if (!cancelTarget) return
+            setCancellingId(cancelTarget.id)
             cancelMutation.mutate(cancelTarget.id)
           }}
           className="text-xs px-2 py-1 rounded border border-red-500/40 text-red-300 hover:bg-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
-          {cancelMutation.isPending ? 'Cancelling...' : 'Cancel'}
+          {cancellingId === cancelTarget?.id ? 'Cancelling...' : 'Cancel'}
         </button>
       </div>
       {expanded && (
@@ -150,13 +155,26 @@ export default function GlobalGenerationIndicator() {
                   <span className="text-xs text-violet-200 font-medium">
                     #{index + 1} {isRunning ? 'Running' : 'Queued'}
                   </span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                      isRunning ? 'bg-emerald-600/20 text-emerald-300' : 'bg-amber-600/20 text-amber-300'
-                    }`}
-                  >
-                    {gen.status}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                        isRunning ? 'bg-emerald-600/20 text-emerald-300' : 'bg-amber-600/20 text-amber-300'
+                      }`}
+                    >
+                      {gen.status}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={cancellingId !== null}
+                      onClick={() => {
+                        setCancellingId(gen.id)
+                        cancelMutation.mutate(gen.id)
+                      }}
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-300 hover:bg-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                    >
+                      {cancellingId === gen.id ? 'Cancelling...' : 'Cancel'}
+                    </button>
+                  </div>
                 </div>
                 <p className="mt-1 text-[11px] text-violet-100 truncate" title={gen.checkpoint ?? ''}>
                   {checkpoint}
