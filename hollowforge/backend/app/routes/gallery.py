@@ -37,8 +37,11 @@ def _row_to_response(row: dict) -> GenerationResponse:
         height=row["height"],
         sampler=row["sampler"],
         scheduler=row["scheduler"],
+        clip_skip=row.get("clip_skip"),
         status=row["status"],
         image_path=row.get("image_path"),
+        upscaled_image_path=row.get("upscaled_image_path"),
+        upscale_model=row.get("upscale_model"),
         thumbnail_path=row.get("thumbnail_path"),
         workflow_path=row.get("workflow_path"),
         generation_time_sec=row.get("generation_time_sec"),
@@ -86,6 +89,8 @@ async def list_gallery(
         conditions.append("created_at >= ?")
         params.append(date_from)
     if date_to:
+        if len(date_to) == 10:  # YYYY-MM-DD
+            date_to = f"{date_to}T23:59:59.999999+00:00"
         conditions.append("created_at <= ?")
         params.append(date_to)
     if tags:
@@ -132,7 +137,7 @@ async def delete_generation(generation_id: str) -> dict:
 
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, image_path, thumbnail_path, workflow_path "
+            "SELECT id, image_path, upscaled_image_path, thumbnail_path, workflow_path "
             "FROM generations WHERE id = ?",
             (generation_id,),
         )
@@ -144,7 +149,7 @@ async def delete_generation(generation_id: str) -> dict:
             )
 
         # Delete files
-        for field in ("image_path", "thumbnail_path", "workflow_path"):
+        for field in ("image_path", "upscaled_image_path", "thumbnail_path", "workflow_path"):
             rel = row.get(field)
             if rel:
                 full = settings.DATA_DIR / rel

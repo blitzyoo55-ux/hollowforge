@@ -1,0 +1,308 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: '/api/v1',
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface LoraInput {
+  filename: string;
+  strength: number;
+  category: string | null;
+}
+
+export interface GenerationCreate {
+  prompt: string;
+  negative_prompt?: string | null;
+  checkpoint: string;
+  loras?: LoraInput[];
+  seed?: number | null;
+  steps?: number;
+  cfg?: number;
+  width?: number;
+  height?: number;
+  sampler?: string;
+  scheduler?: string;
+  clip_skip?: number | null;
+  tags?: string[] | null;
+  preset_id?: string | null;
+  notes?: string | null;
+  source_id?: string | null;
+}
+
+export interface GenerationResponse {
+  id: string;
+  prompt: string;
+  negative_prompt: string | null;
+  checkpoint: string;
+  loras: LoraInput[];
+  seed: number;
+  steps: number;
+  cfg: number;
+  width: number;
+  height: number;
+  sampler: string;
+  scheduler: string;
+  clip_skip: number | null;
+  status: string;
+  image_path: string | null;
+  upscaled_image_path: string | null;
+  upscaled_preview_path: string | null;
+  upscale_model: string | null;
+  thumbnail_path: string | null;
+  workflow_path: string | null;
+  generation_time_sec: number | null;
+  tags: string[] | null;
+  preset_id: string | null;
+  notes: string | null;
+  source_id: string | null;
+  comfyui_prompt_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface GenerationStatus {
+  id: string;
+  status: string;
+  generation_time_sec: number | null;
+  estimated_time_sec: number | null;
+}
+
+export interface ActiveGeneration {
+  id: string;
+  status: string;
+  created_at: string;
+}
+
+export interface PresetCreate {
+  name: string;
+  description?: string | null;
+  checkpoint: string;
+  loras?: LoraInput[];
+  prompt_template?: string | null;
+  negative_prompt?: string | null;
+  default_params?: Record<string, unknown>;
+  tags?: string[] | null;
+}
+
+export interface PresetUpdate {
+  name?: string | null;
+  description?: string | null;
+  checkpoint?: string | null;
+  loras?: LoraInput[] | null;
+  prompt_template?: string | null;
+  negative_prompt?: string | null;
+  default_params?: Record<string, unknown> | null;
+  tags?: string[] | null;
+}
+
+export interface PresetResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  checkpoint: string;
+  loras: LoraInput[];
+  prompt_template: string | null;
+  negative_prompt: string | null;
+  default_params: Record<string, unknown>;
+  tags: string[] | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface LoraProfileResponse {
+  id: string;
+  display_name: string;
+  filename: string;
+  category: string;
+  default_strength: number;
+  tags: string | null;
+  notes: string | null;
+  compatible_checkpoints: string | null;
+  created_at: string;
+}
+
+export interface MoodSelectRequest {
+  moods: string[];
+  checkpoint?: string | null;
+}
+
+export interface MoodSelectResponse {
+  loras: LoraInput[];
+  prompt_additions: string;
+}
+
+export interface GalleryQuery {
+  page?: number;
+  per_page?: number;
+  checkpoint?: string | null;
+  tags?: string[] | null;
+  search?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  sort_by?: string;
+  sort_order?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface SystemHealth {
+  status: string;
+  comfyui_connected: boolean;
+  db_ok: boolean;
+  total_generations: number;
+}
+
+export interface ComfyUIStatus {
+  connected: boolean;
+  url: string;
+  system_stats?: Record<string, unknown>;
+  message?: string;
+}
+
+export interface ModelsResponse {
+  checkpoints: string[];
+  samplers: string[];
+  schedulers: string[];
+  lora_files: string[];
+}
+
+export interface SyncResponse {
+  checkpoints: string[];
+  samplers: string[];
+  schedulers: string[];
+  lora_files: string[];
+  new_loras: number;
+  synced: boolean;
+}
+
+export interface UpscaleModelsResponse {
+  upscale_models: string[];
+}
+
+export interface ReproduceRequest {
+  mode: 'exact' | 'variation';
+  seed?: number | null;
+  notes?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// API Functions
+// ---------------------------------------------------------------------------
+
+export async function createGeneration(data: GenerationCreate): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>('/generations', data);
+  return res.data;
+}
+
+export async function getGeneration(id: string): Promise<GenerationResponse> {
+  const res = await api.get<GenerationResponse>(`/generations/${id}`);
+  return res.data;
+}
+
+export async function getGenerationStatus(id: string): Promise<GenerationStatus> {
+  const res = await api.get<GenerationStatus>(`/generations/${id}/status`);
+  return res.data;
+}
+
+export async function getActiveGenerations(): Promise<ActiveGeneration[]> {
+  const res = await api.get<ActiveGeneration[]>('/generations/active');
+  return res.data;
+}
+
+export async function cancelGeneration(id: string): Promise<void> {
+  await api.post(`/generations/${id}/cancel`);
+}
+
+export async function upscaleGeneration(
+  id: string,
+  upscale_model: string,
+): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>(`/generations/${id}/upscale`, {
+    upscale_model,
+  });
+  return res.data;
+}
+
+export async function getGallery(query: GalleryQuery): Promise<PaginatedResponse<GenerationResponse>> {
+  const res = await api.get<PaginatedResponse<GenerationResponse>>('/gallery', { params: query });
+  return res.data;
+}
+
+export async function deleteGalleryItem(id: string): Promise<void> {
+  await api.delete(`/gallery/${id}`);
+}
+
+export async function getPresets(): Promise<PresetResponse[]> {
+  const res = await api.get<PresetResponse[]>('/presets');
+  return res.data;
+}
+
+export async function createPreset(data: PresetCreate): Promise<PresetResponse> {
+  const res = await api.post<PresetResponse>('/presets', data);
+  return res.data;
+}
+
+export async function updatePreset(id: string, data: PresetUpdate): Promise<PresetResponse> {
+  const res = await api.put<PresetResponse>(`/presets/${id}`, data);
+  return res.data;
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  await api.delete(`/presets/${id}`);
+}
+
+export async function getLoras(): Promise<LoraProfileResponse[]> {
+  const res = await api.get<LoraProfileResponse[]>('/loras');
+  return res.data;
+}
+
+export async function selectLoras(data: MoodSelectRequest): Promise<MoodSelectResponse> {
+  const res = await api.post<MoodSelectResponse>('/loras/select', data);
+  return res.data;
+}
+
+export async function reproduceGeneration(id: string, data: ReproduceRequest): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>(`/reproduce/${id}`, data);
+  return res.data;
+}
+
+export async function getSystemHealth(): Promise<SystemHealth> {
+  const res = await api.get<SystemHealth>('/system/health');
+  return res.data;
+}
+
+export async function getComfyUIStatus(): Promise<ComfyUIStatus> {
+  const res = await api.get<ComfyUIStatus>('/system/comfyui');
+  return res.data;
+}
+
+export async function updateComfyUIUrl(url: string): Promise<ComfyUIStatus> {
+  const res = await api.post<ComfyUIStatus>('/system/comfyui', { url });
+  return res.data;
+}
+
+export async function getModels(): Promise<ModelsResponse> {
+  const res = await api.get<ModelsResponse>('/system/models');
+  return res.data;
+}
+
+export async function syncModels(): Promise<SyncResponse> {
+  const res = await api.post<SyncResponse>('/system/sync');
+  return res.data;
+}
+
+export async function getUpscaleModels(): Promise<UpscaleModelsResponse> {
+  const res = await api.get<UpscaleModelsResponse>('/system/upscale-models');
+  return res.data;
+}

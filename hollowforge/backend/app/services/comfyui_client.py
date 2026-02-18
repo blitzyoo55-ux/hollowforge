@@ -30,6 +30,16 @@ class ComfyUIClient:
             await self._client.aclose()
             self._client = None
 
+    async def set_base_url(self, base_url: str) -> None:
+        """Switch ComfyUI target URL at runtime."""
+        normalized = base_url.strip().rstrip("/")
+        if not normalized:
+            raise ValueError("ComfyUI URL cannot be empty")
+        if normalized == self.base_url:
+            return
+        await self.close()
+        self.base_url = normalized
+
     # ------------------------------------------------------------------
     # Core API
     # ------------------------------------------------------------------
@@ -152,6 +162,79 @@ class ComfyUIClient:
             return list(ckpt_names) if isinstance(ckpt_names, list) else []
         except Exception:
             return []
+
+    async def get_lora_files(self) -> list[str]:
+        """Return available LoRA filenames via /object_info."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/object_info/LoraLoader")
+            resp.raise_for_status()
+            data = resp.json()
+            node_info = data.get("LoraLoader", {})
+            inputs = node_info.get("input", {}).get("required", {})
+            lora_names = inputs.get("lora_name", [[]])[0]
+            return list(lora_names) if isinstance(lora_names, list) else []
+        except Exception:
+            return []
+
+    async def get_upscale_models(self) -> list[str]:
+        """Return available upscale model filenames via /object_info."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/object_info/UpscaleModelLoader")
+            resp.raise_for_status()
+            data = resp.json()
+            node_info = data.get("UpscaleModelLoader", {})
+            inputs = node_info.get("input", {}).get("required", {})
+            names = inputs.get("model_name", [[]])[0]
+            if not isinstance(names, list):
+                names = inputs.get("upscale_model", [[]])[0]
+            return list(names) if isinstance(names, list) else []
+        except Exception:
+            return []
+
+    async def get_samplers(self) -> list[str]:
+        """Return available sampler names via /object_info."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/object_info/KSampler")
+            resp.raise_for_status()
+            data = resp.json()
+            node_info = data.get("KSampler", {})
+            inputs = node_info.get("input", {}).get("required", {})
+            names = inputs.get("sampler_name", [[]])[0]
+            return list(names) if isinstance(names, list) else []
+        except Exception:
+            return ["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_sde", "dpmpp_2m_sde"]
+
+    async def get_schedulers(self) -> list[str]:
+        """Return available scheduler names via /object_info."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/object_info/KSampler")
+            resp.raise_for_status()
+            data = resp.json()
+            node_info = data.get("KSampler", {})
+            inputs = node_info.get("input", {}).get("required", {})
+            names = inputs.get("scheduler", [[]])[0]
+            return list(names) if isinstance(names, list) else []
+        except Exception:
+            return ["normal", "karras", "exponential", "sgm_uniform"]
+
+    async def upload_image(self, file_path: str, filename: str) -> str:
+        """Upload an image to ComfyUI input directory. Returns the filename used."""
+        import pathlib
+        client = await self._get_client()
+        path = pathlib.Path(file_path)
+        with open(path, "rb") as f:
+            resp = await client.post(
+                "/upload/image",
+                files={"image": (filename, f, "image/png")},
+                timeout=120.0,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("name", filename)
 
     async def cancel_prompt(self, prompt_id: str) -> bool:
         """Attempt to cancel/interrupt a running prompt."""

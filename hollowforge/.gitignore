@@ -1,0 +1,25 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Data
+data/images/
+data/thumbs/
+data/workflows/
+data/hollowforge.db
+
+# Secrets
+deploy/cloudflared/.env.cloudflared
+deploy/oauth2-proxy/.env.oauth2-proxy
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

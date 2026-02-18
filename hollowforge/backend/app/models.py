@@ -28,13 +28,16 @@ class GenerationCreate(BaseModel):
     height: int = 1216
     sampler: str = "euler"
     scheduler: str = "normal"
+    clip_skip: Optional[int] = None
     tags: Optional[List[str]] = None
     preset_id: Optional[str] = None
     notes: Optional[str] = None
     source_id: Optional[str] = None
 
     def resolved_seed(self) -> int:
-        return self.seed if self.seed is not None else random.randint(0, 2**31 - 1)
+        if self.seed is None or self.seed == -1:
+            return random.randint(0, 2**31 - 1)
+        return self.seed
 
 
 class PresetCreate(BaseModel):
@@ -82,6 +85,14 @@ class ReproduceRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class UpscaleRequest(BaseModel):
+    upscale_model: str = "remacri_original.safetensors"
+
+
+class ComfyUIConfigUpdate(BaseModel):
+    url: str
+
+
 # ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------
@@ -101,8 +112,12 @@ class GenerationResponse(BaseModel):
     height: int
     sampler: str
     scheduler: str
+    clip_skip: Optional[int] = None
     status: str
     image_path: Optional[str] = None
+    upscaled_image_path: Optional[str] = None
+    upscaled_preview_path: Optional[str] = None
+    upscale_model: Optional[str] = None
     thumbnail_path: Optional[str] = None
     workflow_path: Optional[str] = None
     generation_time_sec: Optional[float] = None
@@ -120,6 +135,7 @@ class GenerationStatus(BaseModel):
     id: str
     status: str
     generation_time_sec: Optional[float] = None
+    estimated_time_sec: Optional[float] = None
 
 
 class PresetResponse(BaseModel):
