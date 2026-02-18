@@ -6,7 +6,7 @@ import type { GenerationResponse } from '../api/client'
 interface ProgressCardProps {
   generationId: string
   onComplete: (gen: GenerationResponse) => void
-  onError: (error: string) => void
+  onError: (error: string, gen?: GenerationResponse) => void
 }
 
 function formatDuration(totalSec: number): string {
@@ -68,9 +68,19 @@ export default function ProgressCard({ generationId, onComplete, onError }: Prog
   useEffect(() => {
     if (status?.status === 'failed') {
       getGeneration(generationId).then((gen) => {
-        onError(gen.error_message || 'Generation failed')
+        onError(gen.error_message || 'Generation failed', gen)
       }).catch(() => {
         onError('Generation failed')
+      })
+    }
+  }, [status?.status, generationId, onError])
+
+  useEffect(() => {
+    if (status?.status === 'cancelled') {
+      getGeneration(generationId).then((gen) => {
+        onError('Generation cancelled', gen)
+      }).catch(() => {
+        onError('Generation cancelled')
       })
     }
   }, [status?.status, generationId, onError])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
@@ -18,6 +19,86 @@ from app.services.model_compatibility import (
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
 _NON_IMAGE_ARCHES = {"WAN-I2V-14B", "SVD-XT"}
+
+
+def _pick_first_available(
+    preferred: list[str], available: list[str], fallback: str
+) -> str:
+    available_set = set(available)
+    for item in preferred:
+        if item in available_set:
+            return item
+    if available:
+        return available[0]
+    return fallback
+
+
+def _quality_profile_for_arch(
+    architecture: str, samplers: list[str], schedulers: list[str]
+) -> dict[str, Any]:
+    if architecture in _NON_IMAGE_ARCHES:
+        return {
+            "applicable": False,
+            "profile_name": "Non-image checkpoint",
+            "description": "This checkpoint is video/specialized and excluded from image workflow.",
+            "params": None,
+        }
+
+    if architecture == "SD1.5":
+        return {
+            "applicable": True,
+            "profile_name": "SD1.5 Balanced Portrait",
+            "description": "Conservative defaults for SD1.5 quality and stability.",
+            "params": {
+                "steps": 30,
+                "cfg": 7.0,
+                "width": 768,
+                "height": 1152,
+                "sampler": _pick_first_available(
+                    ["dpmpp_2m", "euler_ancestral", "euler"],
+                    samplers,
+                    "euler",
+                ),
+                "scheduler": _pick_first_available(
+                    ["karras", "normal"],
+                    schedulers,
+                    "normal",
+                ),
+                "clip_skip": None,
+            },
+        }
+
+    if architecture == "FLUX":
+        return {
+            "applicable": True,
+            "profile_name": "FLUX Base (Experimental)",
+            "description": "FLUX defaults; validate workflow compatibility before production use.",
+            "params": {
+                "steps": 24,
+                "cfg": 3.5,
+                "width": 1024,
+                "height": 1024,
+                "sampler": _pick_first_available(["euler", "dpmpp_2m"], samplers, "euler"),
+                "scheduler": _pick_first_available(["normal", "karras"], schedulers, "normal"),
+                "clip_skip": None,
+            },
+        }
+
+    # Default: SDXL-family and unknown image models
+    return {
+        "applicable": True,
+        "profile_name": "SDXL Quality Balanced",
+        "description": "Benchmark-aligned defaults for SDXL-based checkpoints.",
+        "params": {
+            "steps": 28,
+            "cfg": 7.0,
+            "width": 832,
+            "height": 1216,
+            "sampler": _pick_first_available(["euler", "dpmpp_2m", "euler_ancestral"], samplers, "euler"),
+            "scheduler": _pick_first_available(["normal", "karras"], schedulers, "normal"),
+            "clip_skip": None,
+        },
+    }
 
 
 def _split_checkpoints_by_image_capability(
@@ -204,3 +285,28 @@ async def list_upscale_models(request: Request) -> dict:
     client: ComfyUIClient = request.app.state.comfyui_client
     upscale_models = await client.get_upscale_models()
     return {"upscale_models": upscale_models}
+
+
+@router.get("/quality-profiles")
+async def list_quality_profiles(request: Request) -> dict:
+    """Return checkpoint-specific recommended quality parameter profiles."""
+    client: ComfyUIClient = request.app.state.comfyui_client
+    checkpoints = await client.get_models()
+    samplers = await client.get_samplers()
+    schedulers = await client.get_schedulers()
+    checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
+
+    profiles: dict[str, dict[str, Any]] = {}
+    for checkpoint in checkpoints:
+        arch = checkpoint_arches.get(checkpoint, "Unknown")
+        profile = _quality_profile_for_arch(arch, samplers, schedulers)
+        profiles[checkpoint] = {
+            "checkpoint": checkpoint,
+            "architecture": arch,
+            **profile,
+        }
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "profiles": profiles,
+    }

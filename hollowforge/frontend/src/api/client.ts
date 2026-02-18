@@ -33,6 +33,12 @@ export interface GenerationCreate {
   source_id?: string | null;
 }
 
+export interface GenerationBatchCreate {
+  generation: GenerationCreate;
+  count: number;
+  seed_increment?: number;
+}
+
 export interface GenerationResponse {
   id: string;
   prompt: string;
@@ -63,6 +69,13 @@ export interface GenerationResponse {
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface GenerationBatchResponse {
+  count: number;
+  base_seed: number;
+  seed_increment: number;
+  generations: GenerationResponse[];
 }
 
 export interface GenerationStatus {
@@ -275,6 +288,30 @@ export interface UpscaleModelsResponse {
   upscale_models: string[];
 }
 
+export interface QualityProfileParams {
+  steps: number;
+  cfg: number;
+  width: number;
+  height: number;
+  sampler: string;
+  scheduler: string;
+  clip_skip: number | null;
+}
+
+export interface CheckpointQualityProfile {
+  checkpoint: string;
+  architecture: string;
+  applicable: boolean;
+  profile_name: string;
+  description: string;
+  params: QualityProfileParams | null;
+}
+
+export interface QualityProfilesResponse {
+  generated_at: string;
+  profiles: Record<string, CheckpointQualityProfile>;
+}
+
 export interface ReproduceRequest {
   mode: 'exact' | 'variation';
   seed?: number | null;
@@ -287,6 +324,13 @@ export interface ReproduceRequest {
 
 export async function createGeneration(data: GenerationCreate): Promise<GenerationResponse> {
   const res = await api.post<GenerationResponse>('/generations', data);
+  return res.data;
+}
+
+export async function createGenerationBatch(
+  data: GenerationBatchCreate,
+): Promise<GenerationBatchResponse> {
+  const res = await api.post<GenerationBatchResponse>('/generations/batch', data);
   return res.data;
 }
 
@@ -401,5 +445,10 @@ export async function syncModels(): Promise<SyncResponse> {
 
 export async function getUpscaleModels(): Promise<UpscaleModelsResponse> {
   const res = await api.get<UpscaleModelsResponse>('/system/upscale-models');
+  return res.data;
+}
+
+export async function getQualityProfiles(): Promise<QualityProfilesResponse> {
+  const res = await api.get<QualityProfilesResponse>('/system/quality-profiles');
   return res.data;
 }

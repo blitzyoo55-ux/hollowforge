@@ -63,6 +63,22 @@ class GenerationCreate(BaseModel):
         return self.seed
 
 
+class GenerationBatchCreate(BaseModel):
+    generation: GenerationCreate
+    count: int = Field(
+        default=4,
+        ge=2,
+        le=24,
+        description="Number of images to queue with auto-incremented seeds",
+    )
+    seed_increment: int = Field(
+        default=1,
+        ge=1,
+        le=9999,
+        description="Increment added to seed for each batch item",
+    )
+
+
 class PresetCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -159,6 +175,13 @@ class GenerationStatus(BaseModel):
     status: str
     generation_time_sec: Optional[float] = None
     estimated_time_sec: Optional[float] = None
+
+
+class GenerationBatchResponse(BaseModel):
+    count: int
+    base_seed: int
+    seed_increment: int
+    generations: List[GenerationResponse] = Field(default_factory=list)
 
 
 class PresetResponse(BaseModel):

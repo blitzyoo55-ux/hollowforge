@@ -145,6 +145,26 @@
 
 ---
 
+## Phase 5d: Batch Generation + Quality Profile Automation — COMPLETED (2026-02-18)
+- [x] 배치 생성 API 추가
+  - `POST /api/v1/generations/batch`
+  - `count`(2~24) 기준으로 seed 자동 증가(+1 기본) 큐잉
+  - seed 범위 초과/호환성 오류 사전 검증
+- [x] Generate UI 배치 실행 지원
+  - Batch Count 입력 시 N장 연속 큐 처리
+  - 우측 패널에 진행 수/실패 수/대기 수/seed 범위 표시
+- [x] 체크포인트별 품질 프로필 자동 적용
+  - `GET /api/v1/system/quality-profiles`
+  - 체크포인트 선택 시 권장 steps/cfg/해상도/sampler/scheduler 자동 주입
+  - 수동 모드에서 `Apply profile now` 지원
+- [x] 프로덕션 프리셋 확장 (benchmark 기반)
+  - `HF Main - Series E Hood Signature`
+  - `HF Main - Series C Silent Neon`
+  - `HF Main - Series B Gaze Focus`
+  - 마이그레이션: `backend/migrations/005_popular_presets.sql`
+
+---
+
 ## Phase 7: Polish + Production Readiness — FUTURE
 - [ ] 에러 처리 UX 개선 (toast notifications, retry buttons)
 - [ ] 빈 상태(empty state) 일러스트 개선
@@ -154,7 +174,7 @@
 - [ ] favicon + PWA manifest
 
 ## Phase 8: Advanced Features — FUTURE
-- [ ] 배치 생성 (한 번에 N장, 시드 자동 증가)
+- [x] 배치 생성 (한 번에 N장, 시드 자동 증가) — 2026-02-18 완료
 - [ ] 프롬프트 템플릿 변수 ({quality}, {character_name} 등)
 - [ ] LoRA 프로필 CRUD (현재 DB seed만, UI 편집 없음)
 - [ ] Mood mapping CRUD (현재 DB seed만)
