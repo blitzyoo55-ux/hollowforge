@@ -71,11 +71,11 @@ async def create_generation_batch(
 
 
 @router.get("/active")
-async def get_active_generations() -> list[dict[str, str]]:
+async def get_active_generations() -> list[dict[str, str | int]]:
     """Fetch currently queued or running generations."""
     async with get_db() as db:
         cursor = await db.execute(
-            """SELECT id, status, created_at
+            """SELECT id, status, created_at, checkpoint, seed, steps, width, height
                FROM generations
                WHERE status IN ('queued', 'running')
                ORDER BY created_at ASC"""
@@ -87,6 +87,11 @@ async def get_active_generations() -> list[dict[str, str]]:
             "id": row["id"],
             "status": row["status"],
             "created_at": row["created_at"],
+            "checkpoint": row["checkpoint"],
+            "seed": row["seed"],
+            "steps": row["steps"],
+            "width": row["width"],
+            "height": row["height"],
         }
         for row in rows
     ]

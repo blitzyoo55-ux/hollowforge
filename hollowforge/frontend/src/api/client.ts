@@ -89,6 +89,11 @@ export interface ActiveGeneration {
   id: string;
   status: string;
   created_at: string;
+  checkpoint?: string;
+  seed?: number;
+  steps?: number;
+  width?: number;
+  height?: number;
 }
 
 export interface PresetCreate {

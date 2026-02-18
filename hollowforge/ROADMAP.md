@@ -162,6 +162,10 @@
   - `HF Main - Series C Silent Neon`
   - `HF Main - Series B Gaze Focus`
   - 마이그레이션: `backend/migrations/005_popular_presets.sql`
+- [x] 글로벌 큐 인디케이터 확장 (2026-02-18)
+  - 좌측 하단 `Generating...` 클릭 시 현재 큐를 펼침 리스트로 표시
+  - 항목별 상태/체크포인트/seed/steps/해상도/elapsed/id 노출
+  - 동일 영역에서 즉시 `Cancel` 실행 가능 (running 우선 취소)
 
 ---
 
