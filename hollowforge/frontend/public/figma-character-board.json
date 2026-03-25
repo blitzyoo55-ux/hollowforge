@@ -1,0 +1,134 @@
+{
+  "title": "HollowForge Favorite Character Board",
+  "generatedAt": "2026-03-14T12:16:13.285Z",
+  "sourceDir": "/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/data",
+  "totals": {
+    "favorites": 952,
+    "upscaledFavorites": 835,
+    "pendingUpscaleFavorites": 117
+  },
+  "pairs": [
+    {
+      "id": "c996c2ef-049c-4afd-b816-40cc29ceaac9",
+      "label": "Favorite Pair C996C2EF",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/c996c2ef-049c-4afd-b816-40cc29ceaac9-favorite-original.png",
+        "capturedAt": "2026. 03. 13. 20:54"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/c996c2ef-049c-4afd-b816-40cc29ceaac9-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 13. 20:54"
+      }
+    },
+    {
+      "id": "c63d7851-878b-4631-9698-e4887dd86c5e",
+      "label": "Favorite Pair C63D7851",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/c63d7851-878b-4631-9698-e4887dd86c5e-favorite-original.png",
+        "capturedAt": "2026. 03. 11. 08:44"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/c63d7851-878b-4631-9698-e4887dd86c5e-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 11. 08:44"
+      }
+    },
+    {
+      "id": "bf9c3186-a731-4fe8-8901-eff3b1168be0",
+      "label": "Favorite Pair BF9C3186",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/bf9c3186-a731-4fe8-8901-eff3b1168be0-favorite-original.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/bf9c3186-a731-4fe8-8901-eff3b1168be0-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      }
+    },
+    {
+      "id": "7f160203-4dff-412a-973b-95ac38c38373",
+      "label": "Favorite Pair 7F160203",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/7f160203-4dff-412a-973b-95ac38c38373-favorite-original.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/7f160203-4dff-412a-973b-95ac38c38373-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      }
+    },
+    {
+      "id": "3e68c16c-3c9c-474e-ac22-e0fea824355b",
+      "label": "Favorite Pair 3E68C16C",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/3e68c16c-3c9c-474e-ac22-e0fea824355b-favorite-original.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/3e68c16c-3c9c-474e-ac22-e0fea824355b-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      }
+    },
+    {
+      "id": "62afc581-0c08-4622-a4ac-fe391c15afe2",
+      "label": "Favorite Pair 62AFC581",
+      "original": {
+        "label": "Favorite Original",
+        "imageUrl": "/figma-board-assets/62afc581-0c08-4622-a4ac-fe391c15afe2-favorite-original.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      },
+      "upscaled": {
+        "label": "Favorite Upscaled",
+        "imageUrl": "/figma-board-assets/62afc581-0c08-4622-a4ac-fe391c15afe2-favorite-upscaled.png",
+        "capturedAt": "2026. 03. 11. 08:43"
+      }
+    }
+  ],
+  "latestOriginals": [
+    {
+      "id": "02891172-3b71-484d-b89b-1b952e1d27e1",
+      "label": "Favorite 02891172",
+      "imageUrl": "/figma-board-assets/02891172-3b71-484d-b89b-1b952e1d27e1-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:14"
+    },
+    {
+      "id": "8fcc500e-e66a-4c87-b2d9-e6e089f474bd",
+      "label": "Favorite 8FCC500E",
+      "imageUrl": "/figma-board-assets/8fcc500e-e66a-4c87-b2d9-e6e089f474bd-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:14"
+    },
+    {
+      "id": "b78118e2-bb15-4cf1-ba80-81dca5f4a2df",
+      "label": "Favorite B78118E2",
+      "imageUrl": "/figma-board-assets/b78118e2-bb15-4cf1-ba80-81dca5f4a2df-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:14"
+    },
+    {
+      "id": "5cda8e5e-32da-4afe-abee-47c4ecdd67f1",
+      "label": "Favorite 5CDA8E5E",
+      "imageUrl": "/figma-board-assets/5cda8e5e-32da-4afe-abee-47c4ecdd67f1-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:13"
+    },
+    {
+      "id": "7505d969-3b1b-4437-ab7f-ebf2733558a3",
+      "label": "Favorite 7505D969",
+      "imageUrl": "/figma-board-assets/7505d969-3b1b-4437-ab7f-ebf2733558a3-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:13"
+    },
+    {
+      "id": "fb0275ee-3fb6-4c1f-88d5-e91eaafbd7b2",
+      "label": "Favorite FB0275EE",
+      "imageUrl": "/figma-board-assets/fb0275ee-3fb6-4c1f-88d5-e91eaafbd7b2-favorite-solo.png",
+      "capturedAt": "2026. 03. 14. 19:13"
+    }
+  ]
+}
