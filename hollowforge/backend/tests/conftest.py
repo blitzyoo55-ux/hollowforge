@@ -7,8 +7,8 @@ import pytest
 from app.config import settings
 
 
-@pytest.fixture(autouse=True)
-def temp_backend_settings(tmp_path: Path) -> None:
+@pytest.fixture
+def temp_db(tmp_path: Path) -> Path:
     original_data_dir = settings.DATA_DIR
     original_db_path = settings.DB_PATH
     original_lean_mode = settings.LEAN_MODE
@@ -18,7 +18,7 @@ def temp_backend_settings(tmp_path: Path) -> None:
     settings.LEAN_MODE = True
 
     try:
-        yield
+        yield settings.DB_PATH
     finally:
         settings.DATA_DIR = original_data_dir
         settings.DB_PATH = original_db_path
