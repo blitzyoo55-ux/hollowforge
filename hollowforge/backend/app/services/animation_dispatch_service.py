@@ -24,6 +24,32 @@ def _build_public_data_url(rel_path: str) -> str:
     return _join_url(settings.PUBLIC_API_BASE_URL, f"/data/{rel_path}")
 
 
+def _preserve_nested_sequence_metadata(
+    request_json: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if request_json is None:
+        return None
+
+    sequence_keys = (
+        "sequence_run_id",
+        "sequence_shot_id",
+        "content_mode",
+        "executor_profile_id",
+    )
+    nested = request_json.get("sequence")
+    sequence_metadata = dict(nested) if isinstance(nested, dict) else {}
+    for key in sequence_keys:
+        value = request_json.get(key)
+        if value is not None and key not in sequence_metadata:
+            sequence_metadata[key] = value
+    if not sequence_metadata:
+        return request_json
+
+    normalized = dict(request_json)
+    normalized["sequence"] = sequence_metadata
+    return normalized
+
+
 def build_remote_worker_payload(
     animation_job: dict[str, Any],
     generation: dict[str, Any],
@@ -40,7 +66,7 @@ def build_remote_worker_payload(
         except json.JSONDecodeError as exc:
             raise AnimationDispatchError("Animation job request_json is invalid JSON") from exc
         if isinstance(parsed, dict):
-            parsed_request_json = parsed
+            parsed_request_json = _preserve_nested_sequence_metadata(parsed)
 
     callback_token = settings.ANIMATION_CALLBACK_TOKEN or None
     callback_url = _join_url(
