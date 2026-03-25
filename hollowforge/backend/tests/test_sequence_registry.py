@@ -169,33 +169,29 @@ def test_resolve_provider_config_rejects_profile_mismatch(monkeypatch: pytest.Mo
     assert "adult_local_llm" in str(exc_info.value.detail)
 
 
-@pytest.mark.asyncio
-async def test_generate_prompt_batch_rejects_unready_legacy_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_provider_config_rejects_unready_top_level_profile_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
     monkeypatch.setattr(settings, "XAI_API_KEY", "")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
 
     request = PromptBatchGenerateRequest(
         concept_brief="test concept",
-        count=1,
-        chunk_size=1,
-        workflow_lane="auto",
         provider="default",
-        direction_pass_enabled=False,
-        dedupe=False,
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await prompt_factory_service.generate_prompt_batch(request)
+        prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
 
     assert exc_info.value.status_code == 500
-    assert "openrouter" in str(exc_info.value.detail)
-    assert "OPENROUTER_API_KEY is not configured" in str(exc_info.value.detail)
+    assert "safe_hosted_grok" in str(exc_info.value.detail)
+    assert "XAI_API_KEY is not configured" in str(exc_info.value.detail)
 
 
-def test_prompt_factory_capabilities_follow_legacy_default_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "legacy-key")
-    monkeypatch.setattr(settings, "XAI_API_KEY", "")
+def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "xai-key")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE", "safe_hosted_grok")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
@@ -205,13 +201,13 @@ def test_prompt_factory_capabilities_follow_legacy_default_resolution(monkeypatc
     capabilities = prompt_factory_service.get_prompt_factory_capabilities()
     defaults_by_mode = {item.content_mode: item for item in capabilities.content_mode_defaults}
 
-    assert capabilities.default_prompt_provider_profile_id is None
-    assert capabilities.default_provider == "openrouter"
-    assert capabilities.default_model == "x-ai/grok-4.1-fast"
+    assert capabilities.default_prompt_provider_profile_id == "safe_hosted_grok"
+    assert capabilities.default_provider == "xai"
+    assert capabilities.default_model == "grok-4-1-fast-non-reasoning"
     assert capabilities.ready is True
     assert defaults_by_mode["all_ages"].prompt_provider_profile_id == "safe_hosted_grok"
     assert defaults_by_mode["all_ages"].provider_kind == "xai"
-    assert defaults_by_mode["all_ages"].ready is False
+    assert defaults_by_mode["all_ages"].ready is True
     assert defaults_by_mode["adult_nsfw"].prompt_provider_profile_id == "adult_local_llm"
     assert defaults_by_mode["adult_nsfw"].provider_kind == "local_llm"
     assert defaults_by_mode["adult_nsfw"].model == "local-test-model"
@@ -219,9 +215,9 @@ def test_prompt_factory_capabilities_follow_legacy_default_resolution(monkeypatc
 
 
 def test_runtime_default_resolution_matches_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "legacy-key")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "xai-key")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
-    monkeypatch.setattr(settings, "XAI_API_KEY", "")
 
     request = PromptBatchGenerateRequest(
         concept_brief="test concept",
@@ -237,5 +233,6 @@ def test_runtime_default_resolution_matches_capabilities(monkeypatch: pytest.Mon
 
     assert provider_config.name == capabilities.default_provider
     assert provider_config.model == capabilities.default_model
-    assert provider_config.api_key == "legacy-key"
+    assert provider_config.api_key == "xai-key"
+    assert capabilities.default_prompt_provider_profile_id == "safe_hosted_grok"
     assert capabilities.ready is True

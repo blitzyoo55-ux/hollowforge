@@ -461,18 +461,31 @@ def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str 
     return None
 
 
-def _resolve_legacy_default_provider_config() -> _ProviderConfig:
+def _resolve_legacy_default_provider_config(*, model_override: str | None = None) -> _ProviderConfig:
     provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
     if provider not in _VALID_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported prompt provider: {provider}",
         )
-    return _provider_config_for_kind(provider)
+    return _provider_config_for_kind(provider, model_override=model_override)
 
 
-def _resolve_top_level_default_provider_config() -> _ProviderConfig:
-    return _resolve_legacy_default_provider_config()
+def _resolve_top_level_default_provider_config(
+    *,
+    model_override: str | None = None,
+) -> tuple[str | None, _ProviderConfig]:
+    profile_id = _default_prompt_provider_profile_id("all_ages")
+    if profile_id:
+        return (
+            profile_id,
+            _provider_config_from_profile(
+                profile_id,
+                content_mode="all_ages",
+                model_override=model_override,
+            ),
+        )
+    return None, _resolve_legacy_default_provider_config(model_override=model_override)
 
 
 def _resolve_content_mode_default(
@@ -665,26 +678,27 @@ def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
     ]
 
     try:
-        legacy_default = _resolve_top_level_default_provider_config()
-        legacy_ready = _provider_config_is_ready(legacy_default.name, legacy_default)
+        default_prompt_provider_profile_id, default_config = _resolve_top_level_default_provider_config()
+        default_ready = _provider_config_is_ready(default_config.name, default_config)
     except HTTPException:
         legacy_provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
-        legacy_default = _ProviderConfig(
+        default_prompt_provider_profile_id = None
+        default_config = _ProviderConfig(
             name=legacy_provider,
             base_url="",
             api_key="",
             model="",
         )
-        legacy_ready = False
+        default_ready = False
 
     return PromptFactoryCapabilitiesResponse(
-        default_prompt_provider_profile_id=None,
-        default_provider=legacy_default.name,
-        default_model=legacy_default.model,
+        default_prompt_provider_profile_id=default_prompt_provider_profile_id,
+        default_provider=default_config.name,
+        default_model=default_config.model,
         content_mode_defaults=content_mode_defaults,
         openrouter_configured=bool(settings.OPENROUTER_API_KEY),
         xai_configured=bool(settings.XAI_API_KEY),
-        ready=legacy_ready,
+        ready=default_ready,
         recommended_lane="sdxl_illustrious",
         supported_lanes=[lane["key"] for lane in list_workflow_lanes()],
         batch_import_headers=[
@@ -731,8 +745,14 @@ def _resolve_provider_config(
                 provider_config,
                 profile_id=profile_id,
             )
-        provider_config = _resolve_top_level_default_provider_config()
-        return _require_provider_config_ready(provider_config.name, provider_config)
+        default_profile_id, provider_config = _resolve_top_level_default_provider_config(
+            model_override=request.model,
+        )
+        return _require_provider_config_ready(
+            provider_config.name,
+            provider_config,
+            profile_id=default_profile_id,
+        )
     provider = provider.strip().lower()
 
     if provider not in _VALID_PROVIDERS:
