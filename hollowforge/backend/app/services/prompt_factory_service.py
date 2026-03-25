@@ -421,9 +421,36 @@ def _provider_config_for_kind(provider: str, *, model_override: str | None = Non
 
 
 def _provider_config_is_ready(provider_kind: str, config: _ProviderConfig) -> bool:
+    return _provider_config_readiness_issue(provider_kind, config) is None
+
+
+def _provider_config_readiness_issue(provider_kind: str, config: _ProviderConfig) -> str | None:
     if provider_kind == "local_llm":
-        return bool(config.base_url.strip() and config.model.strip())
-    return bool(config.api_key.strip())
+        if not config.base_url.strip():
+            return "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL is not configured"
+        if not config.model.strip():
+            return "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL is not configured"
+        return None
+    if not config.api_key.strip():
+        missing = "XAI_API_KEY" if provider_kind == "xai" else "OPENROUTER_API_KEY"
+        return f"{missing} is not configured"
+    return None
+
+
+def _require_provider_config_ready(
+    provider_kind: str,
+    config: _ProviderConfig,
+    *,
+    profile_id: str | None = None,
+) -> _ProviderConfig:
+    issue = _provider_config_readiness_issue(provider_kind, config)
+    if issue is None:
+        return config
+    prefix = f"Prompt provider profile '{profile_id}'" if profile_id else f"Prompt provider '{provider_kind}'"
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"{prefix} is not ready: {issue}",
+    )
 
 
 def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str | None:
@@ -679,20 +706,38 @@ def _resolve_provider_config(
     profile_id = prompt_provider_profile_id or request.prompt_provider_profile_id
     resolved_content_mode = content_mode or request.content_mode
     if profile_id:
-        return _provider_config_from_profile(
+        provider_kind = get_prompt_provider_profile(
+            profile_id,
+            content_mode=resolved_content_mode,  # type: ignore[arg-type]
+        )["provider_kind"]
+        provider_config = _provider_config_from_profile(
             profile_id,
             content_mode=resolved_content_mode,
             model_override=request.model,
+        )
+        return _require_provider_config_ready(
+            provider_kind,
+            provider_config,
+            profile_id=profile_id,
         )
 
     provider = request.provider
     if provider == "default":
         profile_id = _default_prompt_provider_profile_id(resolved_content_mode)
         if profile_id:
-            return _provider_config_from_profile(
+            provider_kind = get_prompt_provider_profile(
+                profile_id,
+                content_mode=resolved_content_mode,  # type: ignore[arg-type]
+            )["provider_kind"]
+            provider_config = _provider_config_from_profile(
                 profile_id,
                 content_mode=resolved_content_mode,
                 model_override=request.model,
+            )
+            return _require_provider_config_ready(
+                provider_kind,
+                provider_config,
+                profile_id=profile_id,
             )
         return _resolve_top_level_default_provider_config()
     provider = provider.strip().lower()

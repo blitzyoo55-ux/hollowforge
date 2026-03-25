@@ -4,6 +4,7 @@ import json
 import sys
 import types
 
+from fastapi import HTTPException
 import pytest
 
 from app.config import settings
@@ -147,6 +148,32 @@ async def test_generate_prompt_batch_uses_prompt_profile_branch(monkeypatch: pyt
     assert recorder["api_key"] == "local_llm"
     assert response.provider == "local_llm"
     assert response.model == "local-test-model"
+
+
+@pytest.mark.asyncio
+async def test_generate_prompt_batch_rejects_unready_profile_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "legacy-key")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "")
+    monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE", "safe_hosted_grok")
+
+    request = PromptBatchGenerateRequest(
+        concept_brief="test concept",
+        count=1,
+        chunk_size=1,
+        content_mode="all_ages",
+        workflow_lane="auto",
+        provider="default",
+        direction_pass_enabled=False,
+        dedupe=False,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await prompt_factory_service.generate_prompt_batch(request)
+
+    assert exc_info.value.status_code == 500
+    assert "safe_hosted_grok" in str(exc_info.value.detail)
+    assert "XAI_API_KEY is not configured" in str(exc_info.value.detail)
 
 
 def test_prompt_factory_capabilities_follow_legacy_default_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
