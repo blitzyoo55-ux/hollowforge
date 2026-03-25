@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS sequence_runs (
     error_summary TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_blueprint_id) REFERENCES sequence_blueprints(id) ON DELETE CASCADE
+    FOREIGN KEY (sequence_blueprint_id) REFERENCES sequence_blueprints(id) ON DELETE CASCADE,
+    FOREIGN KEY (selected_rough_cut_id) REFERENCES rough_cuts(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sequence_runs_blueprint
@@ -38,6 +39,8 @@ CREATE INDEX IF NOT EXISTS idx_sequence_runs_status
 CREATE TABLE IF NOT EXISTS sequence_shots (
     id TEXT PRIMARY KEY,
     sequence_run_id TEXT NOT NULL,
+    content_mode TEXT NOT NULL,
+    policy_profile_id TEXT NOT NULL,
     shot_no INTEGER NOT NULL,
     beat_type TEXT NOT NULL,
     camera_intent TEXT NOT NULL,
@@ -56,6 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_sequence_shots_run
 CREATE TABLE IF NOT EXISTS shot_anchor_candidates (
     id TEXT PRIMARY KEY,
     sequence_shot_id TEXT NOT NULL,
+    content_mode TEXT NOT NULL,
+    policy_profile_id TEXT NOT NULL,
     generation_id TEXT NOT NULL,
     identity_score REAL,
     location_lock_score REAL,
@@ -75,6 +80,8 @@ CREATE INDEX IF NOT EXISTS idx_shot_anchor_candidates_shot
 CREATE TABLE IF NOT EXISTS shot_clips (
     id TEXT PRIMARY KEY,
     sequence_shot_id TEXT NOT NULL,
+    content_mode TEXT NOT NULL,
+    policy_profile_id TEXT NOT NULL,
     selected_animation_job_id TEXT,
     clip_path TEXT,
     clip_duration_sec REAL,
@@ -93,6 +100,8 @@ CREATE INDEX IF NOT EXISTS idx_shot_clips_shot
 CREATE TABLE IF NOT EXISTS rough_cuts (
     id TEXT PRIMARY KEY,
     sequence_run_id TEXT NOT NULL,
+    content_mode TEXT NOT NULL,
+    policy_profile_id TEXT NOT NULL,
     output_path TEXT,
     timeline_json TEXT,
     total_duration_sec REAL,
