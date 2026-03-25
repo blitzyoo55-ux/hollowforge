@@ -1,0 +1,16 @@
+{
+  "name": "HollowForge",
+  "short_name": "HollowForge",
+  "description": "AI Image Generation Manager",
+  "theme_color": "#7C3AED",
+  "background_color": "#030712",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
