@@ -150,18 +150,35 @@ async def test_generate_prompt_batch_uses_prompt_profile_branch(monkeypatch: pyt
     assert response.model == "local-test-model"
 
 
-@pytest.mark.asyncio
-async def test_generate_prompt_batch_rejects_unready_profile_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_provider_config_rejects_profile_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "legacy-key")
     monkeypatch.setattr(settings, "XAI_API_KEY", "")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
-    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE", "safe_hosted_grok")
+
+    request = PromptBatchGenerateRequest(
+        concept_brief="test concept",
+        provider="default",
+        content_mode="all_ages",
+        prompt_provider_profile_id="adult_local_llm",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
+
+    assert exc_info.value.status_code == 400
+    assert "adult_local_llm" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_generate_prompt_batch_rejects_unready_legacy_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "")
+    monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
 
     request = PromptBatchGenerateRequest(
         concept_brief="test concept",
         count=1,
         chunk_size=1,
-        content_mode="all_ages",
         workflow_lane="auto",
         provider="default",
         direction_pass_enabled=False,
@@ -172,8 +189,8 @@ async def test_generate_prompt_batch_rejects_unready_profile_default(monkeypatch
         await prompt_factory_service.generate_prompt_batch(request)
 
     assert exc_info.value.status_code == 500
-    assert "safe_hosted_grok" in str(exc_info.value.detail)
-    assert "XAI_API_KEY is not configured" in str(exc_info.value.detail)
+    assert "openrouter" in str(exc_info.value.detail)
+    assert "OPENROUTER_API_KEY is not configured" in str(exc_info.value.detail)
 
 
 def test_prompt_factory_capabilities_follow_legacy_default_resolution(monkeypatch: pytest.MonkeyPatch) -> None:

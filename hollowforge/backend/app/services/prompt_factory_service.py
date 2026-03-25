@@ -706,17 +706,13 @@ def _resolve_provider_config(
     profile_id = prompt_provider_profile_id or request.prompt_provider_profile_id
     resolved_content_mode = content_mode or request.content_mode
     if profile_id:
-        provider_kind = get_prompt_provider_profile(
-            profile_id,
-            content_mode=resolved_content_mode,  # type: ignore[arg-type]
-        )["provider_kind"]
         provider_config = _provider_config_from_profile(
             profile_id,
             content_mode=resolved_content_mode,
             model_override=request.model,
         )
         return _require_provider_config_ready(
-            provider_kind,
+            provider_config.name,
             provider_config,
             profile_id=profile_id,
         )
@@ -725,21 +721,18 @@ def _resolve_provider_config(
     if provider == "default":
         profile_id = _default_prompt_provider_profile_id(resolved_content_mode)
         if profile_id:
-            provider_kind = get_prompt_provider_profile(
-                profile_id,
-                content_mode=resolved_content_mode,  # type: ignore[arg-type]
-            )["provider_kind"]
             provider_config = _provider_config_from_profile(
                 profile_id,
                 content_mode=resolved_content_mode,
                 model_override=request.model,
             )
             return _require_provider_config_ready(
-                provider_kind,
+                provider_config.name,
                 provider_config,
                 profile_id=profile_id,
             )
-        return _resolve_top_level_default_provider_config()
+        provider_config = _resolve_top_level_default_provider_config()
+        return _require_provider_config_ready(provider_config.name, provider_config)
     provider = provider.strip().lower()
 
     if provider not in _VALID_PROVIDERS:
