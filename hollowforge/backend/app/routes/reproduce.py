@@ -81,4 +81,10 @@ async def reproduce_generation(
     )
 
     service: GenerationService = request.app.state.generation_service
-    return await service.queue_generation(gen_create)
+    try:
+        return await service.queue_generation(gen_create)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

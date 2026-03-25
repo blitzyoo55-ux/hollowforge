@@ -4,6 +4,7 @@ import {
   addToCollection,
   getCollections,
   toggleFavorite,
+  toggleReadyToGo,
   pinGenerationToDirection,
   type GenerationResponse,
   type PaginatedResponse,
@@ -32,6 +33,7 @@ export default function GalleryGrid({
   const queryClient = useQueryClient()
   const [openCollectionMenuFor, setOpenCollectionMenuFor] = useState<string | null>(null)
   const [pendingFavoriteIds, setPendingFavoriteIds] = useState<Set<string>>(new Set())
+  const [pendingReadyIds, setPendingReadyIds] = useState<Set<string>>(new Set())
 
   const { data: collections } = useQuery({
     queryKey: ['collections'],
@@ -61,10 +63,61 @@ export default function GalleryGrid({
         },
       )
       queryClient.invalidateQueries({ queryKey: ['gallery-recent'] })
+      queryClient.invalidateQueries({ queryKey: ['ready-gallery'] })
       queryClient.invalidateQueries({ queryKey: ['generation', data.id] })
     },
     onSettled: (_data, _error, generationId) => {
       setPendingFavoriteIds((prev) => {
+        const next = new Set(prev)
+        next.delete(generationId)
+        return next
+      })
+    },
+  })
+
+  const readyMutation = useMutation({
+    mutationFn: (generationId: string) => toggleReadyToGo(generationId),
+    onMutate: (generationId: string) => {
+      setPendingReadyIds((prev) => new Set(prev).add(generationId))
+    },
+    onSuccess: (data) => {
+      queryClient.setQueriesData<InfiniteData<PaginatedResponse<GenerationResponse>>>(
+        { queryKey: ['gallery'] },
+        (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === data.id ? { ...item, publish_approved: data.publish_approved } : item,
+              ),
+            })),
+          }
+        },
+      )
+      queryClient.setQueriesData<InfiniteData<PaginatedResponse<GenerationResponse>>>(
+        { queryKey: ['ready-gallery'] },
+        (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === data.id ? { ...item, publish_approved: data.publish_approved } : item,
+              ),
+            })),
+          }
+        },
+      )
+      queryClient.invalidateQueries({ queryKey: ['gallery'] })
+      queryClient.invalidateQueries({ queryKey: ['gallery-recent'] })
+      queryClient.invalidateQueries({ queryKey: ['ready-gallery'] })
+      queryClient.invalidateQueries({ queryKey: ['generation', data.id] })
+    },
+    onSettled: (_data, _error, generationId) => {
+      setPendingReadyIds((prev) => {
         const next = new Set(prev)
         next.delete(generationId)
         return next
@@ -141,9 +194,9 @@ export default function GalleryGrid({
                 : 'border-gray-800 hover:border-violet-500/50'
             }`}
           >
-            {item.thumbnail_path ? (
+            {(item.upscaled_preview_path || item.thumbnail_path) ? (
               <LazyImage
-                src={`/data/${item.thumbnail_path}`}
+                src={`/data/${item.upscaled_preview_path || item.thumbnail_path}`}
                 alt={item.prompt.slice(0, 80)}
               />
             ) : (
@@ -181,6 +234,16 @@ export default function GalleryGrid({
               </div>
             )}
 
+            {item.publish_approved === 1 && (
+              <div
+                className={`absolute bg-emerald-600/85 text-white text-[10px] font-semibold px-2 py-1 rounded-full border border-emerald-300/40 ${
+                  selectionMode || item.upscaled_image_path ? 'top-20 left-3' : 'top-12 left-3'
+                }`}
+              >
+                READY
+              </div>
+            )}
+
             {!selectionMode && (
               <div className="absolute top-3 right-3 z-20 flex items-start gap-2">
                 <button
@@ -201,6 +264,26 @@ export default function GalleryGrid({
                   title="Favorite"
                 >
                   <span className="text-sm leading-none">★</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!pendingReadyIds.has(item.id)) {
+                      readyMutation.mutate(item.id)
+                    }
+                  }}
+                  disabled={pendingReadyIds.has(item.id)}
+                  className={`rounded-lg p-2 border transition-all duration-150 ${
+                    item.publish_approved === 1
+                      ? 'opacity-100 bg-emerald-500/85 border-emerald-300/60 text-white'
+                      : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 bg-black/50 hover:bg-black/70 border-white/20 text-gray-200'
+                  }`}
+                  aria-label="Toggle ready to go"
+                  title={item.publish_approved === 1 ? 'Remove from Ready to Go' : 'Mark as Ready to Go'}
+                >
+                  <span className="text-sm leading-none">✓</span>
                 </button>
 
                 <button

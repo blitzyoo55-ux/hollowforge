@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getLoras, selectLoras } from '../api/client'
 import type { LoraInput } from '../api/client'
@@ -17,16 +18,37 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 const MAX_TOTAL_STRENGTH = 2.4
+const LORA_MIN_STRENGTH = -2.0
+const LORA_MAX_STRENGTH = 2.0
+
+function parseStrength(value: string): number {
+  const parsed = Number.parseFloat(value)
+  if (Number.isNaN(parsed)) return 0
+  return Math.max(LORA_MIN_STRENGTH, Math.min(LORA_MAX_STRENGTH, parsed))
+}
 
 export default function LoraSelector({ selected, onChange, moods, checkpoint }: LoraSelectorProps) {
   const { data: allLoras, isLoading } = useQuery({
-    queryKey: ['loras'],
-    queryFn: getLoras,
+    queryKey: ['loras', checkpoint],
+    queryFn: () => getLoras(checkpoint || undefined),
   })
 
-  const totalStrength = selected.reduce((sum, l) => sum + l.strength, 0)
-  const strengthPercent = Math.min((totalStrength / MAX_TOTAL_STRENGTH) * 100, 100)
-  const isOverLimit = totalStrength > MAX_TOTAL_STRENGTH
+  const availableSet = useMemo(() => {
+    return new Set((allLoras ?? []).map((l) => l.filename))
+  }, [allLoras])
+
+  useEffect(() => {
+    if (!checkpoint || availableSet.size === 0) return
+    const filtered = selected.filter((lora) => availableSet.has(lora.filename))
+    if (filtered.length !== selected.length) {
+      onChange(filtered)
+    }
+  }, [checkpoint, selected, availableSet, onChange])
+
+  const totalAbsoluteStrength = selected.reduce((sum, l) => sum + Math.abs(l.strength), 0)
+  const netStrength = selected.reduce((sum, l) => sum + l.strength, 0)
+  const strengthPercent = Math.min((totalAbsoluteStrength / MAX_TOTAL_STRENGTH) * 100, 100)
+  const isOverLimit = totalAbsoluteStrength > MAX_TOTAL_STRENGTH
 
   const toggleLora = (filename: string, defaultStrength: number, category: string) => {
     const exists = selected.find((l) => l.filename === filename)
@@ -73,13 +95,25 @@ export default function LoraSelector({ selected, onChange, moods, checkpoint }: 
         )}
       </div>
 
+      <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2">
+        <p className="text-xs text-gray-400">
+          {checkpoint
+            ? `Showing ${(allLoras ?? []).length} compatible LoRAs for ${checkpoint}`
+            : 'Select a checkpoint first to auto-filter compatible LoRAs.'}
+        </p>
+      </div>
+
       {/* Strength indicator bar */}
       <div className="space-y-1">
         <div className="flex justify-between text-xs">
-          <span className="text-gray-500">Total strength</span>
+          <span className="text-gray-500">Total |strength|</span>
           <span className={isOverLimit ? 'text-red-400' : 'text-gray-400'}>
-            {totalStrength.toFixed(2)} / {MAX_TOTAL_STRENGTH}
+            {totalAbsoluteStrength.toFixed(2)} / {MAX_TOTAL_STRENGTH}
           </span>
+        </div>
+        <div className="flex justify-between text-[11px] text-gray-500">
+          <span>Net: {netStrength >= 0 ? '+' : ''}{netStrength.toFixed(2)}</span>
+          <span>Range: {LORA_MIN_STRENGTH.toFixed(1)} ~ {LORA_MAX_STRENGTH.toFixed(1)}</span>
         </div>
         <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
           <div
@@ -94,7 +128,11 @@ export default function LoraSelector({ selected, onChange, moods, checkpoint }: 
       {isLoading ? (
         <div className="text-sm text-gray-500 py-4">Loading LoRAs...</div>
       ) : !allLoras || allLoras.length === 0 ? (
-        <div className="text-sm text-gray-500 py-4">No LoRAs available</div>
+        <div className="text-sm text-gray-500 py-4">
+          {checkpoint
+            ? 'No compatible LoRAs found for this checkpoint'
+            : 'No LoRAs available'}
+        </div>
       ) : (
         <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
           {Object.entries(grouped).map(([category, loras]) => (
@@ -130,18 +168,29 @@ export default function LoraSelector({ selected, onChange, moods, checkpoint }: 
                         </div>
                       </div>
                       {isSelected && selectedLora && (
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={selectedLora.strength}
-                          onChange={(e) => updateStrength(lora.filename, parseFloat(e.target.value))}
-                          className="w-20 accent-violet-500"
-                        />
+                        <>
+                          <input
+                            type="range"
+                            min={LORA_MIN_STRENGTH}
+                            max={LORA_MAX_STRENGTH}
+                            step={0.05}
+                            value={selectedLora.strength}
+                            onChange={(e) => updateStrength(lora.filename, parseStrength(e.target.value))}
+                            className="w-20 accent-violet-500"
+                          />
+                          <input
+                            type="number"
+                            min={LORA_MIN_STRENGTH}
+                            max={LORA_MAX_STRENGTH}
+                            step={0.05}
+                            value={selectedLora.strength}
+                            onChange={(e) => updateStrength(lora.filename, parseStrength(e.target.value))}
+                            className="w-16 bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-xs text-gray-200 font-mono"
+                          />
+                        </>
                       )}
                       {isSelected && selectedLora && (
-                        <span className="text-xs text-gray-400 font-mono w-10 text-right">
+                        <span className="text-xs text-gray-400 font-mono w-12 text-right">
                           {selectedLora.strength.toFixed(2)}
                         </span>
                       )}

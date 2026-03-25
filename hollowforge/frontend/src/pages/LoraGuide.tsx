@@ -62,19 +62,10 @@ export default function LoraGuide() {
     staleTime: 120_000,
   })
 
-  useEffect(() => {
-    if (!data?.checkpoints.length) return
-    if (!selectedCheckpoint) {
-      setSelectedCheckpoint(data.active_checkpoint ?? data.checkpoints[0]!.name)
-      return
-    }
-    const exists = data.checkpoints.some((cp) => cp.name === selectedCheckpoint)
-    if (!exists) {
-      setSelectedCheckpoint(data.checkpoints[0]!.name)
-    }
-  }, [data, selectedCheckpoint])
-
-  const activeCheckpoint = selectedCheckpoint || data?.checkpoints[0]?.name || ''
+  const activeCheckpoint =
+    data?.checkpoints.some((cp) => cp.name === selectedCheckpoint)
+      ? selectedCheckpoint
+      : (data?.active_checkpoint ?? data?.checkpoints[0]?.name ?? '')
   const activeCheckpointInfo = useMemo(
     () => data?.checkpoints.find((cp) => cp.name === activeCheckpoint),
     [data, activeCheckpoint],
@@ -150,10 +141,9 @@ export default function LoraGuide() {
     [rankedLoras],
   )
 
-  const generatedAtLabel = useMemo(() => {
-    if (!data?.generated_at) return '-'
-    return new Date(data.generated_at).toLocaleString()
-  }, [data?.generated_at])
+  const generatedAtLabel = data?.generated_at
+    ? new Date(data.generated_at).toLocaleString()
+    : '-'
 
   if (isLoading) {
     return (

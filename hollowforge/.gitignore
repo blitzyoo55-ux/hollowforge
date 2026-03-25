@@ -2,6 +2,9 @@
 backend/.venv/
 __pycache__/
 *.pyc
+.omc/
+backend/.omc/
+frontend/.omc/
 
 # Node
 frontend/node_modules/
@@ -11,9 +14,30 @@ frontend/dist/
 data/images/
 data/thumbs/
 data/workflows/
+data/diagnostics/
+data/validation/
 data/hollowforge.db
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backups/
+backend/hollowforge.db
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+backend/logs/
+lab451-animation-worker/data/*.db
+lab451-animation-worker/data/*.db-shm
+lab451-animation-worker/data/*.db-wal
+output/
+tmp_frames/
+*.pid
+*.log
 
 # Secrets
+backend/.env
+frontend/.env
+lab451-animation-worker/.env
 deploy/cloudflared/.env.cloudflared
 deploy/oauth2-proxy/.env.oauth2-proxy
 

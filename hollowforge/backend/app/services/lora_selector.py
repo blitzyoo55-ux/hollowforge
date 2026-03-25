@@ -8,6 +8,7 @@ from typing import Any
 import aiosqlite
 
 from app.models import LoraInput
+from app.services.model_compatibility import is_checkpoint_compatible
 
 # Category slot limits
 CATEGORY_SLOTS: dict[str, int] = {
@@ -35,6 +36,7 @@ async def select_by_moods(
     db: aiosqlite.Connection,
     moods: list[str],
     checkpoint: str | None = None,
+    available_filenames: set[str] | None = None,
 ) -> tuple[list[LoraInput], str]:
     """Select LoRAs based on mood keywords.
 
@@ -84,12 +86,15 @@ async def select_by_moods(
     rows = await cursor.fetchall()
     profile_map: dict[str, dict[str, Any]] = {r["id"]: r for r in rows}
 
-    # Filter by checkpoint compatibility if provided
-    if checkpoint:
-        for pid, prof in list(profile_map.items()):
-            compat = _parse_json(prof.get("compatible_checkpoints"))
-            if compat and checkpoint not in compat:
-                del profile_map[pid]
+    # Filter by availability + checkpoint compatibility if provided
+    for pid, prof in list(profile_map.items()):
+        if available_filenames and prof["filename"] not in available_filenames:
+            del profile_map[pid]
+            continue
+        if checkpoint and not is_checkpoint_compatible(
+            prof.get("compatible_checkpoints"), checkpoint
+        ):
+            del profile_map[pid]
 
     # 4. Fill category slots
     category_counts: dict[str, int] = {}

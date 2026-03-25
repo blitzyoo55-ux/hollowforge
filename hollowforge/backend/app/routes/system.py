@@ -2,23 +2,66 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
+from app.config import settings
 from app.db import get_db
-from app.models import ComfyUIConfigUpdate, SystemHealth
+from app.models import (
+    ComfyUIConfigUpdate,
+    PromptFactoryCheckpointPreferencesReplaceRequest,
+    PromptFactoryCheckpointPreferencesResponse,
+    PromptFactoryCheckpointPreferenceEntryResponse,
+    SystemHealth,
+    WatermarkSettings,
+    WatermarkSettingsUpdate,
+)
+from app.services.prompt_factory_service import load_prompt_factory_checkpoint_preferences
 from app.services.comfyui_client import ComfyUIClient
 from app.services.model_compatibility import (
     build_lora_compatibility_snapshot,
+    clear_model_compatibility_cache,
     dump_compatible_checkpoints,
+)
+from app.services.workflow_registry import get_workflow_lane_spec
+from app.services.workflow_builder import QUALITY_UPSCALE_REQUIRED_NODES
+from app.services.upscaler import (
+    classify_checkpoint_upscale_profile,
+    list_local_upscale_models,
+    recommend_upscale_mode,
+    recommend_upscale_model,
 )
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
 _NON_IMAGE_ARCHES = {"WAN-I2V-14B", "SVD-XT"}
+_PROMPT_FACTORY_PREFERENCE_MODE_RANK = {
+    "default": 0,
+    "prefer": 1,
+    "force": 2,
+    "exclude": -1,
+}
+
+
+async def _fetch_model_inventory(
+    client: ComfyUIClient,
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    checkpoints, samplers, schedulers, lora_files = await asyncio.gather(
+        client.get_models(),
+        client.get_samplers(),
+        client.get_schedulers(),
+        client.get_lora_files(),
+    )
+    return checkpoints, samplers, schedulers, lora_files
+
+
+def _display_name_from_lora_filename(filename: str) -> str:
+    display_name = filename.removesuffix(".safetensors")
+    return display_name.replace("_", " ")
 
 
 def _pick_first_available(
@@ -31,6 +74,94 @@ def _pick_first_available(
     if available:
         return available[0]
     return fallback
+
+
+def _normalize_prompt_factory_preference_entry(
+    checkpoint: str,
+    *,
+    available: bool,
+    architecture: str | None,
+    favorite_count: int,
+    mode: str = "default",
+    priority_boost: int = 0,
+    notes: str | None = None,
+    updated_at: str | None = None,
+) -> PromptFactoryCheckpointPreferenceEntryResponse:
+    return PromptFactoryCheckpointPreferenceEntryResponse(
+        checkpoint=checkpoint,
+        available=available,
+        architecture=architecture,
+        favorite_count=favorite_count,
+        mode=mode if mode in _PROMPT_FACTORY_PREFERENCE_MODE_RANK else "default",
+        priority_boost=priority_boost,
+        notes=notes,
+        updated_at=updated_at,
+    )
+
+
+async def _load_prompt_factory_favorite_counts() -> dict[str, int]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT checkpoint, COUNT(*) AS cnt
+            FROM generations
+            WHERE is_favorite = 1
+            GROUP BY checkpoint
+            """
+        )
+        rows = await cursor.fetchall()
+
+    favorite_counts: dict[str, int] = {}
+    for row in rows:
+        checkpoint = row.get("checkpoint")
+        if isinstance(checkpoint, str) and checkpoint.strip():
+            favorite_counts[checkpoint.strip()] = int(row.get("cnt") or 0)
+    return favorite_counts
+
+
+async def _build_prompt_factory_checkpoint_preferences_response(
+    request: Request,
+) -> PromptFactoryCheckpointPreferencesResponse:
+    client: ComfyUIClient = request.app.state.comfyui_client
+    checkpoints = await client.get_models()
+    checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
+    image_checkpoints, _ = _split_checkpoints_by_image_capability(
+        checkpoints, checkpoint_arches
+    )
+    available_checkpoints = image_checkpoints if image_checkpoints else checkpoints
+    available_checkpoint_set = set(available_checkpoints)
+    favorite_counts = await _load_prompt_factory_favorite_counts()
+    preferences = await load_prompt_factory_checkpoint_preferences()
+
+    checkpoint_names = available_checkpoint_set | set(preferences.keys())
+    entries: list[PromptFactoryCheckpointPreferenceEntryResponse] = []
+    for checkpoint in checkpoint_names:
+        preference = preferences.get(checkpoint)
+        entries.append(
+            _normalize_prompt_factory_preference_entry(
+                checkpoint,
+                available=checkpoint in available_checkpoint_set,
+                architecture=checkpoint_arches.get(checkpoint),
+                favorite_count=favorite_counts.get(checkpoint, 0),
+                mode=preference.mode if preference else "default",
+                priority_boost=preference.priority_boost if preference else 0,
+                notes=preference.notes if preference else None,
+                updated_at=preference.updated_at if preference else None,
+            )
+        )
+
+    entries.sort(
+        key=lambda entry: (
+            -_PROMPT_FACTORY_PREFERENCE_MODE_RANK.get(entry.mode, 0),
+            -entry.priority_boost,
+            -entry.favorite_count,
+            entry.checkpoint.lower(),
+        )
+    )
+    return PromptFactoryCheckpointPreferencesResponse(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        entries=entries,
+    )
 
 
 def _quality_profile_for_arch(
@@ -85,18 +216,23 @@ def _quality_profile_for_arch(
         }
 
     # Default: SDXL-family and unknown image models
+    sdxl_defaults = get_workflow_lane_spec("sdxl_illustrious").defaults
     return {
         "applicable": True,
-        "profile_name": "SDXL Quality Balanced",
-        "description": "Benchmark-aligned defaults for SDXL-based checkpoints.",
+        "profile_name": "SDXL Illustrious Production",
+        "description": "Dual-encoder production defaults aligned to HollowForge favorites and current SDXL illustration output.",
         "params": {
-            "steps": 28,
-            "cfg": 7.0,
-            "width": 832,
-            "height": 1216,
-            "sampler": _pick_first_available(["euler", "dpmpp_2m", "euler_ancestral"], samplers, "euler"),
+            "steps": sdxl_defaults["steps"],
+            "cfg": sdxl_defaults["cfg"],
+            "width": sdxl_defaults["width"],
+            "height": sdxl_defaults["height"],
+            "sampler": _pick_first_available(
+                ["euler_ancestral", "euler", "dpmpp_2m"],
+                samplers,
+                "euler_ancestral",
+            ),
             "scheduler": _pick_first_available(["normal", "karras"], schedulers, "normal"),
-            "clip_skip": None,
+            "clip_skip": sdxl_defaults["clip_skip"],
         },
     }
 
@@ -199,16 +335,16 @@ def _prompt_templates_for_arch(architecture: str) -> dict[str, Any]:
     # Default: SDXL-family and unknown image checkpoints
     positive = [
         _prompt_template(
-            "sdxl-cinematic-portrait",
-            "SDXL Cinematic Portrait",
-            "masterpiece, best quality, {subject}, {pose}, {scene}, cinematic lighting, detailed skin texture, depth of field, high contrast, ultra detailed",
-            "Balanced SDXL baseline for character-focused outputs.",
+            "sdxl-illustrious-core",
+            "SDXL Illustrious Core",
+            "masterpiece, best quality, 1girl, solo, {subject}, {outfit}, {pose}, {scene}, detailed eyes, glossy materials, controlled composition, dramatic lighting, sharp focus",
+            "Tag-stack baseline for SDXL illustration production.",
         ),
         _prompt_template(
-            "sdxl-editorial-fashion",
-            "SDXL Editorial Fashion",
-            "masterpiece, best quality, editorial photo of {subject}, {outfit}, studio softbox light, clean composition, realistic materials, premium color grading",
-            "Useful for material and outfit detail with controlled background.",
+            "sdxl-lab451-editorial",
+            "SDXL Lab-451 Editorial",
+            "masterpiece, best quality, 1girl, solo, lab-451, {subject}, {outfit}, {scene}, containment design, reflective surfaces, restrained palette, editorial framing, premium material detail",
+            "Production template for Lab-451 themed editorial variants.",
         ),
     ]
     negative = [
@@ -226,13 +362,13 @@ def _prompt_templates_for_arch(architecture: str) -> dict[str, Any]:
         ),
     ]
     return {
-        "default_positive_template_id": "sdxl-cinematic-portrait",
+        "default_positive_template_id": "sdxl-illustrious-core",
         "default_negative_template_id": "sdxl-cleanup",
         "positive_templates": positive,
         "negative_templates": negative,
         "guidance": [
-            "SDXL handles richer descriptors than SD1.5 but still benefits from concise structure.",
-            "Set composition early, then append style/material details at the end.",
+            "Use concise comma-separated tag stacks for Illustrious / anime SDXL checkpoints.",
+            "Lead with subject and composition, then append material and environment cues.",
         ],
     }
 
@@ -251,14 +387,28 @@ def _split_checkpoints_by_image_capability(
     return image, non_image
 
 
+def _row_to_watermark_settings(row: dict[str, Any]) -> WatermarkSettings:
+    return WatermarkSettings(
+        id=row.get("id", 1),
+        enabled=bool(row.get("enabled", 0)),
+        text=row.get("text") or "Lab-XX",
+        position=row.get("position") or "bottom-right",
+        opacity=row.get("opacity") if row.get("opacity") is not None else 0.6,
+        font_size=row.get("font_size") if row.get("font_size") is not None else 36,
+        padding=row.get("padding") if row.get("padding") is not None else 20,
+        color=row.get("color") or "#FFFFFF",
+        updated_at=row.get("updated_at")
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
+
+
 @router.post("/sync")
 async def sync_models(request: Request) -> dict:
     """Refresh models/LoRAs from ComfyUI and return current lists."""
     client: ComfyUIClient = request.app.state.comfyui_client
-    checkpoints = await client.get_models()
-    samplers = await client.get_samplers()
-    schedulers = await client.get_schedulers()
-    lora_files = await client.get_lora_files()
+    client.invalidate_metadata_cache()
+    clear_model_compatibility_cache()
+    checkpoints, samplers, schedulers, lora_files = await _fetch_model_inventory(client)
     checkpoint_arches, lora_analysis = build_lora_compatibility_snapshot(
         checkpoints, lora_files
     )
@@ -270,64 +420,70 @@ async def sync_models(request: Request) -> dict:
     compatibility_updated = 0
     incompatible_loras = 0
     async with get_db() as db:
-        cursor = await db.execute("SELECT filename FROM lora_profiles")
+        cursor = await db.execute(
+            "SELECT filename, compatible_checkpoints FROM lora_profiles"
+        )
         rows = await cursor.fetchall()
         existing_filenames = {row["filename"] for row in rows}
-
-        missing_filenames = [
-            filename for filename in lora_files if filename not in existing_filenames
-        ]
+        existing_compatibility = {
+            row["filename"]: row.get("compatible_checkpoints")
+            for row in rows
+        }
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        for filename in missing_filenames:
-            display_name = filename
-            if display_name.endswith(".safetensors"):
-                display_name = display_name[: -len(".safetensors")]
-            display_name = display_name.replace("_", " ")
-            analysis = lora_analysis.get(filename)
-            category = analysis.category if analysis else "style"
-            default_strength = (
-                analysis.default_strength if analysis else 0.5
-            )
+        insert_records: list[tuple[str, str, str, str, float, str | None, str]] = []
+        update_records: list[tuple[str | None, str]] = []
 
-            await db.execute(
-                """
-                INSERT INTO lora_profiles
-                    (id, display_name, filename, category, default_strength, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
+        for filename in lora_files:
+            analysis = lora_analysis.get(filename)
+            compatible = analysis.compatible_checkpoints if analysis else list(checkpoints)
+            compatible_payload = dump_compatible_checkpoints(compatible)
+            if not compatible:
+                incompatible_loras += 1
+
+            if filename in existing_filenames:
+                if existing_compatibility.get(filename) != compatible_payload:
+                    update_records.append((compatible_payload, filename))
+                    compatibility_updated += 1
+                continue
+
+            category = analysis.category if analysis else "style"
+            default_strength = analysis.default_strength if analysis else 0.5
+            insert_records.append(
                 (
                     str(uuid4()),
-                    display_name,
+                    _display_name_from_lora_filename(filename),
                     filename,
                     category,
                     default_strength,
+                    compatible_payload,
                     now,
-                ),
+                )
             )
             new_loras += 1
-            existing_filenames.add(filename)
+            compatibility_updated += 1
 
-        for filename in lora_files:
-            if filename not in existing_filenames:
-                continue
-            analysis = lora_analysis.get(filename)
-            compatible = (
-                analysis.compatible_checkpoints if analysis else list(checkpoints)
+        if insert_records:
+            await db.executemany(
+                """
+                INSERT INTO lora_profiles
+                    (id, display_name, filename, category, default_strength, compatible_checkpoints, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                insert_records,
             )
-            await db.execute(
+
+        if update_records:
+            await db.executemany(
                 """
                 UPDATE lora_profiles
                 SET compatible_checkpoints = ?
                 WHERE filename = ?
                 """,
-                (dump_compatible_checkpoints(compatible), filename),
+                update_records,
             )
-            compatibility_updated += 1
-            if not compatible:
-                incompatible_loras += 1
 
-        if new_loras > 0 or compatibility_updated > 0:
+        if insert_records or update_records:
             await db.commit()
 
     return {
@@ -353,11 +509,20 @@ async def health_check(request: Request) -> SystemHealth:
 
     db_ok = False
     total_generations = 0
+    completed_generations = 0
+    failed_generations = 0
+    cancelled_generations = 0
     try:
         async with get_db() as db:
-            cursor = await db.execute("SELECT COUNT(*) AS cnt FROM generations")
-            row = await cursor.fetchone()
-            total_generations = row["cnt"] if row else 0
+            cursor = await db.execute(
+                "SELECT status, COUNT(*) AS cnt FROM generations GROUP BY status"
+            )
+            rows = await cursor.fetchall()
+            counts = {row["status"]: row["cnt"] for row in rows}
+            total_generations = sum(counts.values())
+            completed_generations = counts.get("completed", 0)
+            failed_generations = counts.get("failed", 0)
+            cancelled_generations = counts.get("cancelled", 0)
             db_ok = True
     except Exception:
         pass
@@ -368,6 +533,9 @@ async def health_check(request: Request) -> SystemHealth:
         comfyui_connected=comfyui_ok,
         db_ok=db_ok,
         total_generations=total_generations,
+        completed_generations=completed_generations,
+        failed_generations=failed_generations,
+        cancelled_generations=cancelled_generations,
     )
 
 
@@ -377,6 +545,57 @@ async def comfyui_status(request: Request) -> dict:
     client: ComfyUIClient = request.app.state.comfyui_client
     connected = await client.check_health()
     return {"connected": connected, "url": client.base_url}
+
+
+@router.get("/watermark", response_model=WatermarkSettings)
+async def get_watermark_settings() -> WatermarkSettings:
+    """Fetch current watermark configuration."""
+    async with get_db() as db:
+        await db.execute("INSERT OR IGNORE INTO watermark_settings (id) VALUES (1)")
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT * FROM watermark_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        return _row_to_watermark_settings({})
+    return _row_to_watermark_settings(row)
+
+
+@router.post("/watermark", response_model=WatermarkSettings)
+async def update_watermark_settings(
+    payload: WatermarkSettingsUpdate,
+) -> WatermarkSettings:
+    """Update watermark configuration."""
+    text = payload.text.strip()
+    async with get_db() as db:
+        await db.execute("INSERT OR IGNORE INTO watermark_settings (id) VALUES (1)")
+        await db.execute(
+            """UPDATE watermark_settings
+               SET enabled = ?, text = ?, position = ?, opacity = ?,
+                   font_size = ?, padding = ?, color = ?,
+                   updated_at = datetime('now')
+               WHERE id = 1""",
+            (
+                int(payload.enabled),
+                text or "Lab-XX",
+                payload.position,
+                payload.opacity,
+                payload.font_size,
+                payload.padding,
+                payload.color,
+            ),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT * FROM watermark_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        return _row_to_watermark_settings({})
+    return _row_to_watermark_settings(row)
 
 
 @router.post("/comfyui")
@@ -396,10 +615,7 @@ async def update_comfyui_url(payload: ComfyUIConfigUpdate, request: Request) -> 
 async def list_models(request: Request) -> dict:
     """List available checkpoint models, samplers, and schedulers from ComfyUI."""
     client: ComfyUIClient = request.app.state.comfyui_client
-    checkpoints = await client.get_models()
-    samplers = await client.get_samplers()
-    schedulers = await client.get_schedulers()
-    lora_files = await client.get_lora_files()
+    checkpoints, samplers, schedulers, lora_files = await _fetch_model_inventory(client)
     checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
     image_checkpoints, non_image_checkpoints = _split_checkpoints_by_image_capability(
         checkpoints, checkpoint_arches
@@ -415,21 +631,128 @@ async def list_models(request: Request) -> dict:
     }
 
 
+@router.get(
+    "/prompt-factory-checkpoint-preferences",
+    response_model=PromptFactoryCheckpointPreferencesResponse,
+)
+async def get_prompt_factory_checkpoint_preferences(
+    request: Request,
+) -> PromptFactoryCheckpointPreferencesResponse:
+    return await _build_prompt_factory_checkpoint_preferences_response(request)
+
+
+@router.put(
+    "/prompt-factory-checkpoint-preferences",
+    response_model=PromptFactoryCheckpointPreferencesResponse,
+)
+async def replace_prompt_factory_checkpoint_preferences(
+    payload: PromptFactoryCheckpointPreferencesReplaceRequest,
+    request: Request,
+) -> PromptFactoryCheckpointPreferencesResponse:
+    seen: set[str] = set()
+    normalized_rows: list[tuple[str, str, int, str | None, str]] = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    for entry in payload.entries:
+        checkpoint = entry.checkpoint.strip()
+        if not checkpoint:
+            continue
+        if checkpoint in seen:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate checkpoint preference payload: {checkpoint}",
+            )
+        seen.add(checkpoint)
+
+        notes = entry.notes.strip() if isinstance(entry.notes, str) else None
+        if notes == "":
+            notes = None
+        if entry.mode == "default" and entry.priority_boost == 0 and notes is None:
+            continue
+        normalized_rows.append(
+            (
+                checkpoint,
+                entry.mode,
+                entry.priority_boost,
+                notes,
+                now,
+            )
+        )
+
+    async with get_db() as db:
+        await db.execute("DELETE FROM prompt_factory_checkpoint_preferences")
+        if normalized_rows:
+            await db.executemany(
+                """
+                INSERT INTO prompt_factory_checkpoint_preferences
+                    (checkpoint, mode, priority_boost, notes, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                normalized_rows,
+            )
+        await db.commit()
+
+    return await _build_prompt_factory_checkpoint_preferences_response(request)
+
+
 @router.get("/upscale-models")
-async def list_upscale_models(request: Request) -> dict:
-    """List available upscaler models from ComfyUI."""
+async def list_upscale_models(request: Request, checkpoint: str | None = None) -> dict:
+    """List available upscaler models from ComfyUI and local fallback paths."""
     client: ComfyUIClient = request.app.state.comfyui_client
-    upscale_models = await client.get_upscale_models()
-    return {"upscale_models": upscale_models}
+    local_models = list_local_upscale_models()
+    comfyui_models, quality_missing_nodes = await asyncio.gather(
+        client.get_upscale_models(),
+        client.missing_nodes(QUALITY_UPSCALE_REQUIRED_NODES)
+        if settings.UPSCALE_QUALITY_ENABLED
+        else asyncio.sleep(0, result=list(QUALITY_UPSCALE_REQUIRED_NODES)),
+    )
+    combined = sorted(
+        set(comfyui_models) | set(local_models),
+        key=str.lower,
+    )
+    recommended_model, recommended_profile = recommend_upscale_model(
+        checkpoint,
+        combined,
+    )
+    recommended_mode, recommended_mode_reason = recommend_upscale_mode(checkpoint)
+    return {
+        "upscale_models": combined,
+        "comfyui_models": sorted(set(comfyui_models), key=str.lower),
+        "local_models": sorted(set(local_models), key=str.lower),
+        "recommended_model": recommended_model,
+        "recommended_profile": (
+            recommended_profile
+            if checkpoint
+            else classify_checkpoint_upscale_profile(None)
+        ),
+        "recommended_checkpoint": checkpoint,
+        "recommended_mode": recommended_mode,
+        "recommended_mode_reason": recommended_mode_reason,
+        "safe_upscale_enabled": True,
+        "safe_upscale_engine": (
+            "comfyui" if settings.UPSCALE_SAFE_USE_COMFYUI else "cpu-fallback"
+        ),
+        "quality_upscale_enabled": settings.UPSCALE_QUALITY_ENABLED
+        and not quality_missing_nodes,
+        "quality_required_nodes": list(QUALITY_UPSCALE_REQUIRED_NODES),
+        "quality_missing_nodes": quality_missing_nodes,
+        "quality_upscale_reason": (
+            None
+            if settings.UPSCALE_QUALITY_ENABLED and not quality_missing_nodes
+            else (
+                "Quality upscale is disabled until the staged ComfyUI workflow is validated"
+                if not settings.UPSCALE_QUALITY_ENABLED
+                else "Missing ComfyUI nodes: " + ", ".join(quality_missing_nodes)
+            )
+        ),
+    }
 
 
 @router.get("/quality-profiles")
 async def list_quality_profiles(request: Request) -> dict:
     """Return checkpoint-specific recommended quality parameter profiles."""
     client: ComfyUIClient = request.app.state.comfyui_client
-    checkpoints = await client.get_models()
-    samplers = await client.get_samplers()
-    schedulers = await client.get_schedulers()
+    checkpoints, samplers, schedulers, _ = await _fetch_model_inventory(client)
     checkpoint_arches, _ = build_lora_compatibility_snapshot(checkpoints, [])
 
     profiles: dict[str, dict[str, Any]] = {}

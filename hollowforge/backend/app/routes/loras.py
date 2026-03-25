@@ -5,16 +5,25 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, List
 
-from fastapi import APIRouter, Query, Request, status
+import aiosqlite
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.db import get_db
-from app.models import LoraProfileResponse, MoodSelectRequest, MoodSelectResponse
+from app.models import (
+    LoraProfileCreate,
+    LoraProfileResponse,
+    LoraProfileUpdate,
+    MoodSelectRequest,
+    MoodSelectResponse,
+)
 from app.services.lora_selector import MAX_TOTAL_STRENGTH, select_by_moods
 from app.services.model_compatibility import (
     build_lora_compatibility_snapshot,
+    dump_compatible_checkpoints,
     is_checkpoint_compatible,
     parse_compatible_checkpoints,
 )
@@ -184,6 +193,22 @@ def _get_cache_ttl_sec(cache_key: str) -> int:
     return max(0, int(expires_at - time.monotonic()))
 
 
+def _row_to_lora_response(row: dict[str, Any]) -> LoraProfileResponse:
+    return LoraProfileResponse(
+        id=row["id"],
+        display_name=row["display_name"],
+        filename=row["filename"],
+        category=row["category"],
+        default_strength=row["default_strength"],
+        tags=row.get("tags"),
+        notes=row.get("notes"),
+        compatible_checkpoints=parse_compatible_checkpoints(
+            row.get("compatible_checkpoints")
+        ),
+        created_at=row["created_at"],
+    )
+
+
 @router.get("", response_model=List[LoraProfileResponse])
 async def list_loras(
     request: Request,
@@ -207,22 +232,64 @@ async def list_loras(
             row.get("compatible_checkpoints"), checkpoint
         ):
             continue
-        result.append(
-            LoraProfileResponse(
-                id=row["id"],
-                display_name=row["display_name"],
-                filename=row["filename"],
-                category=row["category"],
-                default_strength=row["default_strength"],
-                tags=row.get("tags"),
-                notes=row.get("notes"),
-                compatible_checkpoints=parse_compatible_checkpoints(
-                    row.get("compatible_checkpoints")
-                ),
-                created_at=row["created_at"],
-            )
-        )
+        result.append(_row_to_lora_response(row))
     return result
+
+
+@router.post("", response_model=LoraProfileResponse, status_code=status.HTTP_201_CREATED)
+async def create_lora(payload: LoraProfileCreate) -> LoraProfileResponse:
+    display_name = payload.display_name.strip()
+    filename = payload.filename.strip()
+    if not display_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="display_name cannot be empty",
+        )
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="filename cannot be empty",
+        )
+
+    lora_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    async with get_db() as db:
+        try:
+            await db.execute(
+                """
+                INSERT INTO lora_profiles
+                (id, display_name, filename, category, default_strength, tags, notes, compatible_checkpoints, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lora_id,
+                    display_name,
+                    filename,
+                    payload.category,
+                    payload.default_strength,
+                    payload.tags.strip() if payload.tags is not None else None,
+                    payload.notes.strip() if payload.notes is not None else None,
+                    dump_compatible_checkpoints(payload.compatible_checkpoints),
+                    now,
+                ),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"LoRA filename '{payload.filename}' already exists",
+            ) from exc
+
+        cursor = await db.execute("SELECT * FROM lora_profiles WHERE id = ?", (lora_id,))
+        row = await cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load created LoRA profile",
+        )
+    return _row_to_lora_response(row)
 
 
 @router.post(
@@ -605,3 +672,108 @@ async def get_lora_guide(
             "ttl_sec": _get_cache_ttl_sec(cache_key),
         },
     }
+
+
+@router.get("/{lora_id}", response_model=LoraProfileResponse)
+async def get_lora(lora_id: str) -> LoraProfileResponse:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM lora_profiles WHERE id = ?", (lora_id,))
+        row = await cursor.fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"LoRA profile {lora_id} not found",
+        )
+    return _row_to_lora_response(row)
+
+
+@router.put("/{lora_id}", response_model=LoraProfileResponse)
+async def update_lora(lora_id: str, payload: LoraProfileUpdate) -> LoraProfileResponse:
+    updates_in = payload.model_dump(exclude_unset=True)
+    updates: dict[str, Any] = {}
+
+    if "display_name" in updates_in:
+        display_name = str(updates_in["display_name"]).strip()
+        if not display_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="display_name cannot be empty",
+            )
+        updates["display_name"] = display_name
+    if "category" in updates_in:
+        updates["category"] = updates_in["category"]
+    if "default_strength" in updates_in:
+        updates["default_strength"] = updates_in["default_strength"]
+    if "tags" in updates_in:
+        updates["tags"] = (
+            str(updates_in["tags"]).strip()
+            if updates_in["tags"] is not None
+            else None
+        )
+    if "notes" in updates_in:
+        updates["notes"] = (
+            str(updates_in["notes"]).strip()
+            if updates_in["notes"] is not None
+            else None
+        )
+    if "compatible_checkpoints" in updates_in:
+        updates["compatible_checkpoints"] = dump_compatible_checkpoints(
+            updates_in["compatible_checkpoints"]
+        )
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM lora_profiles WHERE id = ?", (lora_id,))
+        if await cursor.fetchone() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"LoRA profile {lora_id} not found",
+            )
+
+        if updates:
+            set_clause = ", ".join(f"{key} = ?" for key in updates)
+            values = list(updates.values()) + [lora_id]
+            await db.execute(
+                f"UPDATE lora_profiles SET {set_clause} WHERE id = ?",
+                values,
+            )
+            await db.commit()
+
+        cursor = await db.execute("SELECT * FROM lora_profiles WHERE id = ?", (lora_id,))
+        row = await cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load updated LoRA profile",
+        )
+    return _row_to_lora_response(row)
+
+
+@router.delete("/{lora_id}")
+async def delete_lora(lora_id: str) -> dict[str, bool]:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT id FROM lora_profiles WHERE id = ?", (lora_id,))
+        if await cursor.fetchone() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"LoRA profile {lora_id} not found",
+            )
+
+        await db.execute("DELETE FROM lora_profiles WHERE id = ?", (lora_id,))
+
+        cursor = await db.execute("SELECT id, lora_ids FROM mood_mappings")
+        mood_rows = await cursor.fetchall()
+        for mood_row in mood_rows:
+            current_ids = _parse_json(mood_row.get("lora_ids"), [])
+            if not isinstance(current_ids, list):
+                current_ids = []
+            cleaned_ids = [str(item) for item in current_ids if str(item) != lora_id]
+            if cleaned_ids != current_ids:
+                await db.execute(
+                    "UPDATE mood_mappings SET lora_ids = ? WHERE id = ?",
+                    (json.dumps(cleaned_ids), mood_row["id"]),
+                )
+
+        await db.commit()
+
+    return {"success": True}

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { cancelGeneration, getActiveGenerations } from '../api/client'
+import { cancelGeneration, getActiveGenerations, type ActiveGeneration } from '../api/client'
 
 function formatDuration(totalSec: number): string {
   const sec = Math.max(0, Math.floor(totalSec))
@@ -13,27 +13,25 @@ function formatDuration(totalSec: number): string {
 export default function GlobalGenerationIndicator() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [nowMs, setNowMs] = useState(Date.now())
   const [expanded, setExpanded] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
 
-  const { data: activeGenerations } = useQuery({
+  const { data: activeGenerations, dataUpdatedAt } = useQuery({
     queryKey: ['active-generations'],
     queryFn: getActiveGenerations,
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      const generations = query.state.data as ActiveGeneration[] | undefined
+      return (generations?.length ?? 0) > 0 ? 3000 : 15000
+    },
+    refetchIntervalInBackground: false,
   })
-
-  useEffect(() => {
-    const timer = setInterval(() => setNowMs(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   const freshGenerations = useMemo(() => {
     return activeGenerations?.filter((g) => {
-      const age = (Date.now() - new Date(g.created_at).getTime()) / 1000
-      return age < 1800 // 30 minutes
+      const age = (dataUpdatedAt - new Date(g.created_at).getTime()) / 1000
+      return age < 14400 // 4 hours
     }) ?? []
-  }, [activeGenerations])
+  }, [activeGenerations, dataUpdatedAt])
 
   const earliestCreatedAt = useMemo(() => {
     if (freshGenerations.length === 0) {
@@ -84,7 +82,9 @@ export default function GlobalGenerationIndicator() {
     return null
   }
 
-  const elapsedSec = earliestCreatedAt != null ? Math.max(0, Math.floor((nowMs - earliestCreatedAt) / 1000)) : 0
+  const elapsedSec = earliestCreatedAt != null
+    ? Math.max(0, Math.floor((dataUpdatedAt - earliestCreatedAt) / 1000))
+    : 0
 
   return (
     <div className="w-full bg-violet-600/20 border border-violet-500/30 rounded-lg px-3 py-2">
@@ -142,7 +142,7 @@ export default function GlobalGenerationIndicator() {
             const createdMs = Date.parse(gen.created_at)
             const rowElapsed = Number.isNaN(createdMs)
               ? 0
-              : Math.max(0, Math.floor((nowMs - createdMs) / 1000))
+              : Math.max(0, Math.floor((dataUpdatedAt - createdMs) / 1000))
             const isRunning = gen.status === 'running'
             const checkpoint = (gen.checkpoint ?? 'unknown').replace(/\.safetensors$/i, '')
             const sizeLabel = gen.width && gen.height ? `${gen.width}x${gen.height}` : '-'

@@ -2,9 +2,16 @@ fastapi>=0.115
 uvicorn[standard]>=0.34
 aiosqlite>=0.20
 httpx>=0.28
+openai>=1.65
 pillow>=11.0
 numpy>=2.0
 torch>=2.5
 safetensors>=0.5
 spandrel>=0.4
 python-multipart>=0.0.18
+apscheduler<4
+onnxruntime>=1.18
+huggingface_hub>=0.25
+transformers>=4.45
+mediapipe>=0.10.14
+opencv-python-headless>=4.10

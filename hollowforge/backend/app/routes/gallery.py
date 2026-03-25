@@ -1,5 +1,6 @@
 """Gallery browsing and deletion endpoints."""
 
+from datetime import date, datetime, timedelta, timezone
 import json
 import math
 from pathlib import Path
@@ -25,6 +26,19 @@ def _parse_json(val: Optional[str], default: Any = None) -> Any:
 def _row_to_response(row: dict) -> GenerationResponse:
     loras_raw = _parse_json(row.get("loras"), [])
     loras = [LoraInput(**l) if isinstance(l, dict) else l for l in loras_raw]
+    dreamactor_path: str | None = None
+    dreamactor_status: str | None = None
+    dreamactor_task_id: str | None = None
+    try:
+        dreamactor_path = row.get("dreamactor_path")
+        dreamactor_status = row.get("dreamactor_status")
+        dreamactor_task_id = row.get("dreamactor_task_id")
+    except Exception:
+        # Backward compatibility for DBs where migration 012 is not applied yet.
+        dreamactor_path = None
+        dreamactor_status = None
+        dreamactor_task_id = None
+
     return GenerationResponse(
         id=row["id"],
         prompt=row["prompt"],
@@ -41,7 +55,14 @@ def _row_to_response(row: dict) -> GenerationResponse:
         clip_skip=row.get("clip_skip"),
         status=row["status"],
         image_path=row.get("image_path"),
+        watermarked_path=row.get("watermarked_path"),
         upscaled_image_path=row.get("upscaled_image_path"),
+        adetailed_path=row.get("adetailed_path"),
+        hiresfix_path=row.get("hiresfix_path"),
+        dreamactor_path=dreamactor_path,
+        dreamactor_task_id=dreamactor_task_id,
+        dreamactor_status=dreamactor_status,
+        upscaled_preview_path=row.get("upscaled_preview_path"),
         upscale_model=row.get("upscale_model"),
         thumbnail_path=row.get("thumbnail_path"),
         workflow_path=row.get("workflow_path"),
@@ -52,8 +73,12 @@ def _row_to_response(row: dict) -> GenerationResponse:
         source_id=row.get("source_id"),
         comfyui_prompt_id=row.get("comfyui_prompt_id"),
         error_message=row.get("error_message"),
+        is_favorite=bool(row.get("is_favorite", 0)),
         created_at=row["created_at"],
         completed_at=row.get("completed_at"),
+        quality_score=row.get("quality_score"),
+        quality_ai_score=row.get("quality_ai_score"),
+        publish_approved=row.get("publish_approved", 0),
     )
 
 
@@ -73,6 +98,206 @@ def _resolve_public_file(base_dir: Path, rel: str) -> Path | None:
     return full_path
 
 
+def _calculate_streak(
+    active_dates: list[str],
+    today: date,
+) -> dict[str, int]:
+    if not active_dates:
+        return {"current_days": 0, "longest_days": 0}
+
+    parsed = sorted(
+        {
+            datetime.strptime(day, "%Y-%m-%d").date()
+            for day in active_dates
+            if day
+        }
+    )
+    if not parsed:
+        return {"current_days": 0, "longest_days": 0}
+
+    longest = 1
+    run = 1
+    for idx in range(1, len(parsed)):
+        if parsed[idx] - parsed[idx - 1] == timedelta(days=1):
+            run += 1
+        else:
+            run = 1
+        longest = max(longest, run)
+
+    date_set = set(parsed)
+    cursor = today
+    current = 0
+    while cursor in date_set:
+        current += 1
+        cursor -= timedelta(days=1)
+
+    return {"current_days": current, "longest_days": longest}
+
+
+@router.get("/timeline")
+async def get_timeline(
+    days: int = Query(30, ge=1, le=90),
+) -> dict[str, Any]:
+    """Return aggregate timeline stats for generation history."""
+    today = datetime.now(timezone.utc).date()
+    start_date = today - timedelta(days=days - 1)
+    start_iso = start_date.isoformat()
+    end_iso = today.isoformat()
+
+    async with get_db() as db:
+        daily_cursor = await db.execute(
+            """
+            SELECT
+                strftime('%Y-%m-%d', created_at) AS date,
+                COUNT(*) AS count,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+                AVG(
+                    CASE
+                        WHEN status = 'completed' AND generation_time_sec IS NOT NULL
+                        THEN generation_time_sec
+                    END
+                ) AS avg_generation_time_sec
+            FROM generations
+            WHERE date(created_at) BETWEEN date(?) AND date(?)
+            GROUP BY date
+            ORDER BY date ASC
+            """,
+            (start_iso, end_iso),
+        )
+        daily_rows = await daily_cursor.fetchall()
+
+        checkpoint_daily_cursor = await db.execute(
+            """
+            SELECT
+                strftime('%Y-%m-%d', created_at) AS date,
+                checkpoint,
+                COUNT(*) AS count
+            FROM generations
+            WHERE status = 'completed'
+              AND date(created_at) BETWEEN date(?) AND date(?)
+            GROUP BY date, checkpoint
+            ORDER BY date ASC
+            """,
+            (start_iso, end_iso),
+        )
+        checkpoint_daily_rows = await checkpoint_daily_cursor.fetchall()
+
+        checkpoint_cursor = await db.execute(
+            """
+            SELECT checkpoint, COUNT(*) AS count
+            FROM generations
+            WHERE status = 'completed'
+              AND date(created_at) BETWEEN date(?) AND date(?)
+            GROUP BY checkpoint
+            ORDER BY count DESC, checkpoint ASC
+            """,
+            (start_iso, end_iso),
+        )
+        checkpoint_rows = await checkpoint_cursor.fetchall()
+
+        hour_cursor = await db.execute(
+            """
+            SELECT CAST(strftime('%H', created_at) AS INTEGER) AS hour, COUNT(*) AS count
+            FROM generations
+            WHERE date(created_at) BETWEEN date(?) AND date(?)
+            GROUP BY hour
+            ORDER BY hour ASC
+            """,
+            (start_iso, end_iso),
+        )
+        hour_rows = await hour_cursor.fetchall()
+
+        streak_cursor = await db.execute(
+            """
+            SELECT DISTINCT strftime('%Y-%m-%d', created_at) AS date
+            FROM generations
+            ORDER BY date ASC
+            """
+        )
+        streak_rows = await streak_cursor.fetchall()
+
+    date_keys = [
+        (start_date + timedelta(days=offset)).isoformat()
+        for offset in range(days)
+    ]
+    daily_map: dict[str, dict[str, Any]] = {
+        key: {
+            "date": key,
+            "count": 0,
+            "completed": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "checkpoints": {},
+            "avg_generation_time_sec": None,
+        }
+        for key in date_keys
+    }
+
+    for row in daily_rows:
+        date_key = row.get("date")
+        if not date_key or date_key not in daily_map:
+            continue
+        avg_time = row.get("avg_generation_time_sec")
+        daily_map[date_key].update(
+            {
+                "count": int(row.get("count") or 0),
+                "completed": int(row.get("completed") or 0),
+                "failed": int(row.get("failed") or 0),
+                "cancelled": int(row.get("cancelled") or 0),
+                "avg_generation_time_sec": (
+                    round(float(avg_time), 2) if avg_time is not None else None
+                ),
+            }
+        )
+
+    for row in checkpoint_daily_rows:
+        date_key = row.get("date")
+        checkpoint = row.get("checkpoint")
+        if not date_key or date_key not in daily_map or not checkpoint:
+            continue
+        daily_map[date_key]["checkpoints"][checkpoint] = int(row.get("count") or 0)
+
+    daily = [daily_map[key] for key in date_keys]
+    total = sum(item["count"] for item in daily)
+
+    total_completed = sum(int(row.get("count") or 0) for row in checkpoint_rows)
+    by_checkpoint = [
+        {
+            "checkpoint": row["checkpoint"],
+            "count": int(row.get("count") or 0),
+            "pct": round(
+                (int(row.get("count") or 0) / total_completed) * 100,
+                1,
+            )
+            if total_completed > 0
+            else 0.0,
+        }
+        for row in checkpoint_rows
+    ]
+
+    by_hour_map = {hour: 0 for hour in range(24)}
+    for row in hour_rows:
+        hour = row.get("hour")
+        if hour is None:
+            continue
+        by_hour_map[int(hour)] = int(row.get("count") or 0)
+    by_hour = [{"hour": hour, "count": by_hour_map[hour]} for hour in range(24)]
+
+    streak_dates = [row.get("date") for row in streak_rows if row.get("date")]
+    streak = _calculate_streak(streak_dates, today)
+
+    return {
+        "days": days,
+        "total": total,
+        "daily": daily,
+        "by_checkpoint": by_checkpoint,
+        "by_hour": by_hour,
+        "streak": streak,
+    }
+
+
 @router.get("", response_model=PaginatedResponse)
 async def list_gallery(
     page: int = Query(1, ge=1),
@@ -82,11 +307,18 @@ async def list_gallery(
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    favorites: bool = Query(False),
     sort_by: str = "created_at",
     sort_order: str = "desc",
+    publish_approved: Optional[int] = Query(
+        None,
+        description="Filter by publish_approved status: 0=pending, 1=approved, 2=rejected",
+    ),
+    min_quality: Optional[int] = Query(None, description="Minimum quality_score filter"),
+    max_quality: Optional[int] = Query(None, description="Maximum quality_score filter"),
 ) -> PaginatedResponse:
     """Browse completed generations with filtering and pagination."""
-    allowed_sort = {"created_at", "generation_time_sec", "seed", "checkpoint"}
+    allowed_sort = {"created_at", "generation_time_sec", "seed", "checkpoint", "quality_score", "quality_ai_score"}
     if sort_by not in allowed_sort:
         sort_by = "created_at"
     if sort_order.lower() not in ("asc", "desc"):
@@ -116,6 +348,17 @@ async def list_gallery(
             if tag:
                 conditions.append("tags LIKE ?")
                 params.append(f'%"{tag}"%')
+    if favorites:
+        conditions.append("is_favorite = 1")
+    if publish_approved is not None:
+        conditions.append("publish_approved = ?")
+        params.append(publish_approved)
+    if min_quality is not None:
+        conditions.append("quality_score >= ?")
+        params.append(min_quality)
+    if max_quality is not None:
+        conditions.append("quality_score <= ?")
+        params.append(max_quality)
 
     where = " AND ".join(conditions)
 
@@ -154,7 +397,7 @@ async def delete_generation(generation_id: str) -> dict:
 
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, image_path, upscaled_image_path, thumbnail_path, workflow_path "
+            "SELECT id, image_path, watermarked_path, upscaled_image_path, adetailed_path, hiresfix_path, thumbnail_path, workflow_path "
             "FROM generations WHERE id = ?",
             (generation_id,),
         )
@@ -166,7 +409,15 @@ async def delete_generation(generation_id: str) -> dict:
             )
 
         # Delete files
-        for field in ("image_path", "upscaled_image_path", "thumbnail_path", "workflow_path"):
+        for field in (
+            "image_path",
+            "watermarked_path",
+            "upscaled_image_path",
+            "adetailed_path",
+            "hiresfix_path",
+            "thumbnail_path",
+            "workflow_path",
+        ):
             rel = row.get(field)
             if rel:
                 full = _resolve_public_file(settings.DATA_DIR, rel)

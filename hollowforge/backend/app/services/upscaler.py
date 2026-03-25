@@ -13,6 +13,50 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_ANIME_HINTS = (
+    "anime",
+    "animayhem",
+    "animagine",
+    "illustrious",
+    "illustrij",
+    "wai",
+    "pony",
+    "noob",
+    "hassaku",
+    "autismmix",
+    "prefect",
+    "oneobsession",
+    "obsession",
+    "rxtr",
+    "hentai",
+    "akiumlumenill",
+    "aam",
+    "toon",
+    "cartoon",
+    "counterfeit",
+    "anything",
+)
+
+_GENERAL_HINTS = (
+    "realistic",
+    "realvis",
+    "realism",
+    "realisticvision",
+    "juggernaut",
+    "epicrealism",
+    "cyberrealistic",
+    "photon",
+    "majicmix",
+    "zavy",
+    "absolute",
+    "lunar",
+)
+
+_HYBRID_HINTS = (
+    "ponyrealism",
+    "lumen",
+)
+
 
 def _iter_model_dirs() -> list[Path]:
     dirs = [p.expanduser() for p in settings.UPSCALE_MODELS_DIRS]
@@ -22,6 +66,19 @@ def _iter_model_dirs() -> list[Path]:
             if peer_dir.is_dir():
                 dirs.append(peer_dir / "upscale_models")
     return dirs
+
+
+def list_local_upscale_models() -> list[str]:
+    """Return locally discoverable upscale model filenames."""
+    model_names: set[str] = set()
+    for base in _iter_model_dirs():
+        if not base.exists():
+            continue
+        for pattern in ("*.safetensors", "*.pth", "*.pt", "*.ckpt", "*.bin"):
+            for candidate in base.glob(pattern):
+                if candidate.is_file():
+                    model_names.add(candidate.name)
+    return sorted(model_names, key=str.lower)
 
 
 def resolve_upscale_model_path(model_name_or_path: str) -> Path:
@@ -40,13 +97,106 @@ def resolve_upscale_model_path(model_name_or_path: str) -> Path:
     for base in _iter_model_dirs():
         if not base.exists():
             continue
-        for candidate in base.glob("*.safetensors"):
-            if candidate.name.lower() == target_lower:
-                return candidate.resolve()
+        for pattern in ("*.safetensors", "*.pth", "*.pt", "*.ckpt", "*.bin"):
+            for candidate in base.glob(pattern):
+                if candidate.name.lower() == target_lower:
+                    return candidate.resolve()
 
     searched = ", ".join(str(p) for p in _iter_model_dirs())
     raise FileNotFoundError(
         f"Upscale model '{model_name_or_path}' not found. Searched: {searched}"
+    )
+
+
+def classify_checkpoint_upscale_profile(checkpoint: str | None) -> str:
+    """Infer which upscale profile best matches a checkpoint family."""
+    name = (checkpoint or "").lower()
+    if any(hint in name for hint in _HYBRID_HINTS):
+        return "hybrid-clean"
+    if any(hint in name for hint in _ANIME_HINTS):
+        return "anime-illustration"
+    if any(hint in name for hint in _GENERAL_HINTS):
+        return "general-realistic"
+    return "general-clean"
+
+
+def recommend_upscale_model(
+    checkpoint: str | None,
+    available_models: list[str] | None = None,
+) -> tuple[str | None, str]:
+    """Recommend the best available upscale model for a checkpoint."""
+    available = (
+        sorted(set(available_models), key=str.lower)
+        if available_models is not None
+        else list_local_upscale_models()
+    )
+    if not available:
+        return None, classify_checkpoint_upscale_profile(checkpoint)
+
+    profile = classify_checkpoint_upscale_profile(checkpoint)
+    available_lower = {name.lower(): name for name in available}
+
+    def pick(*candidates: str) -> str | None:
+        for candidate in candidates:
+            found = available_lower.get(candidate.lower())
+            if found:
+                return found
+        return None
+
+    if profile == "anime-illustration":
+        return (
+            pick(
+                "RealESRGAN_x4plus_anime_6B.pth",
+                "remacri_original.safetensors",
+                "realesr-general-x4v3.pth",
+            )
+            or available[0],
+            profile,
+        )
+
+    if profile == "hybrid-clean":
+        return (
+            pick(
+                "remacri_original.safetensors",
+                "realesr-general-x4v3.pth",
+                "RealESRGAN_x4plus_anime_6B.pth",
+            )
+            or available[0],
+            profile,
+        )
+
+    return (
+        pick(
+            "realesr-general-x4v3.pth",
+            "remacri_original.safetensors",
+            "RealESRGAN_x4plus_anime_6B.pth",
+        )
+        or available[0],
+        profile,
+    )
+
+
+def recommend_upscale_mode(checkpoint: str | None) -> tuple[str, str]:
+    """Recommend the safer user-facing upscale mode for a checkpoint family."""
+    profile = classify_checkpoint_upscale_profile(checkpoint)
+    if profile == "anime-illustration":
+        return (
+            "quality",
+            "Anime / illustration checkpoints passed staged quality validation and can use Quality Upscale manually.",
+        )
+    if profile == "hybrid-clean":
+        return (
+            "safe",
+            "Hybrid checkpoints currently favor Safe Upscale until more staged quality samples are validated.",
+        )
+    if profile == "general-realistic":
+        return (
+            "safe",
+            "General / realistic checkpoints are not yet validated on the staged quality path in the current ComfyUI runtime.",
+        )
+    return (
+        "safe",
+        "Safe Upscale is the default recommendation for unclassified checkpoints.",
     )
 
 

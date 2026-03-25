@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getPresets, createPreset, updatePreset, deletePreset, getModels } from '../api/client'
 import type { PresetResponse, PresetCreate, LoraInput } from '../api/client'
+import EmptyState from '../components/EmptyState'
 import PresetCard from '../components/PresetCard'
+import { DEFAULT_NEGATIVE_PROMPT } from '../lib/defaultPrompts'
 
 interface PresetFormData {
   name: string
@@ -24,7 +26,7 @@ export default function Presets() {
     description: '',
     checkpoint: '',
     prompt_template: '',
-    negative_prompt: '',
+    negative_prompt: DEFAULT_NEGATIVE_PROMPT,
     tags: '',
   })
 
@@ -64,7 +66,14 @@ export default function Presets() {
   const resetForm = () => {
     setShowForm(false)
     setEditingPreset(null)
-    setFormData({ name: '', description: '', checkpoint: '', prompt_template: '', negative_prompt: '', tags: '' })
+    setFormData({
+      name: '',
+      description: '',
+      checkpoint: '',
+      prompt_template: '',
+      negative_prompt: DEFAULT_NEGATIVE_PROMPT,
+      tags: '',
+    })
   }
 
   const handleEdit = (preset: PresetResponse) => {
@@ -242,10 +251,10 @@ export default function Presets() {
           <p className="text-red-400">Failed to load presets</p>
         </div>
       ) : !presets || presets.length === 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-12 text-center">
-          <p className="text-gray-500 text-lg">No presets yet</p>
-          <p className="text-gray-600 text-sm mt-1">Create your first preset to save generation settings</p>
-        </div>
+        <EmptyState
+          title="프리셋이 없습니다"
+          description="첫 프리셋을 만들어 생성 설정을 재사용해보세요."
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {presets.map((preset) => (

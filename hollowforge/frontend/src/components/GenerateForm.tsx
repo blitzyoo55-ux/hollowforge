@@ -14,6 +14,7 @@ import type {
   PromptTemplate,
 } from '../api/client'
 import LoraSelector from './LoraSelector'
+import { DEFAULT_NEGATIVE_PROMPT } from '../lib/defaultPrompts'
 
 export interface GenerateSubmitPayload {
   generation: GenerationCreate
@@ -32,6 +33,17 @@ interface GenerateFormProps {
 const MOODS = ['cyberpunk', 'dungeon', 'lab', 'latex', 'bondage'] as const
 type TemplateApplyMode = 'replace' | 'append'
 
+function resolveTemplateSelection(
+  templates: PromptTemplate[],
+  selectedId: string,
+  fallbackId: string,
+): string {
+  if (templates.some((tpl) => tpl.id === selectedId)) {
+    return selectedId
+  }
+  return fallbackId
+}
+
 export default function GenerateForm({
   initialValues,
   initialData,
@@ -41,16 +53,20 @@ export default function GenerateForm({
   onSavePreset,
 }: GenerateFormProps) {
   const [prompt, setPrompt] = useState(initialData?.prompt ?? initialValues?.prompt ?? '')
-  const [negativePrompt, setNegativePrompt] = useState(initialData?.negative_prompt ?? initialValues?.negative_prompt ?? '')
+  const [negativePrompt, setNegativePrompt] = useState(
+    initialData?.negative_prompt ??
+      initialValues?.negative_prompt ??
+      DEFAULT_NEGATIVE_PROMPT,
+  )
   const [checkpoint, setCheckpoint] = useState(initialData?.checkpoint ?? initialValues?.checkpoint ?? '')
   const [loras, setLoras] = useState<LoraInput[]>(initialData?.loras ?? initialValues?.loras ?? [])
   const [selectedMoods, setSelectedMoods] = useState<string[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [steps, setSteps] = useState(initialData?.steps ?? initialValues?.steps ?? 28)
-  const [cfg, setCfg] = useState(initialData?.cfg ?? initialValues?.cfg ?? 7.0)
+  const [steps, setSteps] = useState(initialData?.steps ?? initialValues?.steps ?? 30)
+  const [cfg, setCfg] = useState(initialData?.cfg ?? initialValues?.cfg ?? 5.5)
   const [width, setWidth] = useState(initialData?.width ?? initialValues?.width ?? 832)
   const [height, setHeight] = useState(initialData?.height ?? initialValues?.height ?? 1216)
-  const [sampler, setSampler] = useState(initialData?.sampler ?? initialValues?.sampler ?? 'euler')
+  const [sampler, setSampler] = useState(initialData?.sampler ?? initialValues?.sampler ?? 'euler_ancestral')
   const [scheduler, setScheduler] = useState(initialData?.scheduler ?? initialValues?.scheduler ?? 'normal')
   const [seed, setSeed] = useState(initialData?.seed?.toString() ?? initialValues?.seed?.toString() ?? '')
   const [clipSkip, setClipSkip] = useState(
@@ -58,7 +74,7 @@ export default function GenerateForm({
       ? initialData.clip_skip.toString()
       : initialValues?.clip_skip != null
         ? initialValues.clip_skip.toString()
-        : ''
+        : '2'
   )
   const [tags, setTags] = useState(
     initialData?.tags?.join(', ') ?? initialValues?.tags?.join(', ') ?? ''
@@ -117,30 +133,27 @@ export default function GenerateForm({
 
   useEffect(() => {
     if (!autoQualityProfile || !checkpoint || !qualityProfiles?.profiles) return
-    applyQualityProfile(checkpoint)
+    const timer = window.setTimeout(() => {
+      applyQualityProfile(checkpoint)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [autoQualityProfile, checkpoint, qualityProfiles, applyQualityProfile])
 
-  useEffect(() => {
-    if (!checkpointTemplates) {
-      setSelectedPositiveTemplateId('')
-      setSelectedNegativeTemplateId('')
-      return
-    }
+  const activePositiveTemplateId = checkpointTemplates
+    ? resolveTemplateSelection(
+        checkpointTemplates.positive_templates,
+        selectedPositiveTemplateId,
+        checkpointTemplates.default_positive_template_id,
+      )
+    : ''
 
-    setSelectedPositiveTemplateId((prev) => {
-      if (checkpointTemplates.positive_templates.some((tpl) => tpl.id === prev)) {
-        return prev
-      }
-      return checkpointTemplates.default_positive_template_id
-    })
-
-    setSelectedNegativeTemplateId((prev) => {
-      if (checkpointTemplates.negative_templates.some((tpl) => tpl.id === prev)) {
-        return prev
-      }
-      return checkpointTemplates.default_negative_template_id
-    })
-  }, [checkpointTemplates])
+  const activeNegativeTemplateId = checkpointTemplates
+    ? resolveTemplateSelection(
+        checkpointTemplates.negative_templates,
+        selectedNegativeTemplateId,
+        checkpointTemplates.default_negative_template_id,
+      )
+    : ''
 
   const toggleMood = (mood: string) => {
     setSelectedMoods((prev) =>
@@ -193,7 +206,7 @@ export default function GenerateForm({
     if (target === 'positive') {
       const template = findPromptTemplate(
         checkpointTemplates.positive_templates,
-        selectedPositiveTemplateId,
+        activePositiveTemplateId,
       )
       if (!template) return
       setPrompt((prev) =>
@@ -205,7 +218,7 @@ export default function GenerateForm({
     }
     const template = findPromptTemplate(
       checkpointTemplates.negative_templates,
-      selectedNegativeTemplateId,
+      activeNegativeTemplateId,
     )
     if (!template) return
     setNegativePrompt((prev) =>
@@ -275,7 +288,7 @@ export default function GenerateForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {sourceId && (
-        <div className="bg-violet-900/20 border border-violet-700/40 rounded-xl p-3 flex items-center justify-between gap-3">
+        <div className="bg-violet-900/20 border border-violet-700/40 rounded-xl p-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-violet-300">
             Loaded from generation <span className="font-mono">{sourceId}</span>
           </p>
@@ -308,13 +321,19 @@ export default function GenerateForm({
 
       {/* Checkpoint */}
       <div>
-        <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex flex-col items-start gap-2 mb-1.5 sm:flex-row sm:items-center sm:justify-between">
           <label className="block text-sm font-medium text-gray-300">Checkpoint</label>
           <label className="inline-flex items-center gap-2 text-xs text-gray-400">
             <input
               type="checkbox"
               checked={autoQualityProfile}
-              onChange={(e) => setAutoQualityProfile(e.target.checked)}
+              onChange={(e) => {
+                const nextValue = e.target.checked
+                setAutoQualityProfile(nextValue)
+                if (nextValue && checkpoint) {
+                  applyQualityProfile(checkpoint)
+                }
+              }}
               className="rounded border-gray-600 bg-gray-700 text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
             />
             Auto quality profile
@@ -325,7 +344,9 @@ export default function GenerateForm({
           onChange={(e) => {
             const nextCheckpoint = e.target.value
             setCheckpoint(nextCheckpoint)
-            if (!autoQualityProfile && nextCheckpoint) {
+            if (autoQualityProfile && nextCheckpoint) {
+              applyQualityProfile(nextCheckpoint)
+            } else if (!autoQualityProfile && nextCheckpoint) {
               setAppliedQualityProfile('')
             }
           }}
@@ -337,7 +358,7 @@ export default function GenerateForm({
             <option key={cp} value={cp}>{cp}</option>
           ))}
         </select>
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="mt-2 flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-gray-500">
             {appliedQualityProfile
               ? `Applied profile: ${appliedQualityProfile}`
@@ -389,12 +410,12 @@ export default function GenerateForm({
                 Architecture: {checkpointTemplates.architecture}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
               <label className="text-xs text-cyan-200">Apply mode</label>
               <select
                 value={templateApplyMode}
                 onChange={(e) => setTemplateApplyMode(e.target.value as TemplateApplyMode)}
-                className="bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-2.5 py-1.5 text-xs focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-2.5 py-1.5 text-xs focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none sm:flex-none"
               >
                 <option value="replace">Replace</option>
                 <option value="append">Append</option>
@@ -406,7 +427,7 @@ export default function GenerateForm({
             <div className="space-y-2">
               <label className="text-xs text-cyan-200 block">Positive Template</label>
               <select
-                value={selectedPositiveTemplateId}
+                value={activePositiveTemplateId}
                 onChange={(e) => setSelectedPositiveTemplateId(e.target.value)}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
               >
@@ -419,7 +440,7 @@ export default function GenerateForm({
               <p className="text-[11px] text-cyan-300/80 min-h-[2rem]">
                 {findPromptTemplate(
                   checkpointTemplates.positive_templates,
-                  selectedPositiveTemplateId,
+                  activePositiveTemplateId,
                 )?.description ?? 'Select a positive template'}
               </p>
               <button
@@ -434,7 +455,7 @@ export default function GenerateForm({
             <div className="space-y-2">
               <label className="text-xs text-cyan-200 block">Negative Template</label>
               <select
-                value={selectedNegativeTemplateId}
+                value={activeNegativeTemplateId}
                 onChange={(e) => setSelectedNegativeTemplateId(e.target.value)}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none"
               >
@@ -447,7 +468,7 @@ export default function GenerateForm({
               <p className="text-[11px] text-cyan-300/80 min-h-[2rem]">
                 {findPromptTemplate(
                   checkpointTemplates.negative_templates,
-                  selectedNegativeTemplateId,
+                  activeNegativeTemplateId,
                 )?.description ?? 'Select a negative template'}
               </p>
               <button
@@ -460,7 +481,7 @@ export default function GenerateForm({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               type="button"
               onClick={applyBothPromptTemplates}
@@ -468,7 +489,7 @@ export default function GenerateForm({
             >
               Apply Both Templates
             </button>
-            <div className="text-[11px] text-cyan-200/90">
+            <div className="text-[11px] text-cyan-200/90 break-words">
               {promptTemplates?.variables
                 .map((item) => `${item.token}=${item.example}`)
                 .join(' · ')}
@@ -540,7 +561,7 @@ export default function GenerateForm({
 
       {/* Tags */}
       <div>
-        <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex flex-wrap items-center gap-2 mb-1.5">
           <label className="text-sm font-medium text-gray-300">Tags</label>
           <span className="text-xs text-gray-500">(Gallery filtering &amp; classification)</span>
         </div>
@@ -558,7 +579,7 @@ export default function GenerateForm({
 
       {/* Notes */}
       <div>
-        <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex flex-wrap items-center gap-2 mb-1.5">
           <label className="text-sm font-medium text-gray-300">Notes</label>
           <span className="text-xs text-gray-500">(Free text memo for this generation)</span>
         </div>
@@ -590,8 +611,8 @@ export default function GenerateForm({
       </button>
 
       {showAdvanced && (
-        <div className="space-y-4 pl-4 border-l-2 border-gray-800">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4 pl-3 md:pl-4 border-l-2 border-gray-800">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Steps */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Steps</label>
@@ -673,7 +694,7 @@ export default function GenerateForm({
           {/* Seed */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">Seed</label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
               <input
                 type="number"
                 value={seed}
@@ -686,7 +707,7 @@ export default function GenerateForm({
               <button
                 type="button"
                 onClick={randomizeSeed}
-                className="bg-gray-800 border border-gray-700 hover:bg-gray-700 text-gray-200 rounded-lg p-2 transition-colors duration-200"
+                className="w-full bg-gray-800 border border-gray-700 hover:bg-gray-700 text-gray-200 rounded-lg p-2 transition-colors duration-200 sm:w-auto"
                 title="Generate random seed"
                 aria-label="Generate random seed"
               >
@@ -719,12 +740,12 @@ export default function GenerateForm({
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center gap-3 pt-2">
+      <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center">
         {onSavePreset && (
           <button
             type="button"
             onClick={() => onSavePreset(buildData())}
-            className="bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-200"
+            className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-200 sm:w-auto"
           >
             Save as Preset
           </button>
@@ -732,7 +753,7 @@ export default function GenerateForm({
         <button
           type="submit"
           disabled={isSubmitting || !prompt || !checkpoint}
-          className="flex-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-6 py-2.5 text-sm font-medium transition-colors duration-200"
+          className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-6 py-2.5 text-sm font-medium transition-colors duration-200 sm:flex-1"
         >
           {isSubmitting ? 'Submitting...' : submitLabel}
         </button>
