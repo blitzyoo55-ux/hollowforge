@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import pathlib
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -130,6 +129,10 @@ def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup and shutdown lifecycle."""
     # --- Startup ---
+    if not getattr(app.state, "routers_initialized", False):
+        _include_routers(app)
+        app.state.routers_initialized = True
+
     logger.info("Initializing database...")
     await init_db()
     _ensure_public_data_dirs()
@@ -182,13 +185,6 @@ async def _lightweight_lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-def _lightweight_app_enabled() -> bool:
-    value = os.getenv("HOLLOWFORGE_LIGHTWEIGHT_APP")
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def create_app(*, lightweight: bool = False) -> FastAPI:
     app = FastAPI(
         title="HollowForge",
@@ -209,8 +205,11 @@ def create_app(*, lightweight: bool = False) -> FastAPI:
     )
 
     _mount_static_dirs(app)
-    _include_routers(app, lightweight=lightweight)
+    app.state.routers_initialized = False
+    if lightweight:
+        _include_routers(app, lightweight=True)
+        app.state.routers_initialized = True
     return app
 
 
-app = create_app(lightweight=_lightweight_app_enabled())
+app = create_app()

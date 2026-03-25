@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,9 +8,6 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.db import init_db
-
-os.environ.setdefault("HOLLOWFORGE_LIGHTWEIGHT_APP", "1")
-
 from app.main import create_app
 from app.models import RoughCutResponse
 from app.routes import sequences as sequence_routes
