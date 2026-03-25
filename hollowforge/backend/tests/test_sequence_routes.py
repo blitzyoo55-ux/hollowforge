@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.db import init_db
+
+os.environ.setdefault("HOLLOWFORGE_LIGHTWEIGHT_APP", "1")
+
+from app.main import create_app
 from app.models import RoughCutResponse
 from app.routes import sequences as sequence_routes
-from app.routes.sequences import router
 from app.services import rough_cut_service, sequence_run_service
 
 
 def _build_client(*, generation_service=None) -> TestClient:  # type: ignore[no-untyped-def]
-    app = FastAPI()
-    app.include_router(router)
+    app = create_app(lightweight=True)
     if generation_service is not None:
         app.state.generation_service = generation_service
     return TestClient(app)

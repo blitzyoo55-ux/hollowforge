@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -67,7 +68,13 @@ def _mount_static_dirs(app: FastAPI) -> None:
     )
 
 
-def _include_routers(app: FastAPI) -> None:
+def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
+    if lightweight:
+        from app.routes import sequences
+
+        app.include_router(sequences.router)
+        return
+
     from app.routes import (
         animation,
         collections,
@@ -169,24 +176,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Shutdown complete.")
 
 
-app = FastAPI(
-    title="HollowForge",
-    version="1.0.0",
-    description="AI image generation management backend powered by ComfyUI",
-    lifespan=lifespan,
-)
+@asynccontextmanager
+async def _lightweight_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _ensure_public_data_dirs()
+    yield
 
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-_mount_static_dirs(app)
-_include_routers(app)
+def _lightweight_app_enabled() -> bool:
+    value = os.getenv("HOLLOWFORGE_LIGHTWEIGHT_APP")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def create_app(*, lightweight: bool = False) -> FastAPI:
+    app = FastAPI(
+        title="HollowForge",
+        version="1.0.0",
+        description="AI image generation management backend powered by ComfyUI",
+        lifespan=_lightweight_lifespan if lightweight else lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:5173",
+            "http://localhost:5174",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    _mount_static_dirs(app)
+    _include_routers(app, lightweight=lightweight)
+    return app
+
+
+app = create_app(lightweight=_lightweight_app_enabled())
