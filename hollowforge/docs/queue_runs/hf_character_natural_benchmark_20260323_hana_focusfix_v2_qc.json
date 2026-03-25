@@ -1,0 +1,24 @@
+{
+  "source_prefix": "hf_character_natural_benchmark_20260323_hana_focusfix_v2:",
+  "write": true,
+  "row_count": 2,
+  "rejected_count": 2,
+  "rows": [
+    {
+      "generation_id": "dc93e129-a5ac-4968-9334-52103a6dda1e",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_focusfix_v2:hana_seo:scene_01_close_anchor",
+      "image_path": "images/2026/03/23/dc93e129-a5ac-4968-9334-52103a6dda1e.png",
+      "face_count": 2,
+      "face_boxes": "[[364, 186, 289, 292], [161, 197, 261, 268]]",
+      "decision": "reject_multi_face"
+    },
+    {
+      "generation_id": "b6fe9e68-3ca6-4145-a2f4-c61cd1886af3",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_focusfix_v2:hana_seo:scene_05_exterior_transition",
+      "image_path": "images/2026/03/23/b6fe9e68-3ca6-4145-a2f4-c61cd1886af3.png",
+      "face_count": 2,
+      "face_boxes": "[[137, 82, 310, 308], [419, 66, 309, 304]]",
+      "decision": "reject_multi_face"
+    }
+  ]
+}

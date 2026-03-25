@@ -1,0 +1,56 @@
+{
+  "source_prefix": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:",
+  "write": true,
+  "row_count": 6,
+  "rejected_count": 1,
+  "rows": [
+    {
+      "generation_id": "386d1a92-7a53-40b6-be32-2618dd07791d",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_01_close_anchor",
+      "image_path": "images/2026/03/22/386d1a92-7a53-40b6-be32-2618dd07791d.png",
+      "face_count": 1,
+      "face_boxes": "[[127, 201, 577, 545]]",
+      "decision": "pass"
+    },
+    {
+      "generation_id": "66e785d2-f65e-44ec-ad80-e606aaab99a0",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_02_grounded_pause",
+      "image_path": "images/2026/03/22/66e785d2-f65e-44ec-ad80-e606aaab99a0.png",
+      "face_count": 1,
+      "face_boxes": "[[224, 85, 460, 454]]",
+      "decision": "pass"
+    },
+    {
+      "generation_id": "181500a4-303c-4cce-99e3-9aff1cde0444",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_03_public_half_turn",
+      "image_path": "images/2026/03/22/181500a4-303c-4cce-99e3-9aff1cde0444.png",
+      "face_count": 1,
+      "face_boxes": "[[169, 111, 292, 292]]",
+      "decision": "pass"
+    },
+    {
+      "generation_id": "830123b1-a84d-4210-abdb-857432d9b2c1",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_04_settled_interior",
+      "image_path": "images/2026/03/22/830123b1-a84d-4210-abdb-857432d9b2c1.png",
+      "face_count": 1,
+      "face_boxes": "[[50, 139, 465, 458]]",
+      "decision": "pass"
+    },
+    {
+      "generation_id": "f4d85f98-508e-4815-b303-85e479e034b6",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_05_exterior_transition",
+      "image_path": "images/2026/03/22/f4d85f98-508e-4815-b303-85e479e034b6.png",
+      "face_count": 2,
+      "face_boxes": "[[181, 100, 213, 204], [458, 106, 196, 193]]",
+      "decision": "reject_multi_face"
+    },
+    {
+      "generation_id": "edd4f901-4288-4740-88cd-9ee726b95047",
+      "source_id": "hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_06_evening_rest",
+      "image_path": "images/2026/03/22/edd4f901-4288-4740-88cd-9ee726b95047.png",
+      "face_count": 1,
+      "face_boxes": "[[217, 196, 410, 400]]",
+      "decision": "pass"
+    }
+  ]
+}

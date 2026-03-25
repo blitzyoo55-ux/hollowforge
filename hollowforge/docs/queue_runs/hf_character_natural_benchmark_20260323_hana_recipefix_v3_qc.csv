@@ -1,0 +1,3 @@
+﻿generation_id,source_id,image_path,face_count,face_boxes,decision
+7de0f8b3-9dde-4b0a-8bb3-89c1675d140f,hf_character_natural_benchmark_20260323_hana_recipefix_v3:hana_seo:scene_01_close_anchor,images/2026/03/23/7de0f8b3-9dde-4b0a-8bb3-89c1675d140f.png,1,"[[109, 76, 613, 597]]",pass
+eb43a294-bf33-4523-9b01-3e4760d741b3,hf_character_natural_benchmark_20260323_hana_recipefix_v3:hana_seo:scene_05_exterior_transition,images/2026/03/23/eb43a294-bf33-4523-9b01-3e4760d741b3.png,2,"[[456, 108, 201, 207], [195, 109, 202, 204]]",reject_multi_face

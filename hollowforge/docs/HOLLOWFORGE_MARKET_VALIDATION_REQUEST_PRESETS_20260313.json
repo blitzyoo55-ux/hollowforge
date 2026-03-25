@@ -1,0 +1,614 @@
+{
+  "generated_on": "2026-03-13",
+  "notes": [
+    "Phase 1 direct queue artifact is the canonical ready-to-run file.",
+    "Prompt Factory generate requests below are operator presets and may still reflect benchmark/checkpoint bias unless checkpoint preferences are pinned first.",
+    "Phase 2 should duplicate the winning 25-row block twice and swap checkpoints to waiIllustriousSDXL_v160.safetensors and animayhemPaleRider_v2TrueGrit.safetensors.",
+    "Phase 3 should duplicate the final two winning 25-row blocks three times each for character lock, environment drift, and intensity ladder variants."
+  ],
+  "phase_1_generate_requests": [
+    {
+      "pack_id": "A1",
+      "line_series": "line_a_original_beauty",
+      "pack_label": "Luxury Editorial Baseline",
+      "generate_request": {
+        "concept_brief": "Original adult beauty star, solo editorial glamour, luxury lingerie styling, premium hotel interiors, polished celebrity aura.",
+        "creative_brief": "Keep the subject clearly adult, beautiful, and non-IP. Prioritize elegant beauty, premium styling, readable face, and expensive atmosphere.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "a1",
+            "series": "line_a_original_beauty",
+            "scene_hook": "Luxury hotel editorial built around a high-value original star persona.",
+            "camera_plan": "Portrait and three-quarter glamour coverage with clean composition.",
+            "pose_plan": "Calm confidence with direct eye contact and elegant posture.",
+            "environment": "High-end suite, balcony, or lounge space with premium set dressing.",
+            "device_focus": "No device anchor; character beauty and styling lead the frame.",
+            "lighting_plan": "Soft key light, window glow, and polished cinematic highlights.",
+            "material_focus": "Silk, satin, jewelry, and upscale interior textures.",
+            "intensity_hook": "Tasteful sensuality and aspirational beauty rather than fetish coding."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "A2",
+      "line_series": "line_a_original_beauty",
+      "pack_label": "Star Quality / Red Carpet Glam",
+      "generate_request": {
+        "concept_brief": "Original adult beauty star, solo high-fashion glamour, red carpet mood, celebrity aura, flash-heavy editorial.",
+        "creative_brief": "Bias toward clean high-fashion beauty, paparazzi glam, and repeatable star presence. Keep the scene glamorous and non-IP.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "campaign",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "a2",
+            "series": "line_a_original_beauty",
+            "scene_hook": "Celebrity-coded beauty shoot with red carpet energy and paparazzi flash.",
+            "camera_plan": "Beauty close-ups and polished half-body red carpet angles.",
+            "pose_plan": "Public-facing confidence with sharp chin line and star posture.",
+            "environment": "Premiere arrival, backstage glam room, or flash-heavy event corridor.",
+            "device_focus": "No prop dependency; makeup, gown structure, and public presence carry the shot.",
+            "lighting_plan": "Flash glam, specular highlights, and beauty dish polish.",
+            "material_focus": "Sheer couture, sequins, satin drape, polished hair and makeup.",
+            "intensity_hook": "Star aura and desirability over explicit exposure."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "A3",
+      "line_series": "line_a_original_beauty",
+      "pack_label": "Dark Romance / Elegant Drama",
+      "generate_request": {
+        "concept_brief": "Original adult beauty star, solo dark romance editorial, corset couture, candlelit interiors, elegant dramatic light.",
+        "creative_brief": "Push dramatic elegance, shadow contrast, and romantic melancholy while keeping the character aspirational and clearly original.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "director",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "a3",
+            "series": "line_a_original_beauty",
+            "scene_hook": "Romantic darkness with couture corsetry and moody cinematic beauty.",
+            "camera_plan": "Dramatic portraiture and medium shots that preserve elegance.",
+            "pose_plan": "Graceful poses with controlled melancholy and long hair motion.",
+            "environment": "Candlelit chamber, velvet salon, or shadowed gallery space.",
+            "device_focus": "No apparatus; costume silhouette and atmosphere do the work.",
+            "lighting_plan": "Candle glow, dramatic side light, and deep shadow separation.",
+            "material_focus": "Corset couture, velvet, lace, and antique metallic accents.",
+            "intensity_hook": "Beauty-first dark romance with sensual tension, not overt fetish."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "B1",
+      "line_series": "line_b_alt_goth",
+      "pack_label": "Alt Goth Core",
+      "generate_request": {
+        "concept_brief": "Original adult alt-goth heroine, solo fashion-forward beauty, black lace, smoky eyes, club lighting, strong character read.",
+        "creative_brief": "Keep the face memorable, the styling alt-forward, and the energy cool rather than chaotic. Avoid obvious IP cosplay cues.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "b1",
+            "series": "line_b_alt_goth",
+            "scene_hook": "Alt-goth heroine with strong face identity and cool club confidence.",
+            "camera_plan": "Portrait and waist-up coverage with attitude-forward framing.",
+            "pose_plan": "Calm dominance, cool eye contact, and fashion-led posture.",
+            "environment": "Club backroom, alley neon spill, dressing mirror, or velvet booth.",
+            "device_focus": "No device dependency; makeup, lace, and silhouette define the pack.",
+            "lighting_plan": "Moody club light, colored spill, and hard rim accents.",
+            "material_focus": "Black lace, leather accents, chokers, sheer layers.",
+            "intensity_hook": "High-character alternative beauty without IP references."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "B2",
+      "line_series": "line_b_alt_goth",
+      "pack_label": "Sci-fi Cosplay-coded",
+      "generate_request": {
+        "concept_brief": "Original adult sci-fi heroine, solo sleek tactical bodysuit, visor, neon lab, futuristic styling, clean silhouette.",
+        "creative_brief": "Aim for original futuristic character appeal rather than direct franchise resemblance. Keep the costume readable and premium.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "campaign",
+        "heat_level": "steamy",
+        "creative_autonomy": "director",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "b2",
+            "series": "line_b_alt_goth",
+            "scene_hook": "Original sci-fi heroine with sleek costume language and clean silhouette.",
+            "camera_plan": "Hero framing, medium full-body, and visor-forward portrait angles.",
+            "pose_plan": "Steady tactical confidence with readable silhouette.",
+            "environment": "Neon lab, scanner arch, sterile corridor, or reflective pod bay.",
+            "device_focus": "Visor, suit paneling, and clean futuristic costume structure.",
+            "lighting_plan": "Cold lighting, edge highlights, and cyan neon accent.",
+            "material_focus": "Sleek bodysuit fabrics, chrome trim, translucent panels.",
+            "intensity_hook": "Non-IP cosplay-coded futurism built for repeatable character branding."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "B3",
+      "line_series": "line_b_alt_goth",
+      "pack_label": "Occult Fashion",
+      "generate_request": {
+        "concept_brief": "Original adult occult fashion heroine, solo dark academy styling, ritual sigils, structured outfit, mystic elegance.",
+        "creative_brief": "Build a collectible original character with occult fashion cues and readable face identity. Stay away from franchise-like iconography.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "director",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "b3",
+            "series": "line_b_alt_goth",
+            "scene_hook": "Mystic fashion heroine that feels original, intelligent, and collectible.",
+            "camera_plan": "Strong portrait and seated ritual-table compositions.",
+            "pose_plan": "Controlled elegance with ritual-coded gestures and poised stillness.",
+            "environment": "Dark academy library, sigil chamber, balcony, or candle desk.",
+            "device_focus": "Sigils, costume structure, gloves, and jewelry as worldbuilding anchors.",
+            "lighting_plan": "Candle glow, library shadow, and stained-glass color spill.",
+            "material_focus": "Structured outfits, velvet, metal charms, occult detailing.",
+            "intensity_hook": "Worldbuilding-rich character lane with strong non-IP identity."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "C1",
+      "line_series": "line_c_fetish_adjacent",
+      "pack_label": "Legwear / Heels / Choker",
+      "generate_request": {
+        "concept_brief": "Original adult glamour heroine, solo long-leg styling, stockings, stilettos, choker, soft flash beauty.",
+        "creative_brief": "Keep this pack broad and clickable. Emphasize glamour, polish, long-leg composition, and repeatable star quality.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "c1",
+            "series": "line_c_fetish_adjacent",
+            "scene_hook": "Broad-appeal glamour lane built on legs, heels, and high-polish styling.",
+            "camera_plan": "Long-leg framing, seated beauty, and mirror-friendly angles.",
+            "pose_plan": "Playful confidence with clean posture and fashion-led body language.",
+            "environment": "Dressing room, hotel hallway, vanity mirror, or staircase landing.",
+            "device_focus": "Stilettos, stockings, and choker styling carry the tension.",
+            "lighting_plan": "Soft flash glam, vanity bulbs, and clean indoor highlights.",
+            "material_focus": "Stockings, satin, glossy heels, jewelry, smooth skin lighting.",
+            "intensity_hook": "Fetish-adjacent, not niche-first; broad glamour comes first."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "C2",
+      "line_series": "line_c_fetish_adjacent",
+      "pack_label": "Boots / Authority",
+      "generate_request": {
+        "concept_brief": "Original adult glamour heroine, solo thigh-high boots, gloves, commanding stance, editorial power pose.",
+        "creative_brief": "Keep the result glamorous and powerful, not campy. Boots and posture should define the lane.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "campaign",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "c2",
+            "series": "line_c_fetish_adjacent",
+            "scene_hook": "Authority-coded glamour pack centered on boots, gloves, and posture.",
+            "camera_plan": "Low-tilt hero shots and strong doorway compositions.",
+            "pose_plan": "Commanding stance, shoulders back, deliberate stride, no chaos.",
+            "environment": "Doorway frame, corridor, leather chair set, or clean industrial hall.",
+            "device_focus": "Thigh-high boots, gloves, and silhouette authority.",
+            "lighting_plan": "Editorial side light with crisp contrast and floor reflections.",
+            "material_focus": "Leather, polished boots, clean tailoring, metallic trims.",
+            "intensity_hook": "Power-coded styling with broader appeal than direct BDSM coding."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "C3",
+      "line_series": "line_c_fetish_adjacent",
+      "pack_label": "Harness / Accessory Tension",
+      "generate_request": {
+        "concept_brief": "Original adult fashion heroine, solo body harness styling, cuffs as accessories, studio tension, controlled elegance.",
+        "creative_brief": "Keep it legible as fashion-first. Tension should come from styling and pose, not from explicit action.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "steamy",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "c3",
+            "series": "line_c_fetish_adjacent",
+            "scene_hook": "Accessory-tension lane that hints at restraint without becoming niche-only.",
+            "camera_plan": "Studio editorial framing with clear read on styling hardware.",
+            "pose_plan": "Controlled body lines and fashion tension in the shoulders and waist.",
+            "environment": "Clean studio, chrome stool, curtain set, or white cyclorama.",
+            "device_focus": "Body harness, cuffs as styling detail, and precise accessory placement.",
+            "lighting_plan": "Soft box clarity with controlled contrast and product-like polish.",
+            "material_focus": "Harness straps, metal hardware, fitted fabrics, sculpted silhouette.",
+            "intensity_hook": "Fashion restraint coding kept broad and elegant."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "D1",
+      "line_series": "line_d_latex_premium",
+      "pack_label": "Latex Editorial Baseline",
+      "generate_request": {
+        "concept_brief": "Original adult latex fashion heroine, solo glossy latex editorial, luxury set, high contrast, sculpted shine.",
+        "creative_brief": "Keep this premium and expensive. The image should read as fashion-forward latex, not chaotic fetish clutter.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "editorial",
+        "heat_level": "maximal",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "d1",
+            "series": "line_d_latex_premium",
+            "scene_hook": "Premium latex editorial built as a luxury material story.",
+            "camera_plan": "High-contrast portrait and full-silhouette fashion angles.",
+            "pose_plan": "Still, precise posture that lets the shine and shape read clearly.",
+            "environment": "Luxury set, mirrored room, marble hallway, or spotlight stage.",
+            "device_focus": "Glossy latex silhouette and clean fashion composition.",
+            "lighting_plan": "Spotlight contrast, side reflections, and polished specular highlights.",
+            "material_focus": "Glossy latex, chrome, marble, black lacquer, sculpted shine.",
+            "intensity_hook": "Latex as premium material brand signal rather than only fetish cue."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "D2",
+      "line_series": "line_d_latex_premium",
+      "pack_label": "Signature Masked Latex",
+      "generate_request": {
+        "concept_brief": "Original adult faceless latex heroine, solo full-cover latex mask, sterile chamber, lab-coded atmosphere, premium clinical styling.",
+        "creative_brief": "Push HollowForge signature cues while staying non-graphic. Prioritize iconic silhouette, composure, and clean lab architecture.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "clinical",
+        "heat_level": "maximal",
+        "creative_autonomy": "hybrid",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "d2",
+            "series": "line_d_latex_premium",
+            "scene_hook": "Signature HollowForge lane with faceless elegance and lab-coded atmosphere.",
+            "camera_plan": "Composed clinical framing with strong subject silhouette and clean set geometry.",
+            "pose_plan": "Restrained stillness, statuesque alignment, and controlled presentation.",
+            "environment": "Sterile chamber, observation corridor, bright white room, or glass bay.",
+            "device_focus": "Full-cover latex mask, hood, and faceless character identity.",
+            "lighting_plan": "Cold clinical light, glass reflections, and hard surface sheen.",
+            "material_focus": "Black latex, sterile white surfaces, glass, polished metal.",
+            "intensity_hook": "Keep it iconic and premium; the mask is the signature, not graphic action."
+          }
+        ]
+      }
+    },
+    {
+      "pack_id": "D3",
+      "line_series": "line_d_latex_premium",
+      "pack_label": "Power Dynamic Premium",
+      "generate_request": {
+        "concept_brief": "Original adult premium latex heroine, solo latex harness styling, industrial set, dramatic side light, submission-coded fashion posture.",
+        "creative_brief": "Keep the image intense but controlled. The power dynamic should be implied by pose and environment, not by explicit activity.",
+        "count": 25,
+        "chunk_size": 25,
+        "workflow_lane": "sdxl_illustrious",
+        "provider": "default",
+        "model": null,
+        "tone": "clinical",
+        "heat_level": "maximal",
+        "creative_autonomy": "director",
+        "direction_pass_enabled": true,
+        "target_lora_count": 1,
+        "checkpoint_pool_size": 1,
+        "include_negative_prompt": true,
+        "dedupe": true,
+        "forbidden_elements": [
+          "recognizable franchise character",
+          "logo",
+          "watermark",
+          "underage coding"
+        ],
+        "expansion_axes": [
+          "camera distance",
+          "lighting mood",
+          "material emphasis",
+          "location",
+          "pose tension"
+        ],
+        "direction_pack_override": [
+          {
+            "codename_stub": "d3",
+            "series": "line_d_latex_premium",
+            "scene_hook": "Power-dynamic premium lane built from posture, lighting, and industrial staging.",
+            "camera_plan": "Hero angles and side-lit medium shots that keep the scene elegant.",
+            "pose_plan": "Submission-coded posture and controlled tension without explicit action.",
+            "environment": "Industrial set, chain wall, steel doorway, catwalk, or leather bench stage.",
+            "device_focus": "Latex harness and restraint-coded fashion details.",
+            "lighting_plan": "Dramatic side light, sharp shadow, and industrial reflections.",
+            "material_focus": "Latex harness, steel, leather, smoke haze, focused highlights.",
+            "intensity_hook": "The lane should feel premium and intense, but still composed and non-graphic."
+          }
+        ]
+      }
+    }
+  ],
+  "phase_2_checkpoint_swap_template": {
+    "checkpoint_a": "waiIllustriousSDXL_v160.safetensors",
+    "checkpoint_b": "animayhemPaleRider_v2TrueGrit.safetensors",
+    "copies_per_winner": 2,
+    "expected_rows_per_winner": 50
+  },
+  "phase_3_series_template": {
+    "copies_per_winner": 3,
+    "tracks": [
+      "character_lock",
+      "environment_drift",
+      "intensity_ladder"
+    ],
+    "expected_rows_per_winner": 75
+  }
+}

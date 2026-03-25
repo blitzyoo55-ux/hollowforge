@@ -1,0 +1,536 @@
+{
+  "batch_id": "hf_queuecreator_daily_allure_newwomen_20260319_v1",
+  "characters": [
+    {
+      "name": "Mireya Solis",
+      "slug": "mireya_solis",
+      "descriptor": "bronzed latina beauty, chestnut waves, honey-brown eyes, sculpted cheekbones, polished modern glamour"
+    },
+    {
+      "name": "Kaede Ren",
+      "slug": "kaede_ren",
+      "descriptor": "elegant east asian beauty, sleek black bob, cool brown eyes, porcelain skin, high-fashion poise"
+    },
+    {
+      "name": "Amal El-Sayed",
+      "slug": "amal_el_sayed",
+      "descriptor": "regal arab beauty, olive skin, raven curls, hazel eyes, sharp brows, couture presence"
+    },
+    {
+      "name": "Celeste Moretti",
+      "slug": "celeste_moretti",
+      "descriptor": "mediterranean beauty, auburn hair, green eyes, luminous skin, old-money elegance"
+    },
+    {
+      "name": "Imani Adebayo",
+      "slug": "imani_adebayo",
+      "descriptor": "striking black beauty, deep brown skin, soft natural curls, dark eyes, statuesque editorial presence"
+    }
+  ],
+  "scenes": [
+    {
+      "scene_no": 1,
+      "scene_slug": "morning_kitchen_coffee",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.66,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.46,
+          "category": "eyes"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.2,
+      "prompt_suffix": "morning kitchen light, oversized white button-down over fitted lounge shorts, coffee mug in hand, bare feet on tile, sleepy confidence, sunlit counter scene"
+    },
+    {
+      "scene_no": 2,
+      "scene_slug": "sofa_paperback_reading",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.64,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.25,
+      "prompt_suffix": "apartment sofa reading a paperback, off-shoulder knit dress, legs tucked to one side, soft afternoon light, intimate home calm, candid beauty"
+    },
+    {
+      "scene_no": 3,
+      "scene_slug": "balcony_plants",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.47,
+          "category": "eyes"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.34,
+          "category": "style"
+        }
+      ],
+      "steps": 31,
+      "cfg": 5.3,
+      "prompt_suffix": "watering balcony plants, fitted ribbed tank top and linen shorts, city morning breeze, side profile, casual midriff styling, everyday elegance"
+    },
+    {
+      "scene_no": 4,
+      "scene_slug": "bookstore_aisle",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.54,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.44,
+          "category": "eyes"
+        }
+      ],
+      "steps": 32,
+      "cfg": 5.35,
+      "prompt_suffix": "bookstore aisle browse, tucked silk blouse and fitted skirt, one hand on a shelf, intelligent gaze, warm interior lighting, spontaneous street-style allure"
+    },
+    {
+      "scene_no": 5,
+      "scene_slug": "laundromat_wait",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.55,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.34,
+          "category": "style"
+        }
+      ],
+      "steps": 32,
+      "cfg": 5.4,
+      "prompt_suffix": "late-night laundromat wait, cropped cardigan over a sleek camisole, denim silhouette, leaning on a washer, fluorescent glow made cinematic, quiet sensuality"
+    },
+    {
+      "scene_no": 6,
+      "scene_slug": "convenience_store_run",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.44,
+          "category": "style"
+        }
+      ],
+      "steps": 33,
+      "cfg": 5.45,
+      "prompt_suffix": "late-night convenience store run, hoodie over a fitted mini dress, one hand holding a drink bottle, aisle neon, relaxed confidence, everyday nightlife appeal"
+    },
+    {
+      "scene_no": 7,
+      "scene_slug": "taxi_window",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.6,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.45,
+          "category": "eyes"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.3,
+      "prompt_suffix": "night taxi passenger seat, trench coat over a satin camisole top, rain on the window, city reflections, thoughtful sideways glance, intimate commute mood"
+    },
+    {
+      "scene_no": 8,
+      "scene_slug": "home_office_stretch",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.58,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.38,
+          "category": "style"
+        }
+      ],
+      "steps": 31,
+      "cfg": 5.35,
+      "prompt_suffix": "home office desk stretch, crisp shirt loosely unbuttoned at the collar, tailored shorts, glasses on the desk, crossed legs, late-afternoon laptop glow"
+    },
+    {
+      "scene_no": 9,
+      "scene_slug": "after_gym_athleisure",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.45,
+          "category": "eyes"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 31,
+      "cfg": 5.4,
+      "prompt_suffix": "after-gym athleisure, cropped zip jacket over a sleek sports top, high-waisted leggings, gym bag over one shoulder, post-workout glow, candid confidence"
+    },
+    {
+      "scene_no": 10,
+      "scene_slug": "grocery_tote_walk",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "Okaze.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.43,
+          "category": "eyes"
+        }
+      ],
+      "steps": 33,
+      "cfg": 5.45,
+      "prompt_suffix": "walking home with a grocery tote, fitted sundress and flat sandals, golden-hour sidewalk light, shoulder strap pull, effortless neighborhood glamour"
+    },
+    {
+      "scene_no": 11,
+      "scene_slug": "hallway_keys_home",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "Okaze.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.35,
+          "category": "style"
+        }
+      ],
+      "steps": 33,
+      "cfg": 5.5,
+      "prompt_suffix": "apartment hallway arriving home, knit bodycon dress, keys in hand, over-the-shoulder glance, narrow corridor lighting, soft tension in a normal moment"
+    },
+    {
+      "scene_no": 12,
+      "scene_slug": "bed_edge_pajamas",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.54,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "sitting on the edge of a bed, silk pajama set, tousled hair, morning sunlight stripes, bare legs crossed, intimate but fully clothed home scene"
+    },
+    {
+      "scene_no": 13,
+      "scene_slug": "rooftop_hoodie",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "96YOTTEA-WAI.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "rooftop in an oversized hoodie and biker shorts, wind moving the hemline, hands in the pocket, city dusk, sporty casual allure"
+    },
+    {
+      "scene_no": 14,
+      "scene_slug": "record_shelf_browse",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "96YOTTEA-WAI.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.46,
+          "category": "style"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.55,
+      "prompt_suffix": "record shelf browsing, fitted white tee and leather skirt, one hip leaned into the shelf, soft apartment lamp light, music-night intimacy"
+    },
+    {
+      "scene_no": 15,
+      "scene_slug": "bus_stop_rain",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.4,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.6,
+      "prompt_suffix": "rainy bus stop, blouse and pencil skirt, umbrella held low, wet pavement reflections, city evening mood, grounded and quietly alluring"
+    },
+    {
+      "scene_no": 16,
+      "scene_slug": "cafe_terrace_laptop",
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.44,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.55,
+      "prompt_suffix": "cafe terrace laptop break, sleeveless top with a fitted blazer, crossed legs under a small table, iced coffee, midday elegance, everyday sophistication"
+    },
+    {
+      "scene_no": 17,
+      "scene_slug": "dressing_room_self_check",
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.42,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.41,
+          "category": "eyes"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.6,
+      "prompt_suffix": "dressing-room mirror check, fitted tank top and jeans, one hand adjusting hair, bright changing-room lights, casual confidence, real-world appeal"
+    },
+    {
+      "scene_no": 18,
+      "scene_slug": "midnight_snack_counter",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.43,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.45,
+      "prompt_suffix": "midnight kitchen snack, satin camisole layered under a loose cardigan, leaning on the counter, fridge light glow, home-alone intimacy, calm allure"
+    },
+    {
+      "scene_no": 19,
+      "scene_slug": "weekend_market_stroll",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.34,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.41,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "weekend market stroll, open-back casual dress, woven bag over one shoulder, sunlight through vendor tents, flirtatious but everyday charm"
+    },
+    {
+      "scene_no": 20,
+      "scene_slug": "living_room_vinyl",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.48,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.34,
+          "category": "style"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "living room vinyl player moment, oversized sweater slipping off one shoulder, bare legs folded on the floor, warm lamp pool, soft nighttime intimacy"
+    }
+  ],
+  "queued_count": 100,
+  "errors": [],
+  "generation_ids": [
+    "8d3648f0-2f94-4d02-9da3-e72687230d4f",
+    "0e8039ae-e73b-4fda-a989-f807f44d906c",
+    "a42a2e62-2170-4c64-8836-885edeac9391",
+    "83bb3e2c-2f1f-41f0-8242-3a771946c381",
+    "c2467d80-9c13-499b-8db7-846708d620fb",
+    "9c317fdc-9f16-443c-a32a-007913bbfbfa",
+    "521d0404-7fd4-4b95-966e-f8b14d83989a",
+    "8a9cffac-79ee-4299-acc6-47aa6e0d72ab",
+    "ab410213-7da9-43d7-912e-fa4667aebc7b",
+    "c74a8c01-5e6b-4993-8d30-9e6b5136225b",
+    "f8583206-7ae6-41dc-8d29-f525b9ebcc31",
+    "c5379015-b14f-4abc-9985-f465d0ae8424",
+    "3efd3099-cf5e-4781-b6f8-3564082b8b45",
+    "1028c479-c32d-4d8f-bad8-1bbb223b1469",
+    "8edbd8d2-eb1a-4731-a787-cce856b77cc3",
+    "55273c7f-1137-4cbc-bc1c-6d5f5063ceab",
+    "4336b4c9-110a-4b94-a32a-bf00025c0edc",
+    "38bbd9be-058c-4ca8-a63f-91d72f398dee",
+    "e55cb80b-f6b1-4f57-bf3c-ccb229cbaf62",
+    "636f14c4-cab2-436e-b37f-8bcb6cd14ca0",
+    "186f8a4f-c28b-4f7e-96c0-a8449278d01c",
+    "5533d8f0-1a8a-49ed-933c-94838f572445",
+    "20ca20d8-514f-4966-aaee-001b97bf9a3c",
+    "05fe5558-29e7-4993-9543-fcc39698df32",
+    "38c1d2a4-b91a-440f-a90e-e4c469411667",
+    "ee04a697-f4c0-47fe-8dde-0c02d42d37a5",
+    "6f27a58b-7939-44c8-9239-365845bc33a0",
+    "1f41d227-6163-4624-9ec0-9074316c9272",
+    "458b66bb-09e5-4c16-a0ca-fb4650e39d17",
+    "b4bd0a06-0f55-42e8-a602-73a97d61105f",
+    "462f76bb-39df-4914-b3d5-2443d1c151a5",
+    "5dff329c-9743-441e-95c2-7c270f651911",
+    "a2d2e4dc-0803-43fb-a012-49e428fdbbd0",
+    "87bb457a-3146-480d-aa3c-63d06bee4622",
+    "e3df9456-da2a-48b1-8601-4b4f58d3a0f3",
+    "0ec81da6-0db2-46d8-a51c-360335253a76",
+    "6d654668-5297-4d4f-af75-720af3a17048",
+    "3030b79a-a2a0-447b-9270-c777f7b75daa",
+    "dd96c4b1-b94a-4ee4-b823-5ca63669c8f6",
+    "f0ae8860-f8a2-4688-8e92-fc13ceda38da",
+    "c5a71978-bff9-44b0-9b3a-0be510ed0c0b",
+    "9d5757e5-d673-42e2-8d58-0191672da6d4",
+    "45c80cd3-c205-4140-9362-2067a46f038e",
+    "6d01fb8d-cae2-4a71-8361-81b68dca593f",
+    "a828cbc0-a8a9-40ae-9d15-10e14cc6af06",
+    "1e867c77-cf07-42d4-ba65-f1dd3033a849",
+    "2d00ac93-0bef-491d-9f3f-8450e3dad12c",
+    "4eb5b9fa-c6d4-4088-a3de-d4cd8117fa6b",
+    "31289e2b-1e2a-4e81-b944-8bd1dcbe9ae4",
+    "e29c4820-28af-42c7-811f-f477a0622479",
+    "35ddabdf-b202-4a4d-8ec1-66a3d9ece663",
+    "48f53df1-212f-4da5-9c8a-d48790043392",
+    "67b6c6ed-43e8-4364-aaff-6a1928b123d4",
+    "1820586b-3123-47aa-8334-2c494402b870",
+    "aa7a8332-ca08-4da3-b476-6fc80fa94d4e",
+    "0d4d4738-19d9-40b0-89a3-89a7ffd38dd5",
+    "79444e7f-377f-4dc0-893e-e16e083412d5",
+    "327b20ce-cfcf-4d19-82e0-389ccd4baa3d",
+    "46883017-b02d-4815-bc44-4563dea266a0",
+    "f4343b44-7825-473c-be27-23d5ad6b1f19",
+    "f670b5c7-df53-4c3a-983e-8e36c81945e1",
+    "9be29c88-221d-48a3-b8b6-5262398b6f11",
+    "d5498318-db80-447a-b0d6-23a32e9b2f43",
+    "4f6e28f7-f8e2-4002-9421-0a6defbf1946",
+    "b0154814-9c49-4386-9c70-6d5e8a8f0c6e",
+    "b1f9bac3-d4ce-405c-972d-e0bbcaf55e74",
+    "a1c9594b-3a3d-4ee1-876d-3a33514e4b2c",
+    "c66baa60-d8df-41a2-8023-475a6c3d9200",
+    "cf925d6c-5c97-42ef-be02-ee427d961876",
+    "68d00833-8bc2-4615-8882-5441e84258e1",
+    "86406764-c829-4a60-a188-513853bf641d",
+    "b852d737-6833-4650-ad93-54012a8c9d39",
+    "ba7324c3-af6f-415e-82b0-1d2272639103",
+    "2fefee28-bd7d-444e-8c73-e134c5d0081f",
+    "e58236f6-ef74-4e92-8762-358ef8025488",
+    "fa1b74b9-90f8-4b8d-a889-2df2c930ca92",
+    "cdcdbda7-7aa4-4156-9645-f122941ada5a",
+    "986609b9-1ee8-456c-8037-3b6a31565905",
+    "8cb9d737-dd66-47aa-a3a8-1feffeb233d6",
+    "98c99de5-1d0c-46cf-8330-50009284afe6",
+    "3e6ffbb1-362f-43f9-af9e-02c66a69b92b",
+    "493f95d8-ea63-4c8c-9418-c83df6896525",
+    "b91f2229-72f8-49b5-aee0-cc78c806545a",
+    "2b36f537-89d5-4783-bf80-861cc9b75736",
+    "7f7d87fa-ba58-4131-ab64-3534c24ac6c6",
+    "935875a7-f301-47f5-bcd8-c592ad7ea875",
+    "e6b2741c-fa22-4e9c-9131-94eac4174682",
+    "e42df605-9364-4f6e-9932-857d2f7b9cf2",
+    "c338a615-a316-434d-bd1d-39d3dedbdedb",
+    "45f585ea-6ecb-4051-a2f9-a350ac1b2fd2",
+    "c325dca3-81b5-492e-a2b2-1aba28130963",
+    "0f609975-509c-4310-afd3-ca1780c0b4fd",
+    "a4f35cfc-6481-4565-a43f-c562910d0db0",
+    "db25b70f-aa92-4656-9ad2-1e6aee7da60a",
+    "99a45f96-25a0-45bf-8e8d-5ca22f9d122b",
+    "c3016f6b-f6ec-4adb-af32-cea1ec323893",
+    "40994472-22de-4015-ab30-fc14d173aa4f",
+    "1ebc682b-80e9-491b-a5a3-a167a3e9613d",
+    "750ca401-41b3-4689-a8e4-1602bc3f7b90",
+    "4fbddf5a-20d5-4462-b2c3-db0c455c04d4"
+  ]
+}

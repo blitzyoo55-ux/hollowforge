@@ -1,0 +1,7 @@
+﻿generation_id,source_id,image_path,face_count,face_boxes,decision
+386d1a92-7a53-40b6-be32-2618dd07791d,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_01_close_anchor,images/2026/03/22/386d1a92-7a53-40b6-be32-2618dd07791d.png,1,"[[127, 201, 577, 545]]",pass
+66e785d2-f65e-44ec-ad80-e606aaab99a0,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_02_grounded_pause,images/2026/03/22/66e785d2-f65e-44ec-ad80-e606aaab99a0.png,1,"[[224, 85, 460, 454]]",pass
+181500a4-303c-4cce-99e3-9aff1cde0444,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_03_public_half_turn,images/2026/03/22/181500a4-303c-4cce-99e3-9aff1cde0444.png,1,"[[169, 111, 292, 292]]",pass
+830123b1-a84d-4210-abdb-857432d9b2c1,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_04_settled_interior,images/2026/03/22/830123b1-a84d-4210-abdb-857432d9b2c1.png,1,"[[50, 139, 465, 458]]",pass
+f4d85f98-508e-4815-b303-85e479e034b6,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_05_exterior_transition,images/2026/03/22/f4d85f98-508e-4815-b303-85e479e034b6.png,2,"[[181, 100, 213, 204], [458, 106, 196, 193]]",reject_multi_face
+edd4f901-4288-4740-88cd-9ee726b95047,hf_character_natural_benchmark_20260323_hana_single_subject_v1:hana_seo:scene_06_evening_rest,images/2026/03/22/edd4f901-4288-4740-88cd-9ee726b95047.png,1,"[[217, 196, 410, 400]]",pass

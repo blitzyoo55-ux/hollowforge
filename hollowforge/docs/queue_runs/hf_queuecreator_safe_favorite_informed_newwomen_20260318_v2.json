@@ -1,0 +1,536 @@
+{
+  "batch_id": "hf_queuecreator_safe_favorite_informed_newwomen_20260318_v2",
+  "characters": [
+    {
+      "name": "Mireya Solis",
+      "slug": "mireya_solis",
+      "descriptor": "bronzed latina beauty, chestnut waves, honey-brown eyes, sculpted cheekbones, polished modern glamour"
+    },
+    {
+      "name": "Kaede Ren",
+      "slug": "kaede_ren",
+      "descriptor": "elegant east asian beauty, sleek black bob, cool brown eyes, porcelain skin, high-fashion poise"
+    },
+    {
+      "name": "Amal El-Sayed",
+      "slug": "amal_el_sayed",
+      "descriptor": "regal arab beauty, olive skin, raven curls, hazel eyes, sharp brows, couture presence"
+    },
+    {
+      "name": "Celeste Moretti",
+      "slug": "celeste_moretti",
+      "descriptor": "mediterranean beauty, auburn hair, green eyes, luminous skin, old-money elegance"
+    },
+    {
+      "name": "Imani Adebayo",
+      "slug": "imani_adebayo",
+      "descriptor": "striking black beauty, deep brown skin, soft natural curls, dark eyes, statuesque editorial presence"
+    }
+  ],
+  "scenes": [
+    {
+      "scene_no": 1,
+      "scene_slug": "velvet_chaise_portrait",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.68,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.48,
+          "category": "eyes"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.2,
+      "prompt_suffix": "luxury editorial glamour, velvet chaise portrait, fitted satin slip dress, direct eye contact, soft key light, polished hotel suite ambiance"
+    },
+    {
+      "scene_no": 2,
+      "scene_slug": "balcony_citylights",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.66,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.38,
+          "category": "style"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.25,
+      "prompt_suffix": "balcony doorway framing, city lights behind, silk evening dress, one hand on the doorframe, cinematic night glow, controlled elegance"
+    },
+    {
+      "scene_no": 3,
+      "scene_slug": "mirror_half_turn",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.54,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.45,
+          "category": "eyes"
+        }
+      ],
+      "steps": 32,
+      "cfg": 5.35,
+      "prompt_suffix": "mirror-side standing pose, one shoulder turned toward camera, tailored black dress, reflective vanity surface, beauty-first styling, clean lines"
+    },
+    {
+      "scene_no": 4,
+      "scene_slug": "champagne_bar_corner",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.56,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.35,
+          "category": "style"
+        }
+      ],
+      "steps": 32,
+      "cfg": 5.4,
+      "prompt_suffix": "lounge bar corner, champagne table styling, crossed legs, glossy heels, low amber light, after-hours allure, premium editorial framing"
+    },
+    {
+      "scene_no": 5,
+      "scene_slug": "window_light_silhouette",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.6,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.46,
+          "category": "eyes"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.25,
+      "prompt_suffix": "window light silhouette, ivory robe-inspired eveningwear, elegant hand placement, upscale suite depth, subtle rim light, alluring restraint"
+    },
+    {
+      "scene_no": 6,
+      "scene_slug": "staircase_gown",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.62,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.4,
+          "category": "style"
+        }
+      ],
+      "steps": 31,
+      "cfg": 5.35,
+      "prompt_suffix": "penthouse staircase, draped evening gown, trailing fabric, chin raised, polished marble interior, luxury magazine cover energy"
+    },
+    {
+      "scene_no": 7,
+      "scene_slug": "vanity_glam_room",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "Okaze.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.44,
+          "category": "eyes"
+        }
+      ],
+      "steps": 33,
+      "cfg": 5.45,
+      "prompt_suffix": "backstage vanity mirror, makeup bulbs, satin camisole dress, poised half-turn, beauty close-up, jewelry sparkle, celebrity dressing-room mood"
+    },
+    {
+      "scene_no": 8,
+      "scene_slug": "rain_glass_reflection",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "Okaze.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.35,
+          "category": "style"
+        }
+      ],
+      "steps": 33,
+      "cfg": 5.5,
+      "prompt_suffix": "rain-streaked window backdrop, black silk dress, moody reflection, side profile, glossy lips, intimate city-night atmosphere"
+    },
+    {
+      "scene_no": 9,
+      "scene_slug": "rooftop_afterhours",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "96YOTTEA-WAI.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "rooftop after-hours editorial, long coat drape over a fitted dress, wind-swept hair, skyline haze, confident stance, midnight fashion energy"
+    },
+    {
+      "scene_no": 10,
+      "scene_slug": "satin_sofa_gloves",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "96YOTTEA-WAI.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.54,
+          "category": "style"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.55,
+      "prompt_suffix": "satin sofa editorial, opera gloves, one leg folded, warm lamp glow, composed allure, premium fashion campaign look"
+    },
+    {
+      "scene_no": 11,
+      "scene_slug": "library_ladder",
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.45,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.55,
+      "prompt_suffix": "dark library ladder, tailored dress with stockings, hand on the rail, polished wood interior, intelligent glamour, cinematic hush"
+    },
+    {
+      "scene_no": 12,
+      "scene_slug": "marble_foyer_couture",
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.44,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.6,
+      "prompt_suffix": "marble foyer couture, corset-inspired eveningwear, soft floor reflections, full-body glamour, poised shoulders, luxury hotel architecture"
+    },
+    {
+      "scene_no": 13,
+      "scene_slug": "private_booth",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.44,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.45,
+      "prompt_suffix": "private club booth, velvet gloves, slit dress styling, low-key gaze, moody spotlight, after-party desirability, polished composition"
+    },
+    {
+      "scene_no": 14,
+      "scene_slug": "gallery_spotlight",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.42,
+          "category": "eyes"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "modern art gallery spotlight, cutout evening gown, gallery wall shadows, fashion-forward stance, sleek hair, museum-gala mood"
+    },
+    {
+      "scene_no": 15,
+      "scene_slug": "neon_corridor_sci_fi",
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": [
+        {
+          "filename": "GEN(illust) 0.2v.safetensors",
+          "strength": 0.52,
+          "category": "style"
+        },
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.46,
+          "category": "style"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.55,
+      "prompt_suffix": "neon corridor sci-fi fashion, sleek bodysuit styling, chrome accents, cyan glow, visor-inspired accessories, heroine silhouette, premium futurism"
+    },
+    {
+      "scene_no": 16,
+      "scene_slug": "elevator_chamber",
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": [
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.48,
+          "category": "eyes"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 31,
+      "cfg": 5.35,
+      "prompt_suffix": "elevator chamber portrait, tailored coatdress, narrow light strips, composed expression, high-end hotel tension, glossy metal reflections"
+    },
+    {
+      "scene_no": 17,
+      "scene_slug": "hallway_over_shoulder",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "Okaze.safetensors",
+          "strength": 0.46,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.44,
+          "category": "eyes"
+        }
+      ],
+      "steps": 32,
+      "cfg": 5.4,
+      "prompt_suffix": "hotel hallway, satin trench over a fitted dress, over-the-shoulder glance, rim-lit silhouette, polished floor reflections, composed seduction"
+    },
+    {
+      "scene_no": 18,
+      "scene_slug": "red_carpet_arrival",
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.56,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.38,
+          "category": "style"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.55,
+      "prompt_suffix": "red carpet arrival, couture gown, flash bulbs popping, chin raised, premiere-night confidence, polished star aura, event photography energy"
+    },
+    {
+      "scene_no": 19,
+      "scene_slug": "candlelit_salon",
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "loras": [
+        {
+          "filename": "Seet_il5-000009.safetensors",
+          "strength": 0.4,
+          "category": "style"
+        },
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.43,
+          "category": "eyes"
+        }
+      ],
+      "steps": 35,
+      "cfg": 5.6,
+      "prompt_suffix": "candlelit salon, velvet evening dress, antique mirror, soft shoulder line, warm highlights, dark romance atmosphere, refined beauty focus"
+    },
+    {
+      "scene_no": 20,
+      "scene_slug": "afterparty_vinyl_booth",
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": [
+        {
+          "filename": "incase_new_style_red_ill.safetensors",
+          "strength": 0.5,
+          "category": "style"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.34,
+          "category": "style"
+        }
+      ],
+      "steps": 34,
+      "cfg": 5.5,
+      "prompt_suffix": "afterparty vinyl booth, metallic mini dress, knee-high boots, lounge neon spill, relaxed confidence, high-gloss nightlife glamour"
+    }
+  ],
+  "queued_count": 100,
+  "errors": [],
+  "generation_ids": [
+    "21c3342b-ec7d-4a3a-9035-a81030a7ee5c",
+    "7d1b7f97-13b8-4229-9b46-56cb91bfd1c1",
+    "e9fb67af-e850-4f29-8399-76f6c8e01fc7",
+    "e2258187-d51e-47b1-8957-3ebb3f61f073",
+    "19d4332f-8227-41eb-bb62-032235250bd1",
+    "c4b27c27-7c6e-45d7-93d5-fb7b79bc82df",
+    "dc7d2000-66b1-4c28-b7ad-78ec8cf1e38a",
+    "65e7924d-9aa7-4310-883c-0c99736d0703",
+    "8cf35cee-8d29-474c-99ff-41847e9dfe64",
+    "64cfdd89-dd44-4ee2-a10c-e27224565b5e",
+    "99da703c-ed6b-4648-91e4-6cff31f3e003",
+    "b435e6ff-490c-4a8a-88df-7aeeb3e7c1c7",
+    "fd6be3fb-21b9-4458-ae9d-dd467987b7b0",
+    "f194ed30-452d-4c7a-8976-63a4a0f4fb79",
+    "21374f2c-7aee-4444-8b58-6a6b8dbc93a1",
+    "3b4761af-98e0-4512-9034-31aa09f5413b",
+    "def799a9-17f9-4c92-a19e-4042d42b4a23",
+    "10bf5679-980d-4430-8d45-4491be8a9589",
+    "d563c3e2-1aaa-4ad6-bdb1-3245f0b00772",
+    "241e0bd0-8cfb-4ac9-a3a1-9281d5afd587",
+    "c34b1fc5-d6dc-454e-a73c-9e61cc8e7da7",
+    "eaabfa61-ca84-4a1a-8c34-771d30a01ff7",
+    "25ddea2b-3186-47ff-8395-61f539986aa0",
+    "f97211fc-a138-488d-aa37-20763608569a",
+    "f1da58f4-a9c8-4cbd-aac7-49b4a21b5cc1",
+    "23ba9cfd-e3b5-4339-a53a-8e15cc2fcc1f",
+    "90f62660-af8a-44aa-8cb8-52094ed900a2",
+    "a3128c8b-5d99-48d5-b35c-749253222ef5",
+    "19882857-c256-4002-af35-3eebce83681e",
+    "dc7bc61a-b0ba-499d-a555-1b93b83d301c",
+    "aae88217-f907-4899-a150-3058fe9fec93",
+    "36863acf-40ed-46c6-b813-b32c6213d068",
+    "7b45f1c6-eb64-4364-845e-cccc8eaeb42b",
+    "5033ac86-04d3-4e73-a2e5-0880ba4e0fd0",
+    "9a50466a-7b98-40d6-8352-e1035ce42f2d",
+    "de504a96-6234-4a4a-9e16-6fe6029a715d",
+    "5eba94e8-5ddd-4ace-a1fb-b0a92c6bc534",
+    "1623b5f5-0b75-4b76-8123-b11a1fe68219",
+    "7edff507-3466-4737-b3e9-075a9a62de5f",
+    "5517bcd3-2189-4d6a-a61a-5fdfa0cde0ea",
+    "3dd662f5-8a70-49e7-a731-e22ec844097e",
+    "f6595fc8-ce04-4fa8-b2e5-fa7250e216ca",
+    "60e0d275-c10a-4506-97f0-f672a54368df",
+    "f05cc334-b941-4b09-8727-9cecac8339af",
+    "54ab81a5-f438-4fde-8f80-9dcb504581dc",
+    "34dae506-6cf7-4e75-a1ab-4acc5d923b9a",
+    "043aa1a8-b4be-48b8-8663-b3b6e532ec8a",
+    "e4e4614b-26f1-4332-a2d4-d9eff0c9ceb1",
+    "346e24a6-064d-4240-b164-9df0f5ad033e",
+    "31d7c4c9-1a0c-4b8f-925b-572cec46792e",
+    "717c70b2-781b-4da9-b64a-91de9230464c",
+    "b44f38a3-e08a-42c4-8c83-f748913c0607",
+    "94c171ff-a45d-4fd1-b275-26a56ada232f",
+    "b0937b91-e7ba-45f5-b58c-f493e84e8c68",
+    "8d41240b-7d70-4288-85a5-9262e0800c4b",
+    "316fc965-e11c-457f-b316-0e9e3f50b403",
+    "60df16b9-7040-4541-90c4-e604c4ee1370",
+    "1e74c0b0-d9e3-4732-bc8e-f2805a6a72f1",
+    "a78e17a4-ce4a-49ed-a052-8b3d68cd6bac",
+    "94184b0a-6bf9-47e2-848d-5e4e4bab8da9",
+    "6331a345-786e-410f-a392-555a2e57fc2a",
+    "90cfe9e1-1398-4a1a-8db7-1d7868194d0d",
+    "ccc67053-81b6-443f-9a7f-73285961d28b",
+    "c539b5f0-1b26-4889-82b5-ee3d25db9765",
+    "1a817c81-3099-4b86-a5fd-be21e758b85e",
+    "faaaef19-30f0-4aaf-b5f9-e734e2cc3bff",
+    "42e4d46a-00e8-4c33-8534-491ffee0b0e9",
+    "3ed1eab2-3044-4ec4-a72c-c572042528aa",
+    "8b2174aa-81ff-4b93-97b7-8325df5af931",
+    "0ee07107-3e33-475b-9ff8-b13f63e9947d",
+    "0c487d12-5ad7-4534-a6ca-622e8458af27",
+    "f5b11577-5b3f-4c37-814c-109a8306fae0",
+    "8edf7a14-3b27-4820-a8cd-79a376bc15b7",
+    "005b104e-865f-4de8-af35-8debc8fe8a04",
+    "73f24688-4b1c-4bf3-82c9-97ca607ad55d",
+    "ad968441-d16d-45c6-9534-1409b461d6d9",
+    "453861a1-fcba-4204-b6d4-edcc169837c1",
+    "f84c1d25-5e41-4194-aab7-1a3a0e3f4fd6",
+    "700a5a9d-d243-4a95-a426-0e8b738e92b4",
+    "08d97f5b-18e6-4170-b2fd-df4e9856e599",
+    "7ecf7934-9f1d-4956-96e9-7191aacafadc",
+    "3f7ccd41-2ea5-46b1-bf0a-c78dc49a88da",
+    "70338bc4-5800-4ab1-9f32-e48508d0db0f",
+    "f7059a72-7537-4b1b-8c7a-77189177d344",
+    "67582d91-3834-4213-9b91-4ea947706a44",
+    "b91e891f-3529-46e1-916e-3ad330c8ae61",
+    "34ade48f-e763-45d9-bb83-a0705aac9fa8",
+    "57f3b006-1c61-400b-bf93-e38f9446b1e4",
+    "e93d95b1-3571-4b02-b561-6b0359a15f32",
+    "0fdcdb30-6694-45d7-8094-1b34d5786722",
+    "ffa474b5-3af6-437d-a9a3-c6904b31ba66",
+    "d1df2546-f3c5-4a03-9117-a0ba43c0c720",
+    "eed88cc0-0390-4233-8eab-d71d327bccdd",
+    "a1c4e5ed-cd20-4ad4-9488-0c2d9a23098c",
+    "98c69476-2cbe-48c2-909e-63ef9ea70c68",
+    "91d105e3-2a0a-4e04-9464-ceb40fdd937e",
+    "6f37463c-7b8d-401d-a384-446cc1fd2e16",
+    "b64d9e44-3649-4604-aa18-287a1e2044dd",
+    "f2bfaee9-c1e7-436f-9ab0-944e404b721f",
+    "3ddd32cb-c90c-4791-96ce-a04d680b53a4"
+  ]
+}

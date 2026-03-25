@@ -1,0 +1,230 @@
+# HollowForge Core Character Registry
+
+기준일: 2026-03-20
+
+아래 프로필은 최근 7일 favorite 성과를 기준으로 선발한 코어 캐릭터 5명이다.
+목표는 반복 생성 시 drift를 줄이고, 에피소드/애니메이션 단계에서 일관된 anchor를 유지하는 것이다.
+
+## 1. Kaede Ren
+- Tier: Core A
+- 최근 7일 성과: 25 favorites / 60 created, favorite rate 41.7%
+- 인종/배경: Japanese, East Asian metropolitan
+- 연령대: mid-20s adult
+- 키: 168cm
+- 3사이즈: 84-58-86 cm
+- 외형:
+  - porcelain skin
+  - sleek black bob
+  - cool brown eyes
+  - narrow jawline
+  - slim toned figure
+- 성격:
+  - composed
+  - observant
+  - quietly flirtatious
+  - high self-control
+- 강한 장면:
+  - city-night balcony
+  - marble foyer couture
+  - gallery spotlight
+  - private booth
+- 선호 체크포인트:
+  - `ultimateHentaiAnimeRXTRexAnime_rxV1`
+  - `prefectIllustriousXL_v70`
+  - `waiIllustriousSDXL_v140`
+- canonical wardrobe:
+  - monochrome fitted knits
+  - satin blouse + tailored skirt
+  - sleek mini dress + blazer
+  - understated jewelry
+- canonical prompt anchor:
+  - `Kaede Ren, elegant east asian beauty, sleek black bob, cool brown eyes, porcelain skin, refined facial features, slim toned figure, high-fashion poise`
+- anti-drift:
+  - no bright dyed hair
+  - no round/cute facial styling
+  - no oversized streetwear as main identity
+
+## 2. Imani Adebayo
+- Tier: Core A
+- 최근 7일 성과: 21 favorites / 60 created, favorite rate 35.0%
+- 인종/배경: Black, Nigerian diaspora luxury editorial
+- 연령대: late-20s adult
+- 키: 173cm
+- 3사이즈: 88-62-90 cm
+- 외형:
+  - deep brown skin
+  - soft natural curls
+  - dark eyes
+  - long neck line
+  - statuesque editorial presence
+- 성격:
+  - calm
+  - self-possessed
+  - warm but formidable
+  - socially magnetic
+- 강한 장면:
+  - rain-glass reflection
+  - private booth
+  - gallery spotlight
+  - sophisticated lounge scenes
+- 선호 체크포인트:
+  - `ultimateHentaiAnimeRXTRexAnime_rxV1`
+  - `animayhemPaleRider_v2TrueGrit`
+  - `prefectIllustriousXL_v70`
+- canonical wardrobe:
+  - body-skimming knits
+  - luxe athleisure
+  - deep jewel-tone satin
+  - structured blazers
+- canonical prompt anchor:
+  - `Imani Adebayo, striking black beauty, deep brown skin, soft natural curls, dark eyes, polished cheekbones, statuesque editorial presence`
+- anti-drift:
+  - no pale skin reinterpretation
+  - no pin-straight hair as default
+  - avoid girlish styling
+
+## 3. Nia Laurent
+- Tier: Core A-
+- 최근 7일 성과: 15 favorites / 40 created, favorite rate 37.5%
+- 인종/배경: Afro-French, Paris nightlife/editorial crossover
+- 연령대: late-20s adult
+- 키: 171cm
+- 3사이즈: 87-61-89 cm
+- 외형:
+  - rich dark skin
+  - natural textured curls
+  - striking almond eyes
+  - polished cheekbones
+  - elegant proportions
+- 성격:
+  - cool
+  - stylish
+  - poised
+  - high social fluency
+- 강한 장면:
+  - motorsport chic
+  - winter avenue editorial
+  - yacht golden hour
+  - red carpet premiere
+- 선호 체크포인트:
+  - `prefectIllustriousXL_v70`
+  - `waiIllustriousSDXL_v160`
+  - `animayhemPaleRider_v2TrueGrit`
+- canonical wardrobe:
+  - luxury sport pieces
+  - metallic nightlife accents
+  - tailored outerwear
+  - black + jewel tone palette
+- canonical prompt anchor:
+  - `Nia Laurent, afro-french editorial beauty, rich dark skin, natural textured curls, striking almond eyes, polished cheekbones, slim toned figure`
+- anti-drift:
+  - avoid pastel/cute styling
+  - keep hair texture visible
+  - keep posture upright and polished
+
+## 4. Camila Duarte
+- Tier: Core A-
+- 최근 7일 성과: 14 favorites / 40 created, favorite rate 35.0%
+- 인종/배경: Brazilian / Latina resort-glamour lane
+- 연령대: mid-20s adult
+- 키: 170cm
+- 3사이즈: 89-60-91 cm
+- 외형:
+  - sun-kissed tan skin
+  - long chestnut waves
+  - warm hazel eyes
+  - refined facial structure
+  - soft but athletic silhouette
+- 성격:
+  - open
+  - playful
+  - flirtatious
+  - socially confident
+- 강한 장면:
+  - yacht golden hour
+  - red carpet premiere
+  - artist loft morning
+  - jazz lounge
+- 선호 체크포인트:
+  - `prefectIllustriousXL_v70`
+  - `waiIllustriousSDXL_v140`
+  - `ultimateHentaiAnimeRXTRexAnime_rxV1`
+- canonical wardrobe:
+  - resort dresses
+  - satin nightlife pieces
+  - open-neck blouses
+  - polished beach-luxury styling
+- canonical prompt anchor:
+  - `Camila Duarte, brazilian glamour beauty, sun-kissed tan skin, long chestnut waves, warm hazel eyes, refined facial structure, elegant proportions`
+- anti-drift:
+  - no platinum or black bob redesign
+  - avoid gothic palette as default
+  - keep warmth and movement in hair
+
+## 5. Mina Sato
+- Tier: Core B+
+- 최근 7일 성과: 12 favorites / 40 created, favorite rate 30.0%
+- 인종/배경: Japanese fashion-magazine / polished city girl
+- 연령대: mid-20s adult
+- 키: 166cm
+- 3사이즈: 82-57-85 cm
+- 외형:
+  - creamy fair skin
+  - soft black wolf cut
+  - warm brown eyes
+  - delicate facial structure
+  - slim toned figure
+- 성격:
+  - approachable
+  - polished
+  - softly charismatic
+  - emotionally readable
+- 강한 장면:
+  - rooftop afterwork cocktail
+  - motorsport chic
+  - studio beauty closeup
+  - red carpet premiere
+- 선호 체크포인트:
+  - `prefectIllustriousXL_v70`
+  - `animayhemPaleRider_v2TrueGrit`
+  - `waiIllustriousSDXL_v160`
+- canonical wardrobe:
+  - satin blouse + skirt
+  - tailored citywear
+  - clean magazine beauty closeups
+  - sporty-luxury layers
+- canonical prompt anchor:
+  - `Mina Sato, japanese fashion-magazine beauty, creamy fair skin, soft black wolf cut, warm brown eyes, delicate features, slim toned figure`
+- anti-drift:
+  - no extreme glam contouring
+  - no overly severe expression as default
+  - keep soft polish over hard dominance
+
+## Reserve
+- 상세 레지스트리: `HOLLOWFORGE_RESERVE_CHARACTER_REGISTRY_20260321.md`
+- `Celeste Moretti`
+- `Mireya Solis`
+- `Freya Lindholm`
+- `Lucia Moreau`
+- `Hana Seo`
+- `Elena Petrov`
+- `Keira Okafor`
+
+## Hold / Rebuild
+- `Amal El-Sayed`
+  - 현재 rate가 낮아 look/scene 재정의가 필요하다.
+
+## 운영 규칙
+- 각 코어 캐릭터마다 `canonical prompt anchor`는 매번 앞부분에 고정한다.
+- 기본 still 레시피는 아래 둘 중 하나로 시작한다.
+  - `prefectIllustriousXL_v70 + DetailedEyes_V3 + Face_Enhancer_Illustrious`
+  - `waiIllustriousSDXL_v140 + Seet_il5-000009 + DetailedEyes_V3`
+- scene 테스트는 4축만 반복한다.
+  - luxury lifestyle
+  - city night / rooftop
+  - daily intimacy
+  - sport glamour
+- animation anchor 제작용 still은 캐릭터별로 별도 관리한다.
+  - front portrait 2장
+  - three-quarter portrait 2장
+  - medium full-body 2장
