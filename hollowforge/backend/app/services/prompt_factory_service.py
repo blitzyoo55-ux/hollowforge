@@ -261,6 +261,14 @@ def _pick_top_cues(counter: Counter[str], key: str, *, limit: int = 5) -> list[s
     values = [item[0] for item in counter.most_common(limit) if item[0].strip()]
     return values or list(_FALLBACK_SAFE_CUES[key])
 
+
+def _pick_first_missing_cue(prompt_text: str, cues: list[str]) -> str | None:
+    lowered_prompt = prompt_text.lower()
+    for cue in cues:
+        if cue.lower() not in lowered_prompt:
+            return cue
+    return None
+
 def _extract_benchmark_cues(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     # Graphic/Meta filtering logic entirely removed here to preserve explicit tags.
     material_counter: Counter[str] = Counter()
@@ -398,6 +406,13 @@ def _provider_config_for_kind(provider: str, *, model_override: str | None = Non
             api_key=settings.OPENROUTER_API_KEY,
             model=model_override or settings.PROMPT_FACTORY_OPENROUTER_MODEL,
         )
+    if provider == "local_llm":
+        return _ProviderConfig(
+            name=provider,
+            base_url=settings.HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL,
+            api_key="local_llm",
+            model=model_override or settings.HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL,
+        )
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported prompt provider kind: {provider}",
@@ -430,7 +445,7 @@ def _provider_config_from_profile(
         ) from exc
 
     provider_kind = profile["provider_kind"]
-    if provider_kind not in _VALID_PROVIDERS:
+    if provider_kind not in _VALID_PROVIDERS and provider_kind != "local_llm":
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail=(
@@ -594,13 +609,22 @@ def _resolve_provider_config(
     prompt_provider_profile_id: str | None = None,
     content_mode: str | None = None,
 ) -> _ProviderConfig:
+    profile_id = prompt_provider_profile_id or request.prompt_provider_profile_id
+    resolved_content_mode = content_mode or request.content_mode
+    if profile_id:
+        return _provider_config_from_profile(
+            profile_id,
+            content_mode=resolved_content_mode,
+            model_override=request.model,
+        )
+
     provider = request.provider
     if provider == "default":
-        profile_id = prompt_provider_profile_id or _default_prompt_provider_profile_id(content_mode)
+        profile_id = _default_prompt_provider_profile_id(resolved_content_mode)
         if profile_id:
             return _provider_config_from_profile(
                 profile_id,
-                content_mode=content_mode,
+                content_mode=resolved_content_mode,
                 model_override=request.model,
             )
         provider = settings.PROMPT_FACTORY_PROVIDER
@@ -1166,7 +1190,11 @@ def _normalize_prompt_rows(
 async def generate_prompt_batch(
     request: PromptBatchGenerateRequest,
 ) -> PromptBatchGenerateResponse:
-    provider = _resolve_provider_config(request)
+    provider = _resolve_provider_config(
+        request,
+        prompt_provider_profile_id=request.prompt_provider_profile_id,
+        content_mode=request.content_mode,
+    )
     benchmark = await load_prompt_benchmark_snapshot(request.workflow_lane)
 
     try:

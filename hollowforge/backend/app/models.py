@@ -699,6 +699,8 @@ class PromptBatchGenerateRequest(BaseModel):
     creative_brief: Optional[str] = Field(default=None, max_length=600)
     count: int = Field(default=24, ge=1, le=200)
     chunk_size: int = Field(default=20, ge=1, le=25)
+    content_mode: Optional[SequenceContentMode] = None
+    prompt_provider_profile_id: Optional[str] = Field(default=None, max_length=120)
     workflow_lane: Literal["auto", "classic_clip", "sdxl_illustrious"] = "auto"
     provider: Literal["default", "openrouter", "xai"] = "default"
     model: Optional[str] = Field(default=None, max_length=120)

@@ -142,4 +142,3 @@ def get_animation_executor_profile(
         content_mode=content_mode,
         kind="animation executor",
     )
-

@@ -190,6 +190,14 @@ class Settings:
         "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE",
         "adult_local_llm",
     ).strip() or "adult_local_llm"
+    HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL: str = os.getenv(
+        "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL",
+        "http://127.0.0.1:11434/v1",
+    ).strip() or "http://127.0.0.1:11434/v1"
+    HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL: str = os.getenv(
+        "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL",
+        "llama3.1",
+    ).strip() or "llama3.1"
     PUBLISH_ANIMATION_SCORE_THRESHOLD: float = float(
         os.getenv("HOLLOWFORGE_PUBLISH_ANIMATION_SCORE_THRESHOLD", "30")
     )
