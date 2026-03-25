@@ -474,18 +474,39 @@ def _resolve_legacy_default_provider_config(*, model_override: str | None = None
 def _resolve_top_level_default_provider_config(
     *,
     model_override: str | None = None,
-) -> tuple[str | None, _ProviderConfig]:
-    profile_id = _default_prompt_provider_profile_id("all_ages")
-    if profile_id:
-        return (
-            profile_id,
-            _provider_config_from_profile(
-                profile_id,
-                content_mode="all_ages",
-                model_override=model_override,
-            ),
+) -> tuple[str | None, _ProviderConfig, bool]:
+    safe_profile_id = _default_prompt_provider_profile_id("all_ages")
+    adult_profile_id = _default_prompt_provider_profile_id("adult_nsfw")
+
+    safe_config: _ProviderConfig | None = None
+    adult_config: _ProviderConfig | None = None
+
+    if safe_profile_id:
+        safe_config = _provider_config_from_profile(
+            safe_profile_id,
+            content_mode="all_ages",
+            model_override=model_override,
         )
-    return None, _resolve_legacy_default_provider_config(model_override=model_override)
+    if adult_profile_id:
+        adult_config = _provider_config_from_profile(
+            adult_profile_id,
+            content_mode="adult_nsfw",
+            model_override=model_override,
+        )
+
+    if safe_config is not None and adult_config is not None:
+        if safe_profile_id == adult_profile_id:
+            return safe_profile_id, safe_config, True
+        return None, safe_config, False
+
+    if safe_config is not None:
+        return safe_profile_id, safe_config, True
+
+    if adult_config is not None:
+        return adult_profile_id, adult_config, True
+
+    legacy_config = _resolve_legacy_default_provider_config(model_override=model_override)
+    return None, legacy_config, True
 
 
 def _resolve_content_mode_default(
@@ -678,7 +699,11 @@ def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
     ]
 
     try:
-        default_prompt_provider_profile_id, default_config = _resolve_top_level_default_provider_config()
+        (
+            default_prompt_provider_profile_id,
+            default_config,
+            default_is_unambiguous,
+        ) = _resolve_top_level_default_provider_config()
         default_ready = _provider_config_is_ready(default_config.name, default_config)
     except HTTPException:
         legacy_provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
@@ -690,11 +715,22 @@ def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
             model="",
         )
         default_ready = False
+        default_is_unambiguous = False
+
+    if not default_is_unambiguous:
+        default_prompt_provider_profile_id = None
+        default_config = _ProviderConfig(
+            name="",
+            base_url="",
+            api_key="",
+            model="",
+        )
+        default_ready = None
 
     return PromptFactoryCapabilitiesResponse(
         default_prompt_provider_profile_id=default_prompt_provider_profile_id,
-        default_provider=default_config.name,
-        default_model=default_config.model,
+        default_provider=default_config.name or None,
+        default_model=default_config.model or None,
         content_mode_defaults=content_mode_defaults,
         openrouter_configured=bool(settings.OPENROUTER_API_KEY),
         xai_configured=bool(settings.XAI_API_KEY),
@@ -745,7 +781,7 @@ def _resolve_provider_config(
                 provider_config,
                 profile_id=profile_id,
             )
-        default_profile_id, provider_config = _resolve_top_level_default_provider_config(
+        default_profile_id, provider_config, _ = _resolve_top_level_default_provider_config(
             model_override=request.model,
         )
         return _require_provider_config_ready(

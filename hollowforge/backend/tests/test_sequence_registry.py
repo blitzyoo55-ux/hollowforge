@@ -185,7 +185,7 @@ def test_resolve_provider_config_rejects_unready_top_level_profile_default(
         prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
 
     assert exc_info.value.status_code == 500
-    assert "safe_hosted_grok" in str(exc_info.value.detail)
+    assert "xai" in str(exc_info.value.detail)
     assert "XAI_API_KEY is not configured" in str(exc_info.value.detail)
 
 
@@ -201,10 +201,10 @@ def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypat
     capabilities = prompt_factory_service.get_prompt_factory_capabilities()
     defaults_by_mode = {item.content_mode: item for item in capabilities.content_mode_defaults}
 
-    assert capabilities.default_prompt_provider_profile_id == "safe_hosted_grok"
-    assert capabilities.default_provider == "xai"
-    assert capabilities.default_model == "grok-4-1-fast-non-reasoning"
-    assert capabilities.ready is True
+    assert capabilities.default_prompt_provider_profile_id is None
+    assert capabilities.default_provider is None
+    assert capabilities.default_model is None
+    assert capabilities.ready is None
     assert defaults_by_mode["all_ages"].prompt_provider_profile_id == "safe_hosted_grok"
     assert defaults_by_mode["all_ages"].provider_kind == "xai"
     assert defaults_by_mode["all_ages"].ready is True
@@ -231,8 +231,10 @@ def test_runtime_default_resolution_matches_capabilities(monkeypatch: pytest.Mon
     provider_config = prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
     capabilities = prompt_factory_service.get_prompt_factory_capabilities()
 
-    assert provider_config.name == capabilities.default_provider
-    assert provider_config.model == capabilities.default_model
+    assert provider_config.name == "xai"
+    assert provider_config.model == "grok-4-1-fast-non-reasoning"
     assert provider_config.api_key == "xai-key"
-    assert capabilities.default_prompt_provider_profile_id == "safe_hosted_grok"
-    assert capabilities.ready is True
+    assert capabilities.default_prompt_provider_profile_id is None
+    assert capabilities.default_provider is None
+    assert capabilities.default_model is None
+    assert capabilities.ready is None

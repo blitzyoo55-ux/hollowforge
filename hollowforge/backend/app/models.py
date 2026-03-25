@@ -794,14 +794,14 @@ class PromptFactoryContentModeDefaultResponse(BaseModel):
 
 class PromptFactoryCapabilitiesResponse(BaseModel):
     default_prompt_provider_profile_id: Optional[str] = None
-    default_provider: str
-    default_model: str
+    default_provider: Optional[str] = None
+    default_model: Optional[str] = None
     content_mode_defaults: List[PromptFactoryContentModeDefaultResponse] = Field(
         default_factory=list
     )
     openrouter_configured: bool
     xai_configured: bool
-    ready: bool
+    ready: Optional[bool] = None
     recommended_lane: str
     supported_lanes: List[str] = Field(default_factory=list)
     batch_import_headers: List[str] = Field(default_factory=list)
