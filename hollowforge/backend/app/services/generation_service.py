@@ -345,7 +345,12 @@ class GenerationService:
         count: int,
         seed_increment: int = 1,
     ) -> tuple[int, list[GenerationResponse]]:
-        """Queue N generations with auto-incremented seeds."""
+        """Queue N generations with auto-incremented seeds.
+
+        This is the reusable batch entry point for higher-level orchestration
+        such as sequence shot candidate generation. Callers should reuse this
+        method instead of duplicating seed-span or enqueue logic elsewhere.
+        """
         gen = _apply_default_negative_prompt(gen)
         await self._validate_lora_compatibility(gen)
         if count < 2:
