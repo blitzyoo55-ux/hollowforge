@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import GenerationCreate, SequenceRunCreate, SequenceShotCreate
 from app.services.generation_service import GenerationService
 from app.services.prompt_factory_service import load_prompt_benchmark_snapshot
+from app.services.rough_cut_service import build_rough_cut_timeline
 from app.services.sequence_blueprint_service import expand_blueprint_into_shots
 from app.services.sequence_registry import (
     get_animation_executor_profile,
@@ -68,7 +69,7 @@ def select_anchor_candidates(
     candidates: Sequence[Mapping[str, Any]],
     *,
     backup_count: int = 2,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Rank candidates and mark one primary plus N backups."""
     ranked = []
     for candidate in candidates:
@@ -85,11 +86,18 @@ def select_anchor_candidates(
         )
     )
 
-    if ranked:
-        ranked[0]["is_selected_primary"] = True
-    for row in ranked[1 : 1 + max(backup_count, 0)]:
+    primary = ranked[0] if ranked else None
+    backups = ranked[1 : 1 + max(backup_count, 0)]
+
+    if primary is not None:
+        primary["is_selected_primary"] = True
+    for row in backups:
         row["is_selected_backup"] = True
-    return ranked
+    return {
+        "primary": primary,
+        "backups": backups,
+        "ranked": ranked,
+    }
 
 
 def _default_prompt_provider_profile_id(content_mode: str) -> str:
@@ -275,11 +283,12 @@ class SequenceRunService:
         candidate_count: int = 4,
         target_tool: str | None = None,
     ) -> dict[str, Any]:
+        if candidate_count < 2:
+            raise ValueError("candidate_count must be >= 2")
+
         blueprint = await get_blueprint(blueprint_id)
         if blueprint is None:
             raise ValueError(f"Unknown sequence blueprint: {blueprint_id}")
-        if candidate_count < 1:
-            raise ValueError("candidate_count must be >= 1")
 
         content_mode = str(blueprint.content_mode)
         prompt_profile_id = prompt_provider_profile_id or _default_prompt_provider_profile_id(
@@ -361,7 +370,7 @@ class SequenceRunService:
             selected_candidates = select_anchor_candidates(planned_candidates)
             persisted_candidates = []
             animation_jobs = []
-            for retry_count, candidate in enumerate(selected_candidates):
+            for retry_count, candidate in enumerate(selected_candidates["ranked"]):
                 persisted = await create_anchor_candidate(
                     sequence_shot_id=shot.id,
                     content_mode=content_mode,

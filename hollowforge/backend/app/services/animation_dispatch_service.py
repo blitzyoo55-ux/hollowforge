@@ -67,6 +67,8 @@ def build_remote_worker_payload(
             raise AnimationDispatchError("Animation job request_json is invalid JSON") from exc
         if isinstance(parsed, dict):
             parsed_request_json = _preserve_nested_sequence_metadata(parsed)
+    elif isinstance(request_json, dict):
+        parsed_request_json = _preserve_nested_sequence_metadata(request_json)
 
     callback_token = settings.ANIMATION_CALLBACK_TOKEN or None
     callback_url = _join_url(
