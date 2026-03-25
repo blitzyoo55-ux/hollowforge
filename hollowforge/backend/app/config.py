@@ -178,6 +178,18 @@ class Settings:
         "HOLLOWFORGE_PUBLISH_DEFAULT_ANIMATION_TOOL",
         "dreamactor",
     ).strip().lower() or "dreamactor"
+    HOLLOWFORGE_SEQUENCE_FFMPEG_BIN: str = os.getenv(
+        "HOLLOWFORGE_SEQUENCE_FFMPEG_BIN",
+        "ffmpeg",
+    ).strip() or "ffmpeg"
+    HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE: str = os.getenv(
+        "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE",
+        "safe_hosted_grok",
+    ).strip() or "safe_hosted_grok"
+    HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE: str = os.getenv(
+        "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_local_llm",
+    ).strip() or "adult_local_llm"
     PUBLISH_ANIMATION_SCORE_THRESHOLD: float = float(
         os.getenv("HOLLOWFORGE_PUBLISH_ANIMATION_SCORE_THRESHOLD", "30")
     )

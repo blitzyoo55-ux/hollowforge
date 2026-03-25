@@ -35,6 +35,7 @@ PromptFactoryCheckpointPreferenceMode = Literal[
     "force",
     "exclude",
 ]
+SequenceContentMode = Literal["all_ages", "adult_nsfw"]
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +278,152 @@ class WatermarkSettingsUpdate(BaseModel):
     font_size: int = Field(ge=20, le=72)
     padding: int = Field(ge=0, le=200)
     color: str = Field(pattern=WATERMARK_COLOR_REGEX)
+
+
+class SequenceBlueprintBase(BaseModel):
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    character_id: str = Field(min_length=1, max_length=120)
+    location_id: str = Field(min_length=1, max_length=120)
+    beat_grammar_id: str = Field(min_length=1, max_length=120)
+    target_duration_sec: int = Field(ge=1, le=3600)
+    shot_count: int = Field(ge=1, le=64)
+    tone: Optional[str] = Field(default=None, max_length=120)
+    executor_policy: str = Field(min_length=1, max_length=120)
+
+
+class SequenceBlueprintCreate(SequenceBlueprintBase):
+    pass
+
+
+class SequenceBlueprintUpdate(BaseModel):
+    content_mode: Optional[SequenceContentMode] = None
+    policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    location_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    beat_grammar_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    target_duration_sec: Optional[int] = Field(default=None, ge=1, le=3600)
+    shot_count: Optional[int] = Field(default=None, ge=1, le=64)
+    tone: Optional[str] = Field(default=None, max_length=120)
+    executor_policy: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
+class SequenceBlueprintResponse(SequenceBlueprintBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class SequenceRunBase(BaseModel):
+    sequence_blueprint_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    prompt_provider_profile_id: str = Field(min_length=1, max_length=120)
+    execution_mode: str = Field(min_length=1, max_length=120)
+    status: str = Field(default="queued", min_length=1, max_length=120)
+    selected_rough_cut_id: Optional[str] = Field(default=None, max_length=120)
+    total_score: Optional[float] = None
+    error_summary: Optional[str] = Field(default=None, max_length=1000)
+
+
+class SequenceRunCreate(SequenceRunBase):
+    pass
+
+
+class SequenceRunUpdate(BaseModel):
+    sequence_blueprint_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    content_mode: Optional[SequenceContentMode] = None
+    policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    prompt_provider_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    execution_mode: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    status: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    selected_rough_cut_id: Optional[str] = Field(default=None, max_length=120)
+    total_score: Optional[float] = None
+    error_summary: Optional[str] = Field(default=None, max_length=1000)
+
+
+class SequenceRunResponse(SequenceRunBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class SequenceShotBase(BaseModel):
+    sequence_run_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    shot_no: int = Field(ge=1, le=999)
+    beat_type: str = Field(min_length=1, max_length=120)
+    camera_intent: str = Field(min_length=1, max_length=240)
+    emotion_intent: str = Field(min_length=1, max_length=240)
+    action_intent: str = Field(min_length=1, max_length=240)
+    target_duration_sec: int = Field(ge=1, le=3600)
+    continuity_rules: Optional[str] = Field(default=None, max_length=4000)
+
+
+class SequenceShotCreate(SequenceShotBase):
+    pass
+
+
+class SequenceShotUpdate(BaseModel):
+    sequence_run_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    content_mode: Optional[SequenceContentMode] = None
+    policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    shot_no: Optional[int] = Field(default=None, ge=1, le=999)
+    beat_type: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    camera_intent: Optional[str] = Field(default=None, min_length=1, max_length=240)
+    emotion_intent: Optional[str] = Field(default=None, min_length=1, max_length=240)
+    action_intent: Optional[str] = Field(default=None, min_length=1, max_length=240)
+    target_duration_sec: Optional[int] = Field(default=None, ge=1, le=3600)
+    continuity_rules: Optional[str] = Field(default=None, max_length=4000)
+
+
+class SequenceShotResponse(SequenceShotBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class RoughCutBase(BaseModel):
+    sequence_run_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    output_path: Optional[str] = Field(default=None, max_length=500)
+    timeline_json: Optional[Any] = None
+    total_duration_sec: Optional[float] = Field(default=None, ge=0.0)
+    continuity_score: Optional[float] = None
+    story_score: Optional[float] = None
+    overall_score: Optional[float] = None
+
+
+class RoughCutCreate(RoughCutBase):
+    pass
+
+
+class RoughCutUpdate(BaseModel):
+    sequence_run_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    content_mode: Optional[SequenceContentMode] = None
+    policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    output_path: Optional[str] = Field(default=None, max_length=500)
+    timeline_json: Optional[Any] = None
+    total_duration_sec: Optional[float] = Field(default=None, ge=0.0)
+    continuity_score: Optional[float] = None
+    story_score: Optional[float] = None
+    overall_score: Optional[float] = None
+
+
+class RoughCutResponse(RoughCutBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,10 @@ from app.models import (
     PromptFactoryBenchmarkResponse,
     PromptFactoryCapabilitiesResponse,
 )
+from app.services.sequence_registry import (
+    SequenceRegistryError,
+    get_prompt_provider_profile,
+)
 from app.services.workflow_registry import (
     get_workflow_lane_spec,
     infer_workflow_lane,
@@ -378,6 +382,64 @@ def _default_model_for_provider(provider: str) -> str:
         return settings.PROMPT_FACTORY_XAI_MODEL
     return settings.PROMPT_FACTORY_OPENROUTER_MODEL
 
+
+def _provider_config_for_kind(provider: str, *, model_override: str | None = None) -> _ProviderConfig:
+    if provider == "xai":
+        return _ProviderConfig(
+            name=provider,
+            base_url=settings.XAI_API_BASE_URL,
+            api_key=settings.XAI_API_KEY,
+            model=model_override or settings.PROMPT_FACTORY_XAI_MODEL,
+        )
+    if provider == "openrouter":
+        return _ProviderConfig(
+            name=provider,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.OPENROUTER_API_KEY,
+            model=model_override or settings.PROMPT_FACTORY_OPENROUTER_MODEL,
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Unsupported prompt provider kind: {provider}",
+    )
+
+
+def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str | None:
+    if content_mode == "adult_nsfw":
+        return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
+    if content_mode == "all_ages":
+        return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE
+    return None
+
+
+def _provider_config_from_profile(
+    profile_id: str,
+    *,
+    content_mode: str | None = None,
+    model_override: str | None = None,
+) -> _ProviderConfig:
+    try:
+        profile = get_prompt_provider_profile(
+            profile_id,
+            content_mode=content_mode,  # type: ignore[arg-type]
+        )
+    except SequenceRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    provider_kind = profile["provider_kind"]
+    if provider_kind not in _VALID_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                f"Prompt provider profile '{profile_id}' resolves to unsupported provider kind "
+                f"'{provider_kind}' in the current prompt factory runtime"
+            ),
+        )
+    return _provider_config_for_kind(provider_kind, model_override=model_override)
+
 async def load_prompt_factory_checkpoint_preferences() -> dict[str, _CheckpointPreference]:
     async with get_db() as db:
         cursor = await db.execute(
@@ -497,14 +559,20 @@ def _enforce_explicit_intensity(
     return merged.strip()
 
 def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
-    default_provider = (
-        settings.PROMPT_FACTORY_PROVIDER
-        if settings.PROMPT_FACTORY_PROVIDER in _VALID_PROVIDERS
-        else "openrouter"
-    )
+    default_profile_id = _default_prompt_provider_profile_id("all_ages")
+    default_provider = settings.PROMPT_FACTORY_PROVIDER
+    default_model = _default_model_for_provider(default_provider)
+    if default_profile_id is not None:
+        try:
+            profile = get_prompt_provider_profile(default_profile_id, content_mode="all_ages")
+        except SequenceRegistryError:
+            profile = None
+        if profile is not None and profile["provider_kind"] in _VALID_PROVIDERS:
+            default_provider = profile["provider_kind"]
+            default_model = _default_model_for_provider(default_provider)
     return PromptFactoryCapabilitiesResponse(
         default_provider=default_provider,
-        default_model=_default_model_for_provider(default_provider),
+        default_model=default_model,
         openrouter_configured=bool(settings.OPENROUTER_API_KEY),
         xai_configured=bool(settings.XAI_API_KEY),
         ready=bool(settings.OPENROUTER_API_KEY or settings.XAI_API_KEY),
@@ -520,9 +588,21 @@ def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
         ],
     )
 
-def _resolve_provider_config(request: PromptBatchGenerateRequest) -> _ProviderConfig:
+def _resolve_provider_config(
+    request: PromptBatchGenerateRequest,
+    *,
+    prompt_provider_profile_id: str | None = None,
+    content_mode: str | None = None,
+) -> _ProviderConfig:
     provider = request.provider
     if provider == "default":
+        profile_id = prompt_provider_profile_id or _default_prompt_provider_profile_id(content_mode)
+        if profile_id:
+            return _provider_config_from_profile(
+                profile_id,
+                content_mode=content_mode,
+                model_override=request.model,
+            )
         provider = settings.PROMPT_FACTORY_PROVIDER
     provider = provider.strip().lower()
 
@@ -532,28 +612,16 @@ def _resolve_provider_config(request: PromptBatchGenerateRequest) -> _ProviderCo
             detail=f"Unsupported prompt provider: {provider}",
         )
 
-    if provider == "xai":
-        api_key = settings.XAI_API_KEY
-        model = request.model or settings.PROMPT_FACTORY_XAI_MODEL
-        base_url = settings.XAI_API_BASE_URL
-    else:
-        api_key = settings.OPENROUTER_API_KEY
-        model = request.model or settings.PROMPT_FACTORY_OPENROUTER_MODEL
-        base_url = "https://openrouter.ai/api/v1"
+    provider_config = _provider_config_for_kind(provider, model_override=request.model)
 
-    if not api_key:
+    if not provider_config.api_key:
         missing = "XAI_API_KEY" if provider == "xai" else "OPENROUTER_API_KEY"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"{missing} is not configured",
         )
 
-    return _ProviderConfig(
-        name=provider,
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-    )
+    return provider_config
 
 async def load_prompt_benchmark_snapshot(
     requested_lane: str = "auto",
