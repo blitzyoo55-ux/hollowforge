@@ -509,6 +509,33 @@ def _resolve_top_level_default_provider_config(
     return None, legacy_config, True
 
 
+def _resolve_prompt_provider_profile_runtime_options(
+    request: PromptBatchGenerateRequest,
+) -> dict[str, bool]:
+    profile_id = request.prompt_provider_profile_id
+    if not profile_id and request.content_mode is not None:
+        profile_id = _default_prompt_provider_profile_id(request.content_mode)
+
+    if not profile_id:
+        return {"structured_json": False, "strict_json": False}
+
+    try:
+        profile = get_prompt_provider_profile(
+            profile_id,
+            content_mode=request.content_mode,  # type: ignore[arg-type]
+        )
+    except SequenceRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "structured_json": bool(profile.get("structured_json")),
+        "strict_json": bool(profile.get("strict_json")),
+    }
+
+
 def _resolve_content_mode_default(
     content_mode: SequenceContentMode,
 ) -> tuple[PromptFactoryContentModeDefaultResponse, _ProviderConfig]:
@@ -781,6 +808,14 @@ def _resolve_provider_config(
                 provider_config,
                 profile_id=profile_id,
             )
+        if resolved_content_mode is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "provider='default' requires content_mode or prompt_provider_profile_id "
+                    "when no unambiguous top-level default exists"
+                ),
+            )
         default_profile_id, provider_config, _ = _resolve_top_level_default_provider_config(
             model_override=request.model,
         )
@@ -1001,6 +1036,8 @@ async def load_prompt_benchmark_snapshot(
 def _build_prompt_system_message(
     benchmark: PromptFactoryBenchmarkResponse,
     request: PromptBatchGenerateRequest,
+    *,
+    structured_json: bool = False,
 ) -> str:
     lane_spec = get_workflow_lane_spec(
         resolve_workflow_lane(
@@ -1041,6 +1078,11 @@ def _build_prompt_system_message(
             "14. Natural-language rows should be explicitly descriptive and concrete. Favor specific graphic nouns "
             "over soft atmospheric filler."
         )
+    json_only_rule = (
+        "20. Return valid JSON only. Do not use markdown fences, prose, or commentary.\n\n"
+        if structured_json
+        else ""
+    )
 
     return (
         "You are the Lead Explicit Prompt Architect for HollowForge, an uncensored 18+ local Lab-451 image production tool.\n\n"
@@ -1073,6 +1115,7 @@ def _build_prompt_system_message(
         "18. Keep every subject unambiguously adult. Never imply youth or underage traits.\n"
         "19. Anti-Melting Rule: You MUST ALWAYS include the following in EVERY negative prompt: "
         "'melted, fused, smudged, sloppy, blurry, mutated, severely distorted, deformed anatomy, melting limbs'\n\n"
+        + json_only_rule +
         "Output ONLY valid JSON with this exact shape:\n"
         "{\n"
         '  "rows": [\n'
@@ -1097,6 +1140,8 @@ def _build_prompt_system_message(
 def _build_direction_system_message(
     benchmark: PromptFactoryBenchmarkResponse,
     request: PromptBatchGenerateRequest,
+    *,
+    structured_json: bool = False,
 ) -> str:
     lane_spec = get_workflow_lane_spec(
         resolve_workflow_lane(
@@ -1148,6 +1193,11 @@ def _build_direction_system_message(
         "    }\n"
         "  ]\n"
         "}"
+        + (
+            "\n11. Return valid JSON only. Do not use markdown fences, prose, or commentary."
+            if structured_json
+            else ""
+        )
     )
 
 def _build_direction_user_message(
@@ -1351,6 +1401,7 @@ def _normalize_prompt_rows(
 async def generate_prompt_batch(
     request: PromptBatchGenerateRequest,
 ) -> PromptBatchGenerateResponse:
+    profile_runtime_options = _resolve_prompt_provider_profile_runtime_options(request)
     provider = _resolve_provider_config(
         request,
         prompt_provider_profile_id=request.prompt_provider_profile_id,
@@ -1398,7 +1449,11 @@ async def generate_prompt_batch(
                     messages=[
                         {
                             "role": "system",
-                            "content": _build_direction_system_message(benchmark, request),
+                            "content": _build_direction_system_message(
+                                benchmark,
+                                request,
+                                structured_json=profile_runtime_options["structured_json"],
+                            ),
                         },
                         {
                             "role": "user",
@@ -1410,6 +1465,11 @@ async def generate_prompt_batch(
                             ),
                         },
                     ],
+                    **(
+                        {"response_format": {"type": "json_object"}}
+                        if profile_runtime_options["strict_json"]
+                        else {}
+                    ),
                 )
                 direction_payload = _parse_json_object(_extract_response_content(direction_completion).strip())
                 directions = _normalize_direction_batch(
@@ -1426,7 +1486,11 @@ async def generate_prompt_batch(
                 messages=[
                     {
                         "role": "system",
-                        "content": _build_prompt_system_message(benchmark, request),
+                        "content": _build_prompt_system_message(
+                            benchmark,
+                            request,
+                            structured_json=profile_runtime_options["structured_json"],
+                        ),
                     },
                     {
                         "role": "user",
@@ -1440,6 +1504,11 @@ async def generate_prompt_batch(
                         ),
                     },
                 ],
+                **(
+                    {"response_format": {"type": "json_object"}}
+                    if profile_runtime_options["strict_json"]
+                    else {}
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(

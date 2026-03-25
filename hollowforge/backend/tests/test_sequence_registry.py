@@ -146,6 +146,114 @@ async def test_generate_prompt_batch_uses_prompt_profile_branch(monkeypatch: pyt
 
     assert recorder["base_url"] == "http://local-llm.test/v1"
     assert recorder["api_key"] == "local_llm"
+    assert "response_format" not in recorder["create_kwargs"]
+    assert response.provider == "local_llm"
+    assert response.model == "local-test-model"
+
+
+@pytest.mark.asyncio
+async def test_generate_prompt_batch_uses_strict_json_profile_response_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL", "local-test-model")
+    monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
+
+    benchmark = PromptFactoryBenchmarkResponse(
+        favorites_total=0,
+        workflow_lane="sdxl_illustrious",
+        prompt_dialect="natural_language",
+        top_checkpoints=["checkpoint-a"],
+        top_loras=["lora-a"],
+        avg_lora_strength=0.5,
+        cfg_values=[5.0],
+        steps_values=[30],
+        sampler="euler",
+        scheduler="normal",
+        clip_skip=2,
+        width=832,
+        height=1216,
+        theme_keywords=["theme"],
+        material_cues=["material"],
+        control_cues=["control"],
+        camera_cues=["camera"],
+        environment_cues=["environment"],
+        exposure_cues=["exposure"],
+        negative_prompt="negative",
+    )
+
+    async def _fake_load_prompt_benchmark_snapshot(requested_lane: str = "auto") -> PromptFactoryBenchmarkResponse:
+        return benchmark
+
+    class _FakeCompletion:
+        def __init__(self) -> None:
+            self.choices = [
+                types.SimpleNamespace(
+                    message=types.SimpleNamespace(
+                        content=json.dumps(
+                            {
+                                "rows": [
+                                    {
+                                        "codename": "shot-a",
+                                        "series": "series-a",
+                                        "checkpoint": "checkpoint-a",
+                                        "loras": [],
+                                        "sampler": "euler",
+                                        "steps": 30,
+                                        "cfg": 5.0,
+                                        "clip_skip": 2,
+                                        "width": 832,
+                                        "height": 1216,
+                                        "positive_prompt": "prompt-a",
+                                        "negative_prompt": "negative-a",
+                                    }
+                                ]
+                            }
+                        )
+                    )
+                )
+            ]
+
+    class _FakeCompletions:
+        def __init__(self, recorder: dict[str, object]) -> None:
+            self._recorder = recorder
+
+        async def create(self, **kwargs: object) -> _FakeCompletion:
+            self._recorder["create_kwargs"] = kwargs
+            return _FakeCompletion()
+
+    class _FakeChat:
+        def __init__(self, recorder: dict[str, object]) -> None:
+            self.completions = _FakeCompletions(recorder)
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, *, base_url: str, api_key: str) -> None:
+            recorder["base_url"] = base_url
+            recorder["api_key"] = api_key
+            self.chat = _FakeChat(recorder)
+
+    recorder: dict[str, object] = {}
+    fake_openai = types.SimpleNamespace(AsyncOpenAI=_FakeAsyncOpenAI)
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    monkeypatch.setattr(prompt_factory_service, "load_prompt_benchmark_snapshot", _fake_load_prompt_benchmark_snapshot)
+
+    request = PromptBatchGenerateRequest(
+        concept_brief="test concept",
+        count=1,
+        chunk_size=1,
+        content_mode="adult_nsfw",
+        prompt_provider_profile_id="adult_local_llm_strict_json",
+        workflow_lane="auto",
+        provider="default",
+        direction_pass_enabled=False,
+        dedupe=False,
+    )
+
+    response = await prompt_factory_service.generate_prompt_batch(request)
+
+    assert recorder["base_url"] == "http://local-llm.test/v1"
+    assert recorder["api_key"] == "local_llm"
+    assert recorder["create_kwargs"]["response_format"] == {"type": "json_object"}
     assert response.provider == "local_llm"
     assert response.model == "local-test-model"
 
@@ -169,7 +277,8 @@ def test_resolve_provider_config_rejects_profile_mismatch(monkeypatch: pytest.Mo
     assert "adult_local_llm" in str(exc_info.value.detail)
 
 
-def test_resolve_provider_config_rejects_unready_top_level_profile_default(
+@pytest.mark.asyncio
+async def test_generate_prompt_batch_rejects_ambiguous_no_mode_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
@@ -182,11 +291,10 @@ def test_resolve_provider_config_rejects_unready_top_level_profile_default(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
+        await prompt_factory_service.generate_prompt_batch(request)
 
-    assert exc_info.value.status_code == 500
-    assert "xai" in str(exc_info.value.detail)
-    assert "XAI_API_KEY is not configured" in str(exc_info.value.detail)
+    assert exc_info.value.status_code == 400
+    assert "content_mode or prompt_provider_profile_id" in str(exc_info.value.detail)
 
 
 def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,7 +322,8 @@ def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypat
     assert defaults_by_mode["adult_nsfw"].ready is True
 
 
-def test_runtime_default_resolution_matches_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_default_provider_requires_content_mode_or_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
     monkeypatch.setattr(settings, "XAI_API_KEY", "xai-key")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
@@ -228,13 +337,8 @@ def test_runtime_default_resolution_matches_capabilities(monkeypatch: pytest.Mon
         dedupe=False,
     )
 
-    provider_config = prompt_factory_service._resolve_provider_config(request)  # noqa: SLF001
-    capabilities = prompt_factory_service.get_prompt_factory_capabilities()
+    with pytest.raises(HTTPException) as exc_info:
+        await prompt_factory_service.generate_prompt_batch(request)
 
-    assert provider_config.name == "xai"
-    assert provider_config.model == "grok-4-1-fast-non-reasoning"
-    assert provider_config.api_key == "xai-key"
-    assert capabilities.default_prompt_provider_profile_id is None
-    assert capabilities.default_provider is None
-    assert capabilities.default_model is None
-    assert capabilities.ready is None
+    assert exc_info.value.status_code == 400
+    assert "content_mode or prompt_provider_profile_id" in str(exc_info.value.detail)
