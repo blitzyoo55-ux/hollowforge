@@ -22,6 +22,7 @@ from app.models import (
     PromptBatchRowResponse,
     PromptFactoryBenchmarkResponse,
     PromptFactoryCapabilitiesResponse,
+    PromptFactoryContentModeDefaultResponse,
 )
 from app.services.sequence_registry import (
     SequenceRegistryError,
@@ -419,6 +420,12 @@ def _provider_config_for_kind(provider: str, *, model_override: str | None = Non
     )
 
 
+def _provider_config_is_ready(provider_kind: str, config: _ProviderConfig) -> bool:
+    if provider_kind == "local_llm":
+        return bool(config.base_url.strip() and config.model.strip())
+    return bool(config.api_key.strip())
+
+
 def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str | None:
     if content_mode == "adult_nsfw":
         return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
@@ -427,44 +434,30 @@ def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str 
     return None
 
 
-def _resolve_capability_default_provider_config() -> _ProviderConfig | None:
-    candidate_profiles = [
-        (settings.HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE, "all_ages"),
-        (settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE, "adult_nsfw"),
-    ]
-    for profile_id, content_mode in candidate_profiles:
-        if not profile_id:
-            continue
-        try:
-            profile = get_prompt_provider_profile(
-                profile_id,
-                content_mode=content_mode,
-            )
-            provider_config = _provider_config_from_profile(
-                profile_id,
-                content_mode=content_mode,
-            )
-        except (HTTPException, SequenceRegistryError):
-            continue
+def _resolve_content_mode_default(
+    content_mode: SequenceContentMode,
+) -> tuple[PromptFactoryContentModeDefaultResponse, _ProviderConfig]:
+    profile_id = _default_prompt_provider_profile_id(content_mode)
+    if not profile_id:
+        raise SequenceRegistryError(f"No default prompt provider profile configured for {content_mode}")
 
-        provider_kind = profile["provider_kind"]
-        if provider_kind == "local_llm":
-            if provider_config.base_url.strip() and provider_config.model.strip():
-                return provider_config
-            continue
+    profile = get_prompt_provider_profile(profile_id, content_mode=content_mode)
+    provider_config = _provider_config_from_profile(
+        profile_id,
+        content_mode=content_mode,
+    )
+    provider_kind = profile["provider_kind"]
 
-        if provider_config.api_key.strip():
-            return provider_config
-
-    fallback_provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
-    if fallback_provider in _VALID_PROVIDERS:
-        try:
-            provider_config = _provider_config_for_kind(fallback_provider)
-        except HTTPException:
-            return None
-        if provider_config.api_key.strip():
-            return provider_config
-    return None
+    return (
+        PromptFactoryContentModeDefaultResponse(
+            content_mode=content_mode,
+            prompt_provider_profile_id=profile_id,
+            provider_kind=provider_kind,
+            model=provider_config.model,
+            ready=_provider_config_is_ready(provider_kind, provider_config),
+        ),
+        provider_config,
+    )
 
 
 def _provider_config_from_profile(
@@ -614,15 +607,48 @@ def _enforce_explicit_intensity(
     return merged.strip()
 
 def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
-    default_config = _resolve_capability_default_provider_config()
-    default_provider = default_config.name if default_config is not None else settings.PROMPT_FACTORY_PROVIDER
-    default_model = default_config.model if default_config is not None else _default_model_for_provider(default_provider)
+    try:
+        safe_default, safe_config = _resolve_content_mode_default("all_ages")
+    except SequenceRegistryError:
+        safe_default, safe_config = None, None
+
+    try:
+        adult_default, adult_config = _resolve_content_mode_default("adult_nsfw")
+    except SequenceRegistryError:
+        adult_default, adult_config = None, None
+
+    content_mode_defaults = [
+        entry
+        for entry in [safe_default, adult_default]
+        if entry is not None
+    ]
+
+    legacy_default = safe_config or adult_config
+    legacy_profile_id = (
+        safe_default.prompt_provider_profile_id
+        if safe_default is not None
+        else adult_default.prompt_provider_profile_id
+        if adult_default is not None
+        else None
+    )
+
+    if legacy_default is None:
+        fallback_provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
+        if fallback_provider in _VALID_PROVIDERS:
+            legacy_default = _provider_config_for_kind(fallback_provider)
+            legacy_profile_id = None
+        else:
+            legacy_default = _provider_config_for_kind("openrouter")
+            legacy_profile_id = None
+
     return PromptFactoryCapabilitiesResponse(
-        default_provider=default_provider,
-        default_model=default_model,
+        default_prompt_provider_profile_id=legacy_profile_id,
+        default_provider=legacy_default.name,
+        default_model=legacy_default.model,
+        content_mode_defaults=content_mode_defaults,
         openrouter_configured=bool(settings.OPENROUTER_API_KEY),
         xai_configured=bool(settings.XAI_API_KEY),
-        ready=default_config is not None,
+        ready=any(entry.ready for entry in content_mode_defaults) if content_mode_defaults else False,
         recommended_lane="sdxl_illustrious",
         supported_lanes=[lane["key"] for lane in list_workflow_lanes()],
         batch_import_headers=[

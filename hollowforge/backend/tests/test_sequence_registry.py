@@ -159,7 +159,16 @@ def test_prompt_factory_capabilities_follow_profile_defaults(monkeypatch: pytest
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL", "local-test-model")
 
     capabilities = prompt_factory_service.get_prompt_factory_capabilities()
+    defaults_by_mode = {item.content_mode: item for item in capabilities.content_mode_defaults}
 
-    assert capabilities.default_provider == "local_llm"
-    assert capabilities.default_model == "local-test-model"
+    assert capabilities.default_prompt_provider_profile_id == "safe_hosted_grok"
+    assert capabilities.default_provider == defaults_by_mode["all_ages"].provider_kind
+    assert capabilities.default_model == defaults_by_mode["all_ages"].model
+    assert defaults_by_mode["all_ages"].prompt_provider_profile_id == "safe_hosted_grok"
+    assert defaults_by_mode["all_ages"].provider_kind == "xai"
+    assert defaults_by_mode["all_ages"].ready is False
+    assert defaults_by_mode["adult_nsfw"].prompt_provider_profile_id == "adult_local_llm"
+    assert defaults_by_mode["adult_nsfw"].provider_kind == "local_llm"
+    assert defaults_by_mode["adult_nsfw"].model == "local-test-model"
+    assert defaults_by_mode["adult_nsfw"].ready is True
     assert capabilities.ready is True

@@ -784,9 +784,21 @@ class PromptFactoryBenchmarkResponse(BaseModel):
     negative_prompt: str
 
 
+class PromptFactoryContentModeDefaultResponse(BaseModel):
+    content_mode: SequenceContentMode
+    prompt_provider_profile_id: str
+    provider_kind: str
+    model: str
+    ready: bool
+
+
 class PromptFactoryCapabilitiesResponse(BaseModel):
+    default_prompt_provider_profile_id: Optional[str] = None
     default_provider: str
     default_model: str
+    content_mode_defaults: List[PromptFactoryContentModeDefaultResponse] = Field(
+        default_factory=list
+    )
     openrouter_configured: bool
     xai_configured: bool
     ready: bool
@@ -794,7 +806,6 @@ class PromptFactoryCapabilitiesResponse(BaseModel):
     supported_lanes: List[str] = Field(default_factory=list)
     batch_import_headers: List[str] = Field(default_factory=list)
     notes: List[str] = Field(default_factory=list)
-
 
 class PromptFactoryCheckpointPreferenceEntryResponse(BaseModel):
     checkpoint: str
