@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sequence_runs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (sequence_blueprint_id) REFERENCES sequence_blueprints(id) ON DELETE CASCADE,
-    FOREIGN KEY (selected_rough_cut_id) REFERENCES rough_cuts(id) ON DELETE SET NULL
+    FOREIGN KEY (id, selected_rough_cut_id) REFERENCES rough_cuts(sequence_run_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sequence_runs_blueprint
@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS sequence_shots (
     continuity_rules TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE
+    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE,
+    UNIQUE (sequence_run_id, shot_no)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sequence_shots_run
@@ -110,7 +111,8 @@ CREATE TABLE IF NOT EXISTS rough_cuts (
     overall_score REAL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE
+    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE,
+    UNIQUE (sequence_run_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_rough_cuts_run
