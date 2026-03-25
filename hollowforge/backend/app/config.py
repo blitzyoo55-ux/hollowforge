@@ -11,6 +11,12 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _HOLLOWFORGE_DIR = _BACKEND_DIR.parent
 
 
+def _parse_path_list(raw: str | None) -> tuple[Path, ...]:
+    if not raw:
+        return ()
+    return tuple(Path(p.strip()).expanduser() for p in raw.split(",") if p.strip())
+
+
 class Settings:
     """Central configuration. Reads from env vars with sensible defaults."""
 
@@ -21,6 +27,18 @@ class Settings:
     IMAGES_DIR: Path = DATA_DIR / "images"
     THUMBS_DIR: Path = DATA_DIR / "thumbs"
     WORKFLOWS_DIR: Path = DATA_DIR / "workflows"
+    PINOKIO_PEERS_DIR: Path = Path(
+        os.getenv(
+            "PINOKIO_PEERS_DIR",
+            str(Path.home() / "AI_Projects/pinokio/drive/drives/peers"),
+        )
+    )
+    UPSCALE_MODELS_DIRS: tuple[Path, ...] = _parse_path_list(
+        os.getenv("UPSCALE_MODELS_DIRS")
+    ) or (
+        _HOLLOWFORGE_DIR / "models" / "upscale_models",
+        Path.home() / "ComfyUI" / "models" / "upscale_models",
+    )
 
     DEFAULT_CHECKPOINT: str = os.getenv(
         "DEFAULT_CHECKPOINT", "waiIllustriousSDXL_v160.safetensors"

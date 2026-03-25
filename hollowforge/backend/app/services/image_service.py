@@ -48,6 +48,25 @@ async def save_generation_image(
     return image_rel, thumb_rel, wf_rel
 
 
+def save_upscaled_preview(
+    image_bytes: bytes,
+    generation_id: str,
+    max_longest_side: int = 1920,
+    quality: int = 90,
+) -> str:
+    """Create a web-friendly JPEG preview for an upscaled image."""
+    settings.THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+    preview_file = settings.THUMBS_DIR / f"{generation_id}_upscaled.jpg"
+
+    img = Image.open(BytesIO(image_bytes))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    img.thumbnail((max_longest_side, max_longest_side), Image.LANCZOS)
+    img.save(str(preview_file), "JPEG", quality=quality, optimize=True)
+    return f"thumbs/{generation_id}_upscaled.jpg"
+
+
 def save_workflow(workflow: dict[str, Any], generation_id: str) -> str:
     """Persist the ComfyUI workflow JSON to disk. Returns relative path."""
     settings.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)

@@ -73,6 +73,7 @@ async def reproduce_generation(
         height=row["height"],
         sampler=row["sampler"],
         scheduler=row["scheduler"],
+        clip_skip=row.get("clip_skip"),
         tags=tags,
         preset_id=row.get("preset_id"),
         notes=req.notes or f"Reproduced ({req.mode}) from {generation_id}",
