@@ -29,6 +29,22 @@ def test_adult_prompt_profile_defaults_to_local() -> None:
     assert profile["provider_kind"] == "local_llm"
 
 
+def test_registry_lookups_return_independent_copies() -> None:
+    first = get_beat_grammar("stage1_single_location_v1")
+    first["beats"].append("mutated")
+
+    second = get_beat_grammar("stage1_single_location_v1")
+
+    assert second["beats"] == [
+        "establish",
+        "attention",
+        "approach",
+        "contact_action",
+        "close_reaction",
+        "settle",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_generate_prompt_batch_uses_prompt_profile_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL", "http://local-llm.test/v1")
@@ -131,3 +147,19 @@ async def test_generate_prompt_batch_uses_prompt_profile_branch(monkeypatch: pyt
     assert recorder["api_key"] == "local_llm"
     assert response.provider == "local_llm"
     assert response.model == "local-test-model"
+
+
+def test_prompt_factory_capabilities_follow_profile_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "")
+    monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE", "safe_hosted_grok")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL", "local-test-model")
+
+    capabilities = prompt_factory_service.get_prompt_factory_capabilities()
+
+    assert capabilities.default_provider == "local_llm"
+    assert capabilities.default_model == "local-test-model"
+    assert capabilities.ready is True

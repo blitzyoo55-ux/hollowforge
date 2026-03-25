@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Literal
 
 SequenceContentMode = Literal["all_ages", "adult_nsfw"]
@@ -102,7 +103,7 @@ def _clone_profile(
             f"{kind} profile '{profile_id}' is not valid for content mode '{content_mode}'"
         )
 
-    return dict(profile)
+    return deepcopy(profile)
 
 
 def get_beat_grammar(

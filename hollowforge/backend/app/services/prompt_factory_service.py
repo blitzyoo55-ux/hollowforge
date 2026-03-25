@@ -427,6 +427,46 @@ def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str 
     return None
 
 
+def _resolve_capability_default_provider_config() -> _ProviderConfig | None:
+    candidate_profiles = [
+        (settings.HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE, "all_ages"),
+        (settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE, "adult_nsfw"),
+    ]
+    for profile_id, content_mode in candidate_profiles:
+        if not profile_id:
+            continue
+        try:
+            profile = get_prompt_provider_profile(
+                profile_id,
+                content_mode=content_mode,
+            )
+            provider_config = _provider_config_from_profile(
+                profile_id,
+                content_mode=content_mode,
+            )
+        except (HTTPException, SequenceRegistryError):
+            continue
+
+        provider_kind = profile["provider_kind"]
+        if provider_kind == "local_llm":
+            if provider_config.base_url.strip() and provider_config.model.strip():
+                return provider_config
+            continue
+
+        if provider_config.api_key.strip():
+            return provider_config
+
+    fallback_provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
+    if fallback_provider in _VALID_PROVIDERS:
+        try:
+            provider_config = _provider_config_for_kind(fallback_provider)
+        except HTTPException:
+            return None
+        if provider_config.api_key.strip():
+            return provider_config
+    return None
+
+
 def _provider_config_from_profile(
     profile_id: str,
     *,
@@ -574,23 +614,15 @@ def _enforce_explicit_intensity(
     return merged.strip()
 
 def get_prompt_factory_capabilities() -> PromptFactoryCapabilitiesResponse:
-    default_profile_id = _default_prompt_provider_profile_id("all_ages")
-    default_provider = settings.PROMPT_FACTORY_PROVIDER
-    default_model = _default_model_for_provider(default_provider)
-    if default_profile_id is not None:
-        try:
-            profile = get_prompt_provider_profile(default_profile_id, content_mode="all_ages")
-        except SequenceRegistryError:
-            profile = None
-        if profile is not None and profile["provider_kind"] in _VALID_PROVIDERS:
-            default_provider = profile["provider_kind"]
-            default_model = _default_model_for_provider(default_provider)
+    default_config = _resolve_capability_default_provider_config()
+    default_provider = default_config.name if default_config is not None else settings.PROMPT_FACTORY_PROVIDER
+    default_model = default_config.model if default_config is not None else _default_model_for_provider(default_provider)
     return PromptFactoryCapabilitiesResponse(
         default_provider=default_provider,
         default_model=default_model,
         openrouter_configured=bool(settings.OPENROUTER_API_KEY),
         xai_configured=bool(settings.XAI_API_KEY),
-        ready=bool(settings.OPENROUTER_API_KEY or settings.XAI_API_KEY),
+        ready=default_config is not None,
         recommended_lane="sdxl_illustrious",
         supported_lanes=[lane["key"] for lane in list_workflow_lanes()],
         batch_import_headers=[
