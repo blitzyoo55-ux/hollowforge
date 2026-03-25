@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS sequence_blueprints (
     tone TEXT,
     executor_policy TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE (id, content_mode, policy_profile_id)
 );
 
 CREATE TABLE IF NOT EXISTS sequence_runs (
@@ -26,8 +27,18 @@ CREATE TABLE IF NOT EXISTS sequence_runs (
     error_summary TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_blueprint_id) REFERENCES sequence_blueprints(id) ON DELETE CASCADE,
-    FOREIGN KEY (id, selected_rough_cut_id) REFERENCES rough_cuts(sequence_run_id, id)
+    FOREIGN KEY (
+        sequence_blueprint_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES sequence_blueprints(id, content_mode, policy_profile_id) ON DELETE CASCADE,
+    FOREIGN KEY (
+        id,
+        selected_rough_cut_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES rough_cuts(sequence_run_id, id, content_mode, policy_profile_id),
+    UNIQUE (id, content_mode, policy_profile_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sequence_runs_blueprint
@@ -50,8 +61,13 @@ CREATE TABLE IF NOT EXISTS sequence_shots (
     continuity_rules TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE,
-    UNIQUE (sequence_run_id, shot_no)
+    FOREIGN KEY (
+        sequence_run_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES sequence_runs(id, content_mode, policy_profile_id) ON DELETE CASCADE,
+    UNIQUE (sequence_run_id, shot_no),
+    UNIQUE (id, content_mode, policy_profile_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sequence_shots_run
@@ -71,7 +87,11 @@ CREATE TABLE IF NOT EXISTS shot_anchor_candidates (
     is_selected_backup INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_shot_id) REFERENCES sequence_shots(id) ON DELETE CASCADE,
+    FOREIGN KEY (
+        sequence_shot_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES sequence_shots(id, content_mode, policy_profile_id) ON DELETE CASCADE,
     FOREIGN KEY (generation_id) REFERENCES generations(id) ON DELETE CASCADE
 );
 
@@ -91,7 +111,11 @@ CREATE TABLE IF NOT EXISTS shot_clips (
     is_degraded INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_shot_id) REFERENCES sequence_shots(id) ON DELETE CASCADE,
+    FOREIGN KEY (
+        sequence_shot_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES sequence_shots(id, content_mode, policy_profile_id) ON DELETE CASCADE,
     FOREIGN KEY (selected_animation_job_id) REFERENCES animation_jobs(id) ON DELETE SET NULL
 );
 
@@ -111,8 +135,13 @@ CREATE TABLE IF NOT EXISTS rough_cuts (
     overall_score REAL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (sequence_run_id) REFERENCES sequence_runs(id) ON DELETE CASCADE,
-    UNIQUE (sequence_run_id, id)
+    FOREIGN KEY (
+        sequence_run_id,
+        content_mode,
+        policy_profile_id
+    ) REFERENCES sequence_runs(id, content_mode, policy_profile_id) ON DELETE CASCADE,
+    UNIQUE (sequence_run_id, id),
+    UNIQUE (sequence_run_id, id, content_mode, policy_profile_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_rough_cuts_run
