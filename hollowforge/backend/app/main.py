@@ -79,6 +79,7 @@ def _include_routers(app: FastAPI) -> None:
         presets,
         publishing,
         reproduce,
+        sequences,
         seedance,
         system,
     )
@@ -97,6 +98,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(loras.router)
     app.include_router(publishing.router)
     app.include_router(reproduce.router)
+    app.include_router(sequences.router)
     app.include_router(export_router)
     app.include_router(seedance.router)
     app.include_router(quality_ai_router)

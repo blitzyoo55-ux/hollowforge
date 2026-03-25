@@ -426,6 +426,84 @@ class RoughCutResponse(RoughCutBase):
     updated_at: str
 
 
+class SequenceShotPlanResponse(BaseModel):
+    shot_no: int = Field(ge=1, le=999)
+    beat_type: str = Field(min_length=1, max_length=120)
+    camera_intent: str = Field(min_length=1, max_length=240)
+    emotion_intent: str = Field(min_length=1, max_length=240)
+    action_intent: str = Field(min_length=1, max_length=240)
+    target_duration_sec: int = Field(ge=1, le=3600)
+    continuity_rules: Optional[str] = Field(default=None, max_length=4000)
+
+
+class SequenceBlueprintDetailResponse(BaseModel):
+    blueprint: SequenceBlueprintResponse
+    planned_shots: List[SequenceShotPlanResponse] = Field(default_factory=list)
+
+
+class SequenceRunCreateRequest(BaseModel):
+    sequence_blueprint_id: str = Field(min_length=1, max_length=120)
+    prompt_provider_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    candidate_count: int = Field(default=4, ge=2, le=24)
+    target_tool: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
+class SequenceAnchorCandidateResponse(BaseModel):
+    id: str
+    sequence_shot_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    generation_id: str = Field(min_length=1, max_length=120)
+    identity_score: Optional[float] = None
+    location_lock_score: Optional[float] = None
+    beat_fit_score: Optional[float] = None
+    quality_score: Optional[float] = None
+    rank_score: Optional[float] = None
+    is_selected_primary: bool = False
+    is_selected_backup: bool = False
+    created_at: str
+    updated_at: str
+
+
+class SequenceShotClipResponse(BaseModel):
+    id: str
+    sequence_shot_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode
+    policy_profile_id: str = Field(min_length=1, max_length=120)
+    selected_animation_job_id: Optional[str] = Field(default=None, max_length=120)
+    clip_path: Optional[str] = Field(default=None, max_length=500)
+    clip_duration_sec: Optional[float] = Field(default=None, ge=0.0)
+    clip_score: Optional[float] = None
+    retry_count: int = Field(ge=0, le=999)
+    is_degraded: bool = False
+    created_at: str
+    updated_at: str
+
+
+class SequenceRunShotDetailResponse(BaseModel):
+    shot: SequenceShotResponse
+    anchor_candidates: List[SequenceAnchorCandidateResponse] = Field(default_factory=list)
+    clips: List[SequenceShotClipResponse] = Field(default_factory=list)
+
+
+class SequenceRoughCutCandidateResponse(BaseModel):
+    rough_cut: RoughCutResponse
+    is_selected: bool = False
+
+
+class SequenceRunSummaryResponse(BaseModel):
+    run: SequenceRunResponse
+    shot_count: int = Field(default=0, ge=0)
+    rough_cut_candidate_count: int = Field(default=0, ge=0)
+
+
+class SequenceRunDetailResponse(BaseModel):
+    run: SequenceRunResponse
+    blueprint: SequenceBlueprintResponse
+    shots: List[SequenceRunShotDetailResponse] = Field(default_factory=list)
+    rough_cut_candidates: List[SequenceRoughCutCandidateResponse] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------
