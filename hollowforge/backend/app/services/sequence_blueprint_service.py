@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.models import SequenceContentMode
 from app.services.sequence_registry import get_beat_grammar
 
 _STAGE1_CONTINUITY_LINES = (
@@ -78,9 +79,10 @@ def expand_blueprint_into_shots(
     beat_grammar_id: str,
     target_duration_sec: int,
     shot_count: int | None = None,
+    content_mode: SequenceContentMode | None = None,
 ) -> list[dict[str, Any]]:
     """Expand a fixed beat grammar into ordered Stage 1 shot plans."""
-    grammar = get_beat_grammar(beat_grammar_id)
+    grammar = get_beat_grammar(beat_grammar_id, content_mode=content_mode)
     beats = list(grammar["beats"])
 
     if shot_count is not None and shot_count != len(beats):

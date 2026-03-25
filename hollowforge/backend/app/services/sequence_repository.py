@@ -51,6 +51,15 @@ def _normalize_shot_clip_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _validate_anchor_selection_flags(
+    *,
+    is_selected_primary: bool,
+    is_selected_backup: bool,
+) -> None:
+    if is_selected_primary and is_selected_backup:
+        raise ValueError("anchor candidate cannot be both primary and backup")
+
+
 def _blueprint_response(row: dict[str, Any]) -> SequenceBlueprintResponse:
     return SequenceBlueprintResponse.model_validate(row)
 
@@ -445,9 +454,23 @@ async def create_anchor_candidate(
     is_selected_backup: bool = False,
     candidate_id: str | None = None,
 ) -> dict[str, Any]:
+    _validate_anchor_selection_flags(
+        is_selected_primary=is_selected_primary,
+        is_selected_backup=is_selected_backup,
+    )
     now = _now_iso()
     created_id = candidate_id or str(uuid.uuid4())
     async with get_db() as db:
+        if is_selected_primary:
+            await db.execute(
+                """
+                UPDATE shot_anchor_candidates
+                SET is_selected_primary = 0,
+                    updated_at = ?
+                WHERE sequence_shot_id = ?
+                """,
+                (now, sequence_shot_id),
+            )
         await db.execute(
             """
             INSERT INTO shot_anchor_candidates (
@@ -511,7 +534,31 @@ async def update_anchor_candidate_selection(
     is_selected_primary: bool = False,
     is_selected_backup: bool = False,
 ) -> dict[str, Any] | None:
+    _validate_anchor_selection_flags(
+        is_selected_primary=is_selected_primary,
+        is_selected_backup=is_selected_backup,
+    )
     async with get_db() as db:
+        existing_cursor = await db.execute(
+            "SELECT sequence_shot_id FROM shot_anchor_candidates WHERE id = ?",
+            (candidate_id,),
+        )
+        existing = await existing_cursor.fetchone()
+        if existing is None:
+            return None
+
+        now = _now_iso()
+        if is_selected_primary:
+            await db.execute(
+                """
+                UPDATE shot_anchor_candidates
+                SET is_selected_primary = 0,
+                    updated_at = ?
+                WHERE sequence_shot_id = ?
+                  AND id != ?
+                """,
+                (now, existing["sequence_shot_id"], candidate_id),
+            )
         cursor = await db.execute(
             """
             UPDATE shot_anchor_candidates
@@ -523,13 +570,11 @@ async def update_anchor_candidate_selection(
             (
                 int(is_selected_primary),
                 int(is_selected_backup),
-                _now_iso(),
+                now,
                 candidate_id,
             ),
         )
         await db.commit()
-        if cursor.rowcount == 0:
-            return None
         refreshed = await db.execute(
             "SELECT * FROM shot_anchor_candidates WHERE id = ?",
             (candidate_id,),
