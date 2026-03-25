@@ -55,7 +55,13 @@ export interface GenerationResponse {
   clip_skip: number | null;
   status: string;
   image_path: string | null;
+  watermarked_path: string | null;
   upscaled_image_path: string | null;
+  adetailed_path: string | null;
+  hiresfix_path: string | null;
+  dreamactor_path: string | null;
+  dreamactor_task_id: string | null;
+  dreamactor_status: string | null;
   upscaled_preview_path: string | null;
   upscale_model: string | null;
   thumbnail_path: string | null;
@@ -67,6 +73,14 @@ export interface GenerationResponse {
   source_id: string | null;
   comfyui_prompt_id: string | null;
   error_message: string | null;
+  postprocess_kind?: string | null;
+  postprocess_status?: string | null;
+  postprocess_message?: string | null;
+  is_favorite: boolean;
+  quality_score?: number | null;
+  quality_ai_score?: number | null;
+  finger_anomaly?: number | null;
+  publish_approved?: number;
   created_at: string;
   completed_at: string | null;
 }
@@ -83,6 +97,110 @@ export interface GenerationStatus {
   status: string;
   generation_time_sec: number | null;
   estimated_time_sec: number | null;
+  postprocess_kind?: string | null;
+  postprocess_status?: string | null;
+}
+
+export interface DreamActorStatus {
+  status: string;
+  progress: number;
+  video_url: string | null;
+  dreamactor_path: string | null;
+}
+
+export type AnimationTargetTool =
+  | 'dreamactor'
+  | 'seedance'
+  | 'wan_i2v'
+  | 'hunyuan_avatar'
+  | 'custom'
+
+export type AnimationExecutorMode = 'local' | 'remote_worker' | 'managed_api'
+
+export interface AnimationJobResponse {
+  id: string
+  candidate_id: string | null
+  generation_id: string
+  publish_job_id: string | null
+  target_tool: AnimationTargetTool
+  executor_mode: AnimationExecutorMode
+  executor_key: string
+  status: 'draft' | 'queued' | 'submitted' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  request_json: Record<string, unknown> | null
+  external_job_id: string | null
+  external_job_url: string | null
+  output_path: string | null
+  error_message: string | null
+  submitted_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AnimationJobDispatchResponse {
+  animation_job: AnimationJobResponse
+  dispatch_mode: AnimationExecutorMode | string
+  remote_request_accepted: boolean
+  remote_worker_job_id: string | null
+  remote_worker_job_url: string | null
+}
+
+export interface AnimationExecutorConfigResponse {
+  mode: AnimationExecutorMode | string
+  executor_key: string
+  remote_base_url: string | null
+  managed_provider: string | null
+  supports_direct_submit: boolean
+  preferred_flow: string
+  supported_target_tools: string[]
+}
+
+export interface AnimationPresetResponse {
+  id: string
+  name: string
+  description: string | null
+  target_tool: AnimationTargetTool
+  backend_family: string
+  model_profile: string
+  request_json: Record<string, unknown>
+}
+
+export interface AnimationPresetLaunchRequest {
+  candidate_id?: string | null
+  generation_id?: string | null
+  publish_job_id?: string | null
+  executor_mode?: AnimationExecutorMode | null
+  executor_key?: string | null
+  dispatch_immediately?: boolean
+  request_overrides?: Record<string, unknown> | null
+}
+
+export interface AnimationPresetLaunchResponse {
+  preset: AnimationPresetResponse
+  animation_job: AnimationJobResponse
+  dispatch: AnimationJobDispatchResponse | null
+  dispatch_error: string | null
+}
+
+export interface SeedanceJobStatus {
+  job_id: string;
+  status: string;
+  progress: number;
+  output_path: string | null;
+  error_msg: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  prompt: string | null;
+  duration_sec: number | null;
+}
+
+export interface SeedanceJobCreateRequest {
+  prompt: string;
+  duration_sec: number;
+  image_ids?: string[];
+  image_files?: File[];
+  video_files?: File[];
+  audio_files?: File[];
 }
 
 export interface ActiveGeneration {
@@ -132,7 +250,7 @@ export interface PresetResponse {
   updated_at: string | null;
 }
 
-export interface LoraProfileResponse {
+export interface LoraProfile {
   id: string;
   display_name: string;
   filename: string;
@@ -142,6 +260,47 @@ export interface LoraProfileResponse {
   notes: string | null;
   compatible_checkpoints: string[] | null;
   created_at: string;
+}
+
+export type LoraProfileResponse = LoraProfile
+
+export interface LoraProfileCreate {
+  display_name: string;
+  filename: string;
+  category: 'style' | 'eyes' | 'material' | 'fetish';
+  default_strength?: number;
+  tags?: string | null;
+  notes?: string | null;
+  compatible_checkpoints?: string[] | null;
+}
+
+export interface LoraProfileUpdate {
+  display_name?: string | null;
+  category?: 'style' | 'eyes' | 'material' | 'fetish' | null;
+  default_strength?: number | null;
+  tags?: string | null;
+  notes?: string | null;
+  compatible_checkpoints?: string[] | null;
+}
+
+export interface MoodMapping {
+  id: string;
+  mood_keyword: string;
+  lora_ids: string[];
+  prompt_additions: string;
+  created_at: string;
+}
+
+export interface MoodMappingCreate {
+  mood_keyword: string;
+  lora_ids?: string[];
+  prompt_additions?: string;
+}
+
+export interface MoodMappingUpdate {
+  mood_keyword?: string | null;
+  lora_ids?: string[] | null;
+  prompt_additions?: string | null;
 }
 
 export interface LoraGuideCheckpoint {
@@ -231,6 +390,11 @@ export interface MoodSelectResponse {
   prompt_additions: string;
 }
 
+export interface CaptionResponse {
+  story: string;
+  hashtags: string;
+}
+
 export interface GalleryQuery {
   page?: number;
   per_page?: number;
@@ -239,8 +403,154 @@ export interface GalleryQuery {
   search?: string | null;
   date_from?: string | null;
   date_to?: string | null;
+  favorites?: boolean;
   sort_by?: string;
   sort_order?: string;
+  publish_approved?: number | null;
+  min_quality?: number | null;
+  max_quality?: number | null;
+}
+
+export interface TimelineDailyItem {
+  date: string;
+  count: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  checkpoints: Record<string, number>;
+  avg_generation_time_sec: number | null;
+}
+
+export interface TimelineCheckpointItem {
+  checkpoint: string;
+  count: number;
+  pct: number;
+}
+
+export interface TimelineHourItem {
+  hour: number;
+  count: number;
+}
+
+export interface TimelineStreak {
+  current_days: number;
+  longest_days: number;
+}
+
+export interface GalleryTimelineResponse {
+  days: number;
+  total: number;
+  daily: TimelineDailyItem[];
+  by_checkpoint: TimelineCheckpointItem[];
+  by_hour: TimelineHourItem[];
+  streak: TimelineStreak;
+}
+
+export interface BenchmarkCreate {
+  name: string;
+  prompt: string;
+  negative_prompt?: string | null;
+  loras: LoraInput[];
+  steps?: number;
+  cfg?: number;
+  width?: number;
+  height?: number;
+  sampler?: string;
+  scheduler?: string;
+  seed?: number | null;
+  checkpoints: string[];
+}
+
+export interface BenchmarkResponse {
+  id: string;
+  name: string;
+  prompt: string;
+  negative_prompt: string | null;
+  loras: LoraInput[];
+  steps: number;
+  cfg: number;
+  width: number;
+  height: number;
+  sampler: string;
+  scheduler: string;
+  seed: number | null;
+  checkpoints: string[];
+  generation_ids: string[];
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  created_at: string;
+  completed_at: string | null;
+  generations?: GenerationResponse[];
+}
+
+export interface CollectionCreate {
+  name: string;
+  description?: string | null;
+}
+
+export interface CollectionUpdate {
+  name?: string | null;
+  description?: string | null;
+  cover_image_id?: string | null;
+}
+
+export interface CollectionResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  cover_image_id: string | null;
+  cover_thumbnail_path: string | null;
+  image_count: number;
+  contains_generation: boolean;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ScheduledJobCreate {
+  name: string;
+  preset_id: string;
+  count?: number;
+  cron_hour?: number;
+  cron_minute?: number;
+  enabled?: boolean;
+}
+
+export interface ScheduledJobUpdate {
+  name?: string | null;
+  preset_id?: string | null;
+  count?: number | null;
+  cron_hour?: number | null;
+  cron_minute?: number | null;
+  enabled?: boolean | null;
+}
+
+export interface ScheduledJobResponse {
+  id: string;
+  name: string;
+  preset_id: string;
+  count: number;
+  cron_hour: number;
+  cron_minute: number;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchedulerRunNowResponse {
+  success: boolean;
+  queued: number;
+  status: string;
+}
+
+export interface CollectionDetailResponse {
+  collection: CollectionResponse;
+  items: GenerationResponse[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -256,6 +566,9 @@ export interface SystemHealth {
   comfyui_connected: boolean;
   db_ok: boolean;
   total_generations: number;
+  completed_generations?: number;
+  failed_generations?: number;
+  cancelled_generations?: number;
 }
 
 export interface ComfyUIStatus {
@@ -263,6 +576,35 @@ export interface ComfyUIStatus {
   url: string;
   system_stats?: Record<string, unknown>;
   message?: string;
+}
+
+export type WatermarkPosition =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'center'
+
+export interface WatermarkSettings {
+  id: number
+  enabled: boolean
+  text: string
+  position: WatermarkPosition
+  opacity: number
+  font_size: number
+  padding: number
+  color: string
+  updated_at: string
+}
+
+export interface WatermarkSettingsUpdate {
+  enabled: boolean
+  text: string
+  position: WatermarkPosition
+  opacity: number
+  font_size: number
+  padding: number
+  color: string
 }
 
 export interface ModelsResponse {
@@ -291,6 +633,18 @@ export interface SyncResponse {
 
 export interface UpscaleModelsResponse {
   upscale_models: string[];
+  comfyui_models?: string[];
+  local_models?: string[];
+  recommended_model?: string | null;
+  recommended_profile?: string;
+  recommended_checkpoint?: string | null;
+  recommended_mode?: UpscaleMode;
+  recommended_mode_reason?: string | null;
+  safe_upscale_enabled?: boolean;
+  quality_upscale_enabled?: boolean;
+  quality_required_nodes?: string[];
+  quality_missing_nodes?: string[];
+  quality_upscale_reason?: string | null;
 }
 
 export interface QualityProfileParams {
@@ -315,6 +669,37 @@ export interface CheckpointQualityProfile {
 export interface QualityProfilesResponse {
   generated_at: string;
   profiles: Record<string, CheckpointQualityProfile>;
+}
+
+export type PromptFactoryCheckpointPreferenceMode =
+  | 'default'
+  | 'prefer'
+  | 'force'
+  | 'exclude'
+
+export interface PromptFactoryCheckpointPreferenceEntry {
+  checkpoint: string
+  available: boolean
+  architecture: string | null
+  favorite_count: number
+  mode: PromptFactoryCheckpointPreferenceMode
+  priority_boost: number
+  notes: string | null
+  updated_at: string | null
+}
+
+export interface PromptFactoryCheckpointPreferencesResponse {
+  generated_at: string
+  entries: PromptFactoryCheckpointPreferenceEntry[]
+}
+
+export interface PromptFactoryCheckpointPreferencesReplaceRequest {
+  entries: Array<{
+    checkpoint: string
+    mode: PromptFactoryCheckpointPreferenceMode
+    priority_boost: number
+    notes?: string | null
+  }>
 }
 
 export interface PromptTemplate {
@@ -346,10 +731,180 @@ export interface PromptTemplatesResponse {
   templates: Record<string, CheckpointPromptTemplates>;
 }
 
+export type PromptFactoryProvider = 'default' | 'openrouter' | 'xai'
+export type PromptFactoryWorkflowLane = 'auto' | 'classic_clip' | 'sdxl_illustrious'
+export type PromptFactoryTone = 'clinical' | 'campaign' | 'editorial' | 'teaser'
+export type PromptFactoryHeatLevel = 'suggestive' | 'steamy' | 'maximal'
+export type PromptFactoryCreativeAutonomy = 'strict' | 'hybrid' | 'director'
+
+export interface PromptFactoryGenerateRequest {
+  concept_brief: string
+  creative_brief?: string | null
+  count: number
+  chunk_size?: number
+  workflow_lane?: PromptFactoryWorkflowLane
+  provider?: PromptFactoryProvider
+  model?: string | null
+  tone?: PromptFactoryTone
+  heat_level?: PromptFactoryHeatLevel
+  creative_autonomy?: PromptFactoryCreativeAutonomy
+  direction_pass_enabled?: boolean
+  target_lora_count?: number
+  checkpoint_pool_size?: number
+  include_negative_prompt?: boolean
+  dedupe?: boolean
+  forbidden_elements?: string[]
+  direction_pack_override?: PromptFactoryDirectionBlueprint[]
+  expansion_axes?: string[]
+}
+
+export interface PromptFactoryDirectionBlueprint {
+  codename_stub: string
+  series: string
+  scene_hook: string
+  camera_plan: string
+  pose_plan: string
+  environment: string
+  device_focus: string
+  lighting_plan: string
+  material_focus: string
+  intensity_hook: string
+}
+
+export interface PromptFactoryRow {
+  set_no: number
+  codename: string
+  series: string
+  checkpoint: string
+  workflow_lane: Exclude<PromptFactoryWorkflowLane, 'auto'> | null
+  loras: LoraInput[]
+  sampler: string
+  steps: number
+  cfg: number
+  clip_skip: number | null
+  width: number
+  height: number
+  positive_prompt: string
+  negative_prompt: string | null
+}
+
+export interface PromptFactoryBenchmark {
+  favorites_total: number
+  workflow_lane: string
+  prompt_dialect: string
+  top_checkpoints: string[]
+  top_loras: string[]
+  avg_lora_strength: number
+  cfg_values: number[]
+  steps_values: number[]
+  sampler: string
+  scheduler: string
+  clip_skip: number | null
+  width: number
+  height: number
+  theme_keywords: string[]
+  material_cues: string[]
+  control_cues: string[]
+  camera_cues: string[]
+  environment_cues: string[]
+  exposure_cues: string[]
+  negative_prompt: string
+}
+
+export interface PromptFactoryGenerateResponse {
+  provider: string
+  model: string
+  requested_count: number
+  generated_count: number
+  chunk_count: number
+  benchmark: PromptFactoryBenchmark
+  direction_pack: PromptFactoryDirectionBlueprint[]
+  rows: PromptFactoryRow[]
+}
+
+export interface PromptFactoryQueueResponse {
+  prompt_batch: PromptFactoryGenerateResponse
+  queued_generations: GenerationResponse[]
+}
+
+export interface PromptFactoryCapabilities {
+  default_provider: string
+  default_model: string
+  openrouter_configured: boolean
+  xai_configured: boolean
+  ready: boolean
+  recommended_lane: string
+  supported_lanes: string[]
+  batch_import_headers: string[]
+  notes: string[]
+}
+
 export interface ReproduceRequest {
   mode: 'exact' | 'variation';
   seed?: number | null;
   notes?: string | null;
+}
+
+export interface ToggleFavoriteResponse {
+  id: string;
+  is_favorite: boolean;
+}
+
+export interface ToggleReadyResponse {
+  id: string;
+  publish_approved: number;
+  curated_at: string | null;
+}
+
+export interface FavoriteUpscaleStatusResponse {
+  favorites_total: number
+  upscaled_done: number
+  queued: number
+  running: number
+  pending: number
+  daily_candidates: number
+  completion_pct: number
+  daily_enabled: boolean
+  daily_hour: number
+  daily_minute: number
+  daily_batch_limit: number | null
+  backlog_window_start_hour: number
+  backlog_window_end_hour: number
+  backlog_window_open: boolean
+  mode: UpscaleMode
+}
+
+export type UpscaleMode = 'safe' | 'quality'
+
+export type MetadataExportFormat = 'json' | 'csv'
+
+export interface QueueItem {
+  id: string
+  status: 'queued' | 'running'
+  position: number
+  checkpoint: string
+  loras: LoraInput[]
+  prompt: string
+  steps: number
+  cfg: number
+  width: number
+  height: number
+  sampler: string
+  tags: string[] | null
+  notes: string | null
+  created_at: string
+  estimated_start_sec: number
+  estimated_done_sec: number
+}
+
+export interface QueueSummary {
+  total_queued: number
+  total_running: number
+  total_active: number
+  avg_generation_sec: number
+  estimated_remaining_sec: number
+  oldest_queued_at: string | null
+  queue_items: QueueItem[]
 }
 
 // ---------------------------------------------------------------------------
@@ -390,20 +945,287 @@ export async function cancelGeneration(id: string): Promise<void> {
 export async function upscaleGeneration(
   id: string,
   upscale_model: string,
+  mode: UpscaleMode = 'safe',
 ): Promise<GenerationResponse> {
   const res = await api.post<GenerationResponse>(`/generations/${id}/upscale`, {
     upscale_model,
+    mode,
   });
   return res.data;
 }
 
-export async function getGallery(query: GalleryQuery): Promise<PaginatedResponse<GenerationResponse>> {
-  const res = await api.get<PaginatedResponse<GenerationResponse>>('/gallery', { params: query });
+export async function adetailGeneration(
+  id: string,
+  opts: { denoise?: number; steps?: number } = {},
+): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>(`/generations/${id}/adetail`, {
+    denoise: opts.denoise ?? 0.4,
+    steps: opts.steps ?? 20,
+  });
   return res.data;
+}
+
+export async function hiresfixGeneration(
+  id: string,
+  opts: { upscale_factor?: number; denoise?: number; steps?: number; cfg?: number } = {},
+): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>(`/generations/${id}/hiresfix`, {
+    upscale_factor: opts.upscale_factor ?? 1.5,
+    denoise: opts.denoise ?? 0.5,
+    steps: opts.steps ?? 20,
+    cfg: opts.cfg ?? 7.0,
+  });
+  return res.data;
+}
+
+export async function applyWatermark(id: string): Promise<GenerationResponse> {
+  const res = await api.post<GenerationResponse>(`/generations/${id}/watermark`);
+  return res.data;
+}
+
+export async function submitDreamActor(
+  id: string,
+  templateVideo: File,
+): Promise<{ task_id: string; status: string }> {
+  const formData = new FormData()
+  formData.append('template_video', templateVideo)
+  const res = await api.post<{ task_id: string; status: string }>(
+    `/generations/${id}/dreamactor`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  )
+  return res.data
+}
+
+export async function getDreamActorStatus(id: string): Promise<DreamActorStatus> {
+  const res = await api.get<DreamActorStatus>(`/generations/${id}/dreamactor/status`)
+  return res.data
+}
+
+export async function getAnimationExecutorConfig(): Promise<AnimationExecutorConfigResponse> {
+  const res = await api.get<AnimationExecutorConfigResponse>('/animation/executor-config')
+  return res.data
+}
+
+export async function getAnimationPresets(): Promise<AnimationPresetResponse[]> {
+  const res = await api.get<AnimationPresetResponse[]>('/animation/presets')
+  return res.data
+}
+
+export async function listAnimationJobs(query: {
+  generation_id?: string
+  candidate_id?: string
+  status_filter?: string
+  limit?: number
+} = {}): Promise<AnimationJobResponse[]> {
+  const res = await api.get<AnimationJobResponse[]>('/animation/jobs', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function launchAnimationPreset(
+  presetId: string,
+  data: AnimationPresetLaunchRequest,
+): Promise<AnimationPresetLaunchResponse> {
+  const res = await api.post<AnimationPresetLaunchResponse>(
+    `/animation/presets/${presetId}/launch`,
+    data,
+  )
+  return res.data
+}
+
+export async function submitSeedanceJob(
+  payload: SeedanceJobCreateRequest,
+): Promise<{ job_id: string; status: string }> {
+  const formData = new FormData()
+  formData.append('prompt', payload.prompt)
+  formData.append('duration_sec', String(payload.duration_sec))
+
+  if (payload.image_ids && payload.image_ids.length > 0) {
+    formData.append('image_ids', payload.image_ids.join(','))
+  }
+  for (const image of payload.image_files ?? []) {
+    formData.append('image_files', image)
+  }
+  for (const video of payload.video_files ?? []) {
+    formData.append('video_files', video)
+  }
+  for (const audio of payload.audio_files ?? []) {
+    formData.append('audio_files', audio)
+  }
+
+  const res = await api.post<{ job_id: string; status: string }>(
+    '/seedance/jobs',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  )
+  return res.data
+}
+
+export async function getSeedanceJob(jobId: string): Promise<SeedanceJobStatus> {
+  const res = await api.get<SeedanceJobStatus>(`/seedance/jobs/${jobId}`)
+  return res.data
+}
+
+export async function listSeedanceJobs(): Promise<SeedanceJobStatus[]> {
+  const res = await api.get<SeedanceJobStatus[]>('/seedance/jobs')
+  return res.data
+}
+
+export async function generateCaptionById(generationId: string): Promise<CaptionResponse> {
+  const res = await api.post<CaptionResponse>('/tools/generate-caption-by-id', {
+    generation_id: generationId,
+  })
+  return res.data
+}
+
+export async function getPromptFactoryCapabilities(): Promise<PromptFactoryCapabilities> {
+  const res = await api.get<PromptFactoryCapabilities>('/tools/prompt-factory/capabilities')
+  return res.data
+}
+
+export async function generatePromptBatch(
+  data: PromptFactoryGenerateRequest,
+): Promise<PromptFactoryGenerateResponse> {
+  const res = await api.post<PromptFactoryGenerateResponse>('/tools/prompt-factory/generate', data)
+  return res.data
+}
+
+export async function generatePromptBatchAndQueue(
+  data: PromptFactoryGenerateRequest,
+): Promise<PromptFactoryQueueResponse> {
+  const res = await api.post<PromptFactoryQueueResponse>('/tools/prompt-factory/generate-and-queue', data)
+  return res.data
+}
+
+export async function queuePromptBatch(
+  data: PromptFactoryGenerateResponse,
+): Promise<PromptFactoryQueueResponse> {
+  const res = await api.post<PromptFactoryQueueResponse>('/tools/prompt-factory/queue', data)
+  return res.data
+}
+
+export async function deleteSeedanceJob(jobId: string): Promise<void> {
+  await api.delete(`/seedance/jobs/${jobId}`)
+}
+
+export async function getGallery(query: GalleryQuery): Promise<PaginatedResponse<GenerationResponse>> {
+  const params = {
+    page: query.page,
+    per_page: query.per_page,
+    checkpoint: query.checkpoint,
+    tags: query.tags,
+    search: query.search,
+    date_from: query.date_from,
+    date_to: query.date_to,
+    favorites: query.favorites,
+    sort_by: query.sort_by,
+    sort_order: query.sort_order,
+    publish_approved: query.publish_approved,
+    min_quality: query.min_quality,
+    max_quality: query.max_quality,
+  };
+  const res = await api.get<PaginatedResponse<GenerationResponse>>('/gallery', { params });
+  return res.data;
+}
+
+export async function getGalleryTimeline(days = 30): Promise<GalleryTimelineResponse> {
+  const res = await api.get<GalleryTimelineResponse>('/gallery/timeline', {
+    params: { days },
+  });
+  return res.data;
+}
+
+export async function createBenchmark(
+  data: BenchmarkCreate,
+): Promise<BenchmarkResponse> {
+  const res = await api.post<BenchmarkResponse>('/benchmark/run', data);
+  return res.data;
+}
+
+export async function listBenchmarks(): Promise<BenchmarkResponse[]> {
+  const res = await api.get<BenchmarkResponse[]>('/benchmark/jobs');
+  return res.data;
+}
+
+export async function getBenchmark(jobId: string): Promise<BenchmarkResponse> {
+  const res = await api.get<BenchmarkResponse>(`/benchmark/jobs/${jobId}`);
+  return res.data;
+}
+
+export async function deleteBenchmark(jobId: string): Promise<void> {
+  await api.delete(`/benchmark/jobs/${jobId}`);
+}
+
+export async function toggleFavorite(id: string): Promise<ToggleFavoriteResponse> {
+  const res = await api.post<ToggleFavoriteResponse>(`/generations/${id}/favorite`);
+  return res.data;
+}
+
+export async function toggleReadyToGo(id: string): Promise<ToggleReadyResponse> {
+  const res = await api.post<ToggleReadyResponse>(`/generations/${id}/ready`);
+  return res.data;
+}
+
+export async function getFavoriteUpscaleStatus(): Promise<FavoriteUpscaleStatusResponse> {
+  const res = await api.get<FavoriteUpscaleStatusResponse>('/generations/favorites/upscale-status')
+  return res.data
 }
 
 export async function deleteGalleryItem(id: string): Promise<void> {
   await api.delete(`/gallery/${id}`);
+}
+
+export async function getCollections(generationId?: string): Promise<CollectionResponse[]> {
+  const res = await api.get<CollectionResponse[]>('/collections', {
+    params: generationId ? { generation_id: generationId } : undefined,
+  });
+  return res.data;
+}
+
+export async function getCollection(
+  id: string,
+  page = 1,
+  perPage = 48,
+): Promise<CollectionDetailResponse> {
+  const res = await api.get<CollectionDetailResponse>(`/collections/${id}`, {
+    params: { page, per_page: perPage },
+  });
+  return res.data;
+}
+
+export async function createCollection(data: CollectionCreate): Promise<CollectionResponse> {
+  const res = await api.post<CollectionResponse>('/collections', data);
+  return res.data;
+}
+
+export async function updateCollection(
+  id: string,
+  data: CollectionUpdate,
+): Promise<CollectionResponse> {
+  const res = await api.put<CollectionResponse>(`/collections/${id}`, data);
+  return res.data;
+}
+
+export async function addToCollection(collectionId: string, generationId: string): Promise<void> {
+  await api.post(`/collections/${collectionId}/items`, { generation_id: generationId });
+}
+
+export async function removeFromCollection(collectionId: string, generationId: string): Promise<void> {
+  await api.delete(`/collections/${collectionId}/items/${generationId}`);
+}
+
+export async function deleteCollection(id: string): Promise<void> {
+  await api.delete(`/collections/${id}`);
 }
 
 export async function getPresets(): Promise<PresetResponse[]> {
@@ -425,11 +1247,75 @@ export async function deletePreset(id: string): Promise<void> {
   await api.delete(`/presets/${id}`);
 }
 
+export async function getSchedulerJobs(): Promise<ScheduledJobResponse[]> {
+  const res = await api.get<ScheduledJobResponse[]>('/scheduler/jobs');
+  return res.data;
+}
+
+export async function createSchedulerJob(
+  data: ScheduledJobCreate,
+): Promise<ScheduledJobResponse> {
+  const res = await api.post<ScheduledJobResponse>('/scheduler/jobs', data);
+  return res.data;
+}
+
+export async function updateSchedulerJob(
+  id: string,
+  data: ScheduledJobUpdate,
+): Promise<ScheduledJobResponse> {
+  const res = await api.put<ScheduledJobResponse>(`/scheduler/jobs/${id}`, data);
+  return res.data;
+}
+
+export async function deleteSchedulerJob(id: string): Promise<void> {
+  await api.delete(`/scheduler/jobs/${id}`);
+}
+
+export async function runSchedulerJobNow(
+  id: string,
+): Promise<SchedulerRunNowResponse> {
+  const res = await api.post<SchedulerRunNowResponse>(`/scheduler/jobs/${id}/run`);
+  return res.data;
+}
+
 export async function getLoras(checkpoint?: string | null): Promise<LoraProfileResponse[]> {
   const res = await api.get<LoraProfileResponse[]>('/loras', {
     params: checkpoint ? { checkpoint } : undefined,
   });
   return res.data;
+}
+
+export async function createLora(data: LoraProfileCreate): Promise<LoraProfile> {
+  const res = await api.post<LoraProfile>('/loras', data);
+  return res.data;
+}
+
+export async function updateLora(id: string, data: LoraProfileUpdate): Promise<LoraProfile> {
+  const res = await api.put<LoraProfile>(`/loras/${id}`, data);
+  return res.data;
+}
+
+export async function deleteLora(id: string): Promise<void> {
+  await api.delete(`/loras/${id}`);
+}
+
+export async function listMoods(): Promise<MoodMapping[]> {
+  const res = await api.get<MoodMapping[]>('/moods');
+  return res.data;
+}
+
+export async function createMood(data: MoodMappingCreate): Promise<MoodMapping> {
+  const res = await api.post<MoodMapping>('/moods', data);
+  return res.data;
+}
+
+export async function updateMood(id: string, data: MoodMappingUpdate): Promise<MoodMapping> {
+  const res = await api.put<MoodMapping>(`/moods/${id}`, data);
+  return res.data;
+}
+
+export async function deleteMood(id: string): Promise<void> {
+  await api.delete(`/moods/${id}`);
 }
 
 export async function selectLoras(data: MoodSelectRequest): Promise<MoodSelectResponse> {
@@ -467,6 +1353,18 @@ export async function updateComfyUIUrl(url: string): Promise<ComfyUIStatus> {
   return res.data;
 }
 
+export async function getWatermarkSettings(): Promise<WatermarkSettings> {
+  const res = await api.get<WatermarkSettings>('/system/watermark');
+  return res.data;
+}
+
+export async function updateWatermarkSettings(
+  data: WatermarkSettingsUpdate,
+): Promise<WatermarkSettings> {
+  const res = await api.post<WatermarkSettings>('/system/watermark', data);
+  return res.data;
+}
+
 export async function getModels(): Promise<ModelsResponse> {
   const res = await api.get<ModelsResponse>('/system/models');
   return res.data;
@@ -477,8 +1375,10 @@ export async function syncModels(): Promise<SyncResponse> {
   return res.data;
 }
 
-export async function getUpscaleModels(): Promise<UpscaleModelsResponse> {
-  const res = await api.get<UpscaleModelsResponse>('/system/upscale-models');
+export async function getUpscaleModels(checkpoint?: string | null): Promise<UpscaleModelsResponse> {
+  const res = await api.get<UpscaleModelsResponse>('/system/upscale-models', {
+    params: checkpoint ? { checkpoint } : undefined,
+  });
   return res.data;
 }
 
@@ -487,7 +1387,183 @@ export async function getQualityProfiles(): Promise<QualityProfilesResponse> {
   return res.data;
 }
 
+export async function getPromptFactoryCheckpointPreferences(): Promise<PromptFactoryCheckpointPreferencesResponse> {
+  const res = await api.get<PromptFactoryCheckpointPreferencesResponse>(
+    '/system/prompt-factory-checkpoint-preferences',
+  )
+  return res.data
+}
+
+export async function updatePromptFactoryCheckpointPreferences(
+  data: PromptFactoryCheckpointPreferencesReplaceRequest,
+): Promise<PromptFactoryCheckpointPreferencesResponse> {
+  const res = await api.put<PromptFactoryCheckpointPreferencesResponse>(
+    '/system/prompt-factory-checkpoint-preferences',
+    data,
+  )
+  return res.data
+}
+
 export async function getPromptTemplates(): Promise<PromptTemplatesResponse> {
   const res = await api.get<PromptTemplatesResponse>('/system/prompt-templates');
+  return res.data;
+}
+
+export async function exportMetadata(format: MetadataExportFormat): Promise<Blob> {
+  const res = await api.get<Blob>('/export/metadata', {
+    params: { format },
+    responseType: 'blob',
+  })
+  return res.data
+}
+
+export async function getQueueSummary(): Promise<QueueSummary> {
+  const res = await api.get<QueueSummary>('/generations/queue/summary')
+  return res.data
+}
+
+export async function cancelAllQueued(): Promise<{ cancelled: number }> {
+  const res = await api.post<{ cancelled: number }>('/generations/cancel-all-queued')
+  return res.data
+}
+
+// ---------------------------------------------------------------------------
+// Curation
+// ---------------------------------------------------------------------------
+
+export interface CurationItem {
+  id: string
+  image_path: string | null
+  thumbnail_path: string | null
+  upscaled_preview_path: string | null
+  checkpoint: string
+  steps: number
+  cfg: number
+  quality_score: number | null
+  publish_approved: number  // 0=pending, 1=approved, 2=rejected
+  tags: string | null
+  prompt: string
+  is_favorite?: boolean
+}
+
+export interface CurationQueueResponse {
+  items: CurationItem[]
+  total: number
+  approved_today: number
+}
+
+export async function getCurationQueue(): Promise<CurationQueueResponse> {
+  const res = await api.get<CurationQueueResponse>('/curation/queue')
+  return res.data
+}
+
+export async function approveCurationItem(id: string): Promise<void> {
+  await api.post(`/curation/${id}/approve`)
+}
+
+export async function rejectCurationItem(id: string): Promise<void> {
+  await api.post(`/curation/${id}/reject`)
+}
+
+export async function recalculateCurationScores(): Promise<void> {
+  await api.post('/curation/recalculate')
+}
+
+export async function autoApproveCuration(threshold = 70): Promise<{ approved: number }> {
+  const res = await api.post<{ approved: number }>('/curation/auto-approve', null, {
+    params: { threshold },
+  })
+  return res.data
+}
+
+// ---------------------------------------------------------------------------
+// Direction Board
+// ---------------------------------------------------------------------------
+
+export interface DirectionReference {
+  id: string
+  external_url: string | null
+  generation_id: string | null
+  title: string
+  notes: string | null
+  tags: string | null  // JSON array string
+  source: 'external' | 'internal'
+  created_at: string
+}
+
+export interface DirectionReferenceCreate {
+  external_url?: string | null
+  generation_id?: string | null
+  title: string
+  notes?: string | null
+  tags?: string[] | null
+}
+
+export async function getDirectionReferences(): Promise<DirectionReference[]> {
+  const res = await api.get<DirectionReference[]>('/direction/references')
+  return res.data
+}
+
+export async function createDirectionReference(
+  data: DirectionReferenceCreate,
+): Promise<DirectionReference> {
+  const res = await api.post<DirectionReference>('/direction/references', data)
+  return res.data
+}
+
+export async function deleteDirectionReference(id: string): Promise<void> {
+  await api.delete(`/direction/references/${id}`)
+}
+
+export async function pinGenerationToDirection(generationId: string): Promise<DirectionReference> {
+  const res = await api.post<DirectionReference>(`/direction/pin/${generationId}`)
+  return res.data
+}
+
+// ---------------------------------------------------------------------------
+// Quality AI
+// ---------------------------------------------------------------------------
+
+export interface AnalyzeResult {
+  generation_id: string;
+  quality_ai_score: number | null;
+  quality_score: number | null;
+  hand_count: number;
+  finger_anomaly: number;
+  quality_tags: string[];
+  wd14_bad_tags: string[];
+  wd14_good_tags: string[];
+  hands_finger_counts: number[];
+}
+
+export interface BatchAnalyzeResult {
+  processed: number;
+  skipped: number;
+  errors: number;
+}
+
+export interface QualityReport {
+  total_analyzed: number;
+  anomaly_count: number;
+  anomaly_rate: number;
+  bad_tag_distribution: Record<string, number>;
+  score_histogram: Record<string, number>;
+}
+
+export async function analyzeGenerationQuality(generationId: string): Promise<AnalyzeResult> {
+  const res = await api.post<AnalyzeResult>(`/quality/analyze/${generationId}`);
+  return res.data;
+}
+
+export async function batchAnalyzeQuality(limit = 50, skipAnalyzed = true): Promise<BatchAnalyzeResult> {
+  const res = await api.post<BatchAnalyzeResult>('/quality/analyze-batch', {
+    limit,
+    skip_analyzed: skipAnalyzed,
+  });
+  return res.data;
+}
+
+export async function getQualityReport(): Promise<QualityReport> {
+  const res = await api.get<QualityReport>('/quality/report');
   return res.data;
 }
