@@ -203,7 +203,7 @@ def _planned_candidate_scores(index: int, total: int) -> dict[str, float]:
 
 async def _create_animation_job(
     *,
-    candidate_id: str,
+    shot_anchor_candidate_id: str,
     generation_id: str,
     target_tool: str,
     executor_profile_id: str,
@@ -217,6 +217,7 @@ async def _create_animation_job(
     job_id = str(uuid.uuid4())
     request_payload = {
         "sequence": {
+            "shot_anchor_candidate_id": shot_anchor_candidate_id,
             "sequence_run_id": sequence_run_id,
             "sequence_shot_id": sequence_shot_id,
             "content_mode": content_mode,
@@ -245,11 +246,10 @@ async def _create_animation_job(
                 completed_at,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
+            ) VALUES (?, NULL, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
             """,
             (
                 job_id,
-                candidate_id,
                 generation_id,
                 target_tool,
                 executor_mode,
@@ -389,7 +389,7 @@ class SequenceRunService:
                 if not (candidate["is_selected_primary"] or candidate["is_selected_backup"]):
                     continue
                 job = await _create_animation_job(
-                    candidate_id=str(persisted["id"]),
+                    shot_anchor_candidate_id=str(persisted["id"]),
                     generation_id=str(candidate["generation_id"]),
                     target_tool=target_tool or settings.PUBLISH_DEFAULT_ANIMATION_TOOL,
                     executor_profile_id=str(executor_profile["id"]),
