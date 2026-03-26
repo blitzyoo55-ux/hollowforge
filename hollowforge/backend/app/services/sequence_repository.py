@@ -40,6 +40,7 @@ def _decode_json(value: str | None) -> Any:
 
 def _normalize_anchor_candidate_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
+    normalized["rank_score"] = _compute_rank_score(normalized)
     normalized["is_selected_primary"] = bool(normalized.get("is_selected_primary"))
     normalized["is_selected_backup"] = bool(normalized.get("is_selected_backup"))
     return normalized
@@ -58,6 +59,55 @@ def _validate_anchor_selection_flags(
 ) -> None:
     if is_selected_primary and is_selected_backup:
         raise ValueError("anchor candidate cannot be both primary and backup")
+
+
+def _float_score(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _compute_rank_score(candidate: dict[str, Any]) -> float | None:
+    explicit_rank = _float_score(candidate.get("rank_score"))
+    if explicit_rank is not None:
+        return round(explicit_rank, 6)
+
+    metrics = [
+        _float_score(candidate.get("identity_score")),
+        _float_score(candidate.get("location_lock_score")),
+        _float_score(candidate.get("beat_fit_score")),
+        _float_score(candidate.get("quality_score")),
+    ]
+    present = [metric for metric in metrics if metric is not None]
+    if not present:
+        return None
+    return round(sum(present) / len(present), 6)
+
+
+def _parse_sequence_request_json(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _normalize_clip_duration(
+    value: float | int | str | None,
+) -> float | None:
+    if isinstance(value, (int, float)):
+        return round(float(value), 6)
+    if isinstance(value, str) and value.strip():
+        try:
+            return round(float(value), 6)
+        except ValueError:
+            return None
+    return None
 
 
 def _blueprint_response(row: dict[str, Any]) -> SequenceBlueprintResponse:
@@ -525,7 +575,16 @@ async def list_anchor_candidates(sequence_shot_id: str) -> list[dict[str, Any]]:
             (sequence_shot_id,),
         )
         rows = await cursor.fetchall()
-    return [_normalize_anchor_candidate_row(cast(dict[str, Any], row)) for row in rows]
+    normalized = [_normalize_anchor_candidate_row(cast(dict[str, Any], row)) for row in rows]
+    normalized.sort(
+        key=lambda row: (
+            not bool(row.get("is_selected_primary")),
+            not bool(row.get("is_selected_backup")),
+            -(float(row["rank_score"]) if row.get("rank_score") is not None else -1.0),
+            str(row.get("updated_at") or ""),
+        )
+    )
+    return normalized
 
 
 async def update_anchor_candidate_selection(
@@ -652,6 +711,156 @@ async def list_shot_clips(sequence_shot_id: str) -> list[dict[str, Any]]:
         )
         rows = await cursor.fetchall()
     return [_normalize_shot_clip_row(cast(dict[str, Any], row)) for row in rows]
+
+
+async def mark_shot_clip_ready_for_completed_job(
+    *,
+    animation_job_id: str,
+    clip_path: str,
+    clip_duration_sec: float | None = None,
+    clip_score: float | None = None,
+) -> dict[str, Any]:
+    normalized_clip_path = clip_path.strip()
+    if not normalized_clip_path:
+        raise ValueError("clip_path is required to mark a shot clip ready")
+
+    async with get_db() as db:
+        job_cursor = await db.execute(
+            """
+            SELECT id, request_json, output_path
+            FROM animation_jobs
+            WHERE id = ?
+            """,
+            (animation_job_id,),
+        )
+        job_row = await job_cursor.fetchone()
+        if job_row is None:
+            raise ValueError(f"Unknown animation job: {animation_job_id}")
+
+        existing_cursor = await db.execute(
+            """
+            SELECT *
+            FROM shot_clips
+            WHERE selected_animation_job_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (animation_job_id,),
+        )
+        existing_clip = await existing_cursor.fetchone()
+
+        request_json = _parse_sequence_request_json(job_row.get("request_json"))
+        sequence_payload = request_json.get("sequence")
+        sequence_shot_id = None
+        if existing_clip is not None:
+            sequence_shot_id = existing_clip.get("sequence_shot_id")
+        elif isinstance(sequence_payload, dict):
+            sequence_shot_id = sequence_payload.get("sequence_shot_id")
+        else:
+            sequence_shot_id = request_json.get("sequence_shot_id")
+
+        if not isinstance(sequence_shot_id, str) or not sequence_shot_id:
+            raise ValueError(
+                f"Animation job {animation_job_id} is missing sequence_shot_id metadata"
+            )
+
+        shot_cursor = await db.execute(
+            """
+            SELECT content_mode, policy_profile_id, target_duration_sec
+            FROM sequence_shots
+            WHERE id = ?
+            """,
+            (sequence_shot_id,),
+        )
+        shot_row = await shot_cursor.fetchone()
+        if shot_row is None:
+            raise ValueError(f"Unknown sequence shot: {sequence_shot_id}")
+
+        resolved_duration = _normalize_clip_duration(clip_duration_sec)
+        if resolved_duration is None:
+            resolved_duration = _normalize_clip_duration(request_json.get("clip_duration_sec"))
+        if resolved_duration is None:
+            resolved_duration = _normalize_clip_duration(request_json.get("duration_sec"))
+        if resolved_duration is None:
+            frames = _normalize_clip_duration(request_json.get("frames"))
+            fps = _normalize_clip_duration(request_json.get("fps"))
+            if frames is not None and fps not in {None, 0.0}:
+                resolved_duration = round(frames / fps, 6)
+        if resolved_duration is None and existing_clip is not None:
+            resolved_duration = _normalize_clip_duration(existing_clip.get("clip_duration_sec"))
+        if resolved_duration is None:
+            resolved_duration = _normalize_clip_duration(shot_row.get("target_duration_sec"))
+
+        resolved_score = _normalize_clip_duration(clip_score)
+        if resolved_score is None:
+            resolved_score = _normalize_clip_duration(request_json.get("clip_score"))
+        if resolved_score is None:
+            resolved_score = _normalize_clip_duration(request_json.get("rank_score"))
+        if resolved_score is None and existing_clip is not None:
+            resolved_score = _normalize_clip_duration(existing_clip.get("clip_score"))
+
+        now = _now_iso()
+        if existing_clip is not None:
+            await db.execute(
+                """
+                UPDATE shot_clips
+                SET clip_path = ?,
+                    clip_duration_sec = ?,
+                    clip_score = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    normalized_clip_path,
+                    resolved_duration,
+                    resolved_score,
+                    now,
+                    existing_clip["id"],
+                ),
+            )
+            clip_id = existing_clip["id"]
+        else:
+            clip_id = str(uuid.uuid4())
+            await db.execute(
+                """
+                INSERT INTO shot_clips (
+                    id,
+                    sequence_shot_id,
+                    content_mode,
+                    policy_profile_id,
+                    selected_animation_job_id,
+                    clip_path,
+                    clip_duration_sec,
+                    clip_score,
+                    retry_count,
+                    is_degraded,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    clip_id,
+                    sequence_shot_id,
+                    shot_row["content_mode"],
+                    shot_row["policy_profile_id"],
+                    animation_job_id,
+                    normalized_clip_path,
+                    resolved_duration,
+                    resolved_score,
+                    0,
+                    0,
+                    now,
+                    now,
+                ),
+            )
+
+        await db.commit()
+        refreshed_cursor = await db.execute(
+            "SELECT * FROM shot_clips WHERE id = ?",
+            (clip_id,),
+        )
+        refreshed_row = await refreshed_cursor.fetchone()
+    return _normalize_shot_clip_row(cast(dict[str, Any], refreshed_row))
 
 
 async def create_rough_cut(

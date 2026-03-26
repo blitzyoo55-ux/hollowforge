@@ -9,6 +9,8 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from app.config import settings
 from app.models import RoughCutCreate
@@ -54,6 +56,11 @@ def _resolve_clip_path(clip_path: str) -> Path:
     return settings.DATA_DIR / clip_path
 
 
+def _is_remote_clip_path(clip_path: str) -> bool:
+    parsed = urlparse(clip_path)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def _manifest_line(path: Path) -> str:
     return "file '{}'\n".format(str(path).replace("'", "'\\''"))
 
@@ -62,6 +69,44 @@ def build_concat_manifest(timeline: Sequence[Mapping[str, Any]]) -> str:
     return "".join(
         _manifest_line(_resolve_clip_path(str(entry["clip_path"]))) for entry in timeline
     )
+
+
+async def _download_remote_clip_to_local(source_url: str, destination_path: Path) -> Path:
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _download() -> None:
+        with urlopen(source_url) as response, destination_path.open("wb") as output_file:
+            shutil.copyfileobj(response, output_file)
+
+    try:
+        await asyncio.to_thread(_download)
+    except Exception as exc:  # pragma: no cover - surfaced through assembly error path
+        raise RoughCutAssemblyError(
+            f"Failed to download remote clip for rough-cut assembly: {source_url}"
+        ) from exc
+    return destination_path
+
+
+async def _materialize_clip_for_concat(
+    *,
+    sequence_run_id: str,
+    shot_no: int,
+    clip_path: str,
+) -> Path:
+    if _is_remote_clip_path(clip_path):
+        parsed = urlparse(clip_path)
+        suffix = Path(parsed.path).suffix or ".mp4"
+        destination_path = (
+            settings.DATA_DIR
+            / "sequence_runs"
+            / sequence_run_id
+            / "staged_clips"
+            / f"shot_{shot_no:03d}{suffix}"
+        )
+        if destination_path.exists():
+            return destination_path
+        return await _download_remote_clip_to_local(clip_path, destination_path)
+    return _resolve_clip_path(clip_path)
 
 
 def resolve_ffmpeg_bin() -> str:
@@ -149,7 +194,15 @@ class RoughCutService:
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "rough_cut_manifest.txt"
         output_path = output_dir / "rough_cut.mp4"
-        manifest_path.write_text(build_concat_manifest(timeline), encoding="utf-8")
+        manifest_lines: list[str] = []
+        for entry in timeline:
+            manifest_clip_path = await _materialize_clip_for_concat(
+                sequence_run_id=sequence_run_id,
+                shot_no=int(entry["shot_no"]),
+                clip_path=str(entry["clip_path"]),
+            )
+            manifest_lines.append(_manifest_line(manifest_clip_path))
+        manifest_path.write_text("".join(manifest_lines), encoding="utf-8")
 
         await _run_ffmpeg(manifest_path, output_path)
 

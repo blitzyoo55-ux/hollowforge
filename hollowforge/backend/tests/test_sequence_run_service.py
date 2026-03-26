@@ -551,6 +551,164 @@ async def test_rough_cut_service_assemble_persists_manifest_and_output(
     assert persisted_output_path == "sequence_runs/run_1/rough_cut.mp4"
 
 
+@pytest.mark.asyncio
+async def test_rough_cut_service_assemble_downloads_remote_clip_urls_before_concat(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await init_db()
+    _insert_blueprint(temp_db)
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO sequence_runs (
+                id,
+                sequence_blueprint_id,
+                content_mode,
+                policy_profile_id,
+                prompt_provider_profile_id,
+                execution_mode,
+                status,
+                selected_rough_cut_id,
+                total_score,
+                error_summary,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "run_1",
+                "bp_1",
+                "all_ages",
+                "safe_stage1_v1",
+                "safe_hosted_grok",
+                "remote_worker",
+                "animating",
+                None,
+                None,
+                None,
+                _now(),
+                _now(),
+            ),
+        )
+        for shot_no in (1, 2):
+            shot_id = f"shot_{shot_no}"
+            conn.execute(
+                """
+                INSERT INTO sequence_shots (
+                    id,
+                    sequence_run_id,
+                    content_mode,
+                    policy_profile_id,
+                    shot_no,
+                    beat_type,
+                    camera_intent,
+                    emotion_intent,
+                    action_intent,
+                    target_duration_sec,
+                    continuity_rules,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    shot_id,
+                    "run_1",
+                    "all_ages",
+                    "safe_stage1_v1",
+                    shot_no,
+                    "establish",
+                    "wide_master",
+                    "grounded",
+                    "reveal_location",
+                    6,
+                    "continuity",
+                    _now(),
+                    _now(),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO shot_clips (
+                    id,
+                    sequence_shot_id,
+                    content_mode,
+                    policy_profile_id,
+                    selected_animation_job_id,
+                    clip_path,
+                    clip_duration_sec,
+                    clip_score,
+                    retry_count,
+                    is_degraded,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"clip_{shot_no}",
+                    shot_id,
+                    "all_ages",
+                    "safe_stage1_v1",
+                    None,
+                    f"https://worker.example/outputs/shot_0{shot_no}.mp4",
+                    1.5 if shot_no == 1 else 2.0,
+                    0.9,
+                    0,
+                    0,
+                    _now(),
+                    _now(),
+                ),
+            )
+        conn.commit()
+
+    downloaded_paths: list[Path] = []
+
+    async def _fake_download_remote_clip_to_local(source_url: str, destination_path: Path) -> Path:
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_text(source_url, encoding="utf-8")
+        downloaded_paths.append(destination_path)
+        return destination_path
+
+    async def _fake_run_ffmpeg(manifest_path: Path, output_path: Path) -> None:
+        output_path.write_bytes(b"fake-mp4")
+
+    async def _fake_create_rough_cut(payload):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(
+            id="rough_cut_1",
+            output_path=payload.output_path,
+            timeline_json=payload.timeline_json,
+            total_duration_sec=payload.total_duration_sec,
+        )
+
+    async def _fake_select_rough_cut_for_run(run_id: str, rough_cut_id: str):  # type: ignore[no-untyped-def]
+        return None
+
+    monkeypatch.setattr(
+        rough_cut_service,
+        "_download_remote_clip_to_local",
+        _fake_download_remote_clip_to_local,
+        raising=False,
+    )
+    monkeypatch.setattr(rough_cut_service, "_run_ffmpeg", _fake_run_ffmpeg)
+    monkeypatch.setattr(rough_cut_service, "create_rough_cut", _fake_create_rough_cut)
+    monkeypatch.setattr(
+        rough_cut_service,
+        "select_rough_cut_for_run",
+        _fake_select_rough_cut_for_run,
+    )
+
+    service = RoughCutService()
+    result = await service.assemble(sequence_run_id="run_1")
+
+    manifest_text = Path(result["manifest_path"]).read_text(encoding="utf-8")
+    assert len(downloaded_paths) == 2
+    assert all(path.exists() for path in downloaded_paths)
+    assert "worker.example" not in manifest_text
+    assert "staged_clips" in manifest_text
+
+
 async def _fake_load_prompt_benchmark_snapshot(workflow_lane: str) -> SimpleNamespace:
     return SimpleNamespace(
         model_dump=lambda: {

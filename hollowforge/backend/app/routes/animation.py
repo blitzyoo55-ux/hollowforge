@@ -26,6 +26,7 @@ from app.services.animation_dispatch_service import (
     AnimationDispatchError,
     dispatch_to_remote_worker,
 )
+from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
 router = APIRouter(prefix="/api/v1/animation", tags=["animation"])
 
@@ -363,6 +364,26 @@ def _get_animation_preset_or_404(preset_id: str) -> AnimationPresetResponse:
     return preset.model_copy(deep=True)
 
 
+def _merge_request_json_payload(
+    existing_raw: Any,
+    incoming: dict[str, Any] | None,
+) -> str | None:
+    if incoming is None:
+        return existing_raw
+
+    merged = _parse_json_object(existing_raw) or {}
+    if isinstance(merged.get("sequence"), dict) and isinstance(incoming.get("sequence"), dict):
+        sequence_payload = dict(merged["sequence"])
+        sequence_payload.update(incoming["sequence"])
+        merged["sequence"] = sequence_payload
+
+    for key, value in incoming.items():
+        if key == "sequence" and isinstance(merged.get("sequence"), dict):
+            continue
+        merged[key] = value
+    return json.dumps(merged, ensure_ascii=False)
+
+
 def _build_preset_request_json(
     preset: AnimationPresetResponse,
     overrides: dict[str, Any] | None,
@@ -490,11 +511,7 @@ async def _apply_animation_job_update(
         if payload.error_message is not None
         else current.get("error_message")
     )
-    next_request_json = (
-        json.dumps(payload.request_json, ensure_ascii=False)
-        if payload.request_json is not None
-        else current.get("request_json")
-    )
+    next_request_json = _merge_request_json_payload(current.get("request_json"), payload.request_json)
     next_submitted_at = current.get("submitted_at")
     if next_status in {"submitted", "processing", "completed"} and not next_submitted_at:
         next_submitted_at = now
@@ -562,6 +579,18 @@ async def _apply_animation_job_update(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update animation job",
+        )
+
+    clip_ready_path = None
+    if next_status == "completed":
+        if isinstance(next_output_path, str) and next_output_path.strip():
+            clip_ready_path = next_output_path.strip()
+        elif isinstance(next_external_job_url, str) and next_external_job_url.strip():
+            clip_ready_path = next_external_job_url.strip()
+    if clip_ready_path is not None:
+        await mark_shot_clip_ready_for_completed_job(
+            animation_job_id=current["id"],
+            clip_path=clip_ready_path,
         )
     return updated_row
 

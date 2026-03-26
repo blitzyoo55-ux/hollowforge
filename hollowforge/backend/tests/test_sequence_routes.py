@@ -345,6 +345,43 @@ def test_create_sequence_run_returns_seeded_shot_detail(
     assert payload["rough_cut_candidates"] == []
 
 
+def test_get_sequence_run_rehydrates_rank_scores_for_anchor_candidates(
+    temp_db: Path,
+    monkeypatch,
+) -> None:
+    _init_test_db()
+    _insert_blueprint(temp_db)
+    generation_ids = [f"gen_{index}" for index in range(1, 25)]
+    _insert_generation_rows(temp_db, generation_ids)
+
+    monkeypatch.setattr(
+        sequence_run_service,
+        "load_prompt_benchmark_snapshot",
+        _fake_load_prompt_benchmark_snapshot,
+    )
+    client = _build_client(generation_service=_StubGenerationService(generation_ids))
+
+    create_response = client.post(
+        "/api/v1/sequences/runs",
+        json={
+            "sequence_blueprint_id": "bp_1",
+            "candidate_count": 4,
+        },
+    )
+    run_id = create_response.json()["run"]["id"]
+
+    response = client.get(f"/api/v1/sequences/runs/{run_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    rank_scores = [
+        candidate["rank_score"]
+        for candidate in payload["shots"][0]["anchor_candidates"]
+    ]
+    assert all(score is not None for score in rank_scores)
+    assert rank_scores[0] >= rank_scores[1]
+
+
 def test_list_sequence_runs_returns_summary_counts(
     temp_db: Path,
     monkeypatch,
