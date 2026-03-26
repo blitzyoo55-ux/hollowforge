@@ -44,7 +44,7 @@ Remote worker settings:
 Default operating mode for Stage 1:
 
 1. Start from the safe local preview path first.
-2. Run backend tests and the sequence preflight locally.
+2. Run backend tests and the sequence preflight locally for shared Stage 1 prerequisites.
 3. Validate a blueprint and run creation flow before sending anything to a remote worker.
 4. Use remote execution only after the local-safe path is clean.
 
@@ -57,6 +57,8 @@ cd hollowforge/backend
 ./.venv/bin/python scripts/check_sequence_pipeline_preflight.py --executor-profile-id safe_local_preview
 ./.venv/bin/python -m compileall app
 ```
+
+The `safe_local_preview` invocation only confirms the selected executor profile resolves alongside the shared Stage 1 prerequisites. It does not validate local ComfyUI health or any other local preview runtime dependency.
 
 When validating the remote safe lane:
 
