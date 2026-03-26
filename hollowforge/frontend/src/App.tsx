@@ -17,6 +17,7 @@ const MoodManager = lazy(() => import('./pages/MoodManager'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Scheduler = lazy(() => import('./pages/Scheduler'))
 const SeedanceStudio = lazy(() => import('./pages/SeedanceStudio'))
+const SequenceStudio = lazy(() => import('./pages/SequenceStudio'))
 const QueuePage = lazy(() => import('./pages/QueuePage'))
 const BatchImportPage = lazy(() => import('./pages/BatchImportPage'))
 const CurationPage = lazy(() => import('./pages/CurationPage'))
@@ -75,6 +76,7 @@ const navGroups: NavGroup[] = [
       { to: '/lora-guide', label: 'LoRA Guide', icon: 'book' },
       { to: '/direction', label: 'Direction Board', icon: 'compass', leanHidden: true },
       { to: '/seedance', label: 'Seedance', icon: 'video-sparkles' },
+      { to: '/sequences', label: 'Sequences', icon: 'layers' },
       { to: '/marketing', label: 'Caption AI', icon: 'wand-sparkles', leanHidden: true },
       { to: '/timeline', label: 'Timeline', icon: 'timeline', leanHidden: true },
       { to: '/settings', label: 'Settings', icon: 'cog' },
@@ -369,6 +371,7 @@ export default function App() {
               <Route path="/lora-guide" element={<LoraGuide />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/seedance" element={<SeedanceStudio />} />
+              <Route path="/sequences" element={<SequenceStudio />} />
               <Route path="/quality" element={<QualityPage />} />
               <Route path="/figma-character-board" element={<FigmaCharacterBoard />} />
               {!LEAN_MODE && <Route path="/marketing" element={<Marketing />} />}

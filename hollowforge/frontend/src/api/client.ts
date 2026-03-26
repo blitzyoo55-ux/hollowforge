@@ -907,9 +907,197 @@ export interface QueueSummary {
   queue_items: QueueItem[]
 }
 
+export type SequenceContentMode = 'all_ages' | 'adult_nsfw'
+
+export interface SequenceBlueprintCreate {
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  character_id: string
+  location_id: string
+  beat_grammar_id: string
+  target_duration_sec: number
+  shot_count: number
+  tone?: string | null
+  executor_policy: string
+}
+
+export interface SequenceBlueprintResponse extends SequenceBlueprintCreate {
+  id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceShotPlanResponse {
+  shot_no: number
+  beat_type: string
+  camera_intent: string
+  emotion_intent: string
+  action_intent: string
+  target_duration_sec: number
+  continuity_rules: string | null
+}
+
+export interface SequenceBlueprintDetailResponse {
+  blueprint: SequenceBlueprintResponse
+  planned_shots: SequenceShotPlanResponse[]
+}
+
+export interface SequenceRunCreateRequest {
+  sequence_blueprint_id: string
+  prompt_provider_profile_id?: string | null
+  candidate_count?: number
+  target_tool?: string | null
+}
+
+export interface SequenceRunResponse {
+  id: string
+  sequence_blueprint_id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  prompt_provider_profile_id: string
+  execution_mode: string
+  status: string
+  selected_rough_cut_id: string | null
+  total_score: number | null
+  error_summary: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceShotResponse {
+  id: string
+  sequence_run_id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  shot_no: number
+  beat_type: string
+  camera_intent: string
+  emotion_intent: string
+  action_intent: string
+  target_duration_sec: number
+  continuity_rules: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceAnchorCandidateResponse {
+  id: string
+  sequence_shot_id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  generation_id: string
+  identity_score: number | null
+  location_lock_score: number | null
+  beat_fit_score: number | null
+  quality_score: number | null
+  rank_score: number | null
+  is_selected_primary: boolean
+  is_selected_backup: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceShotClipResponse {
+  id: string
+  sequence_shot_id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  selected_animation_job_id: string | null
+  clip_path: string | null
+  clip_duration_sec: number | null
+  clip_score: number | null
+  retry_count: number
+  is_degraded: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceRunShotDetailResponse {
+  shot: SequenceShotResponse
+  anchor_candidates: SequenceAnchorCandidateResponse[]
+  clips: SequenceShotClipResponse[]
+}
+
+export interface RoughCutResponse {
+  id: string
+  sequence_run_id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  output_path: string | null
+  timeline_json: unknown
+  total_duration_sec: number | null
+  continuity_score: number | null
+  story_score: number | null
+  overall_score: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SequenceRoughCutCandidateResponse {
+  rough_cut: RoughCutResponse
+  is_selected: boolean
+}
+
+export interface SequenceRunSummaryResponse {
+  run: SequenceRunResponse
+  shot_count: number
+  rough_cut_candidate_count: number
+}
+
+export interface SequenceRunDetailResponse {
+  run: SequenceRunResponse
+  blueprint: SequenceBlueprintResponse
+  shots: SequenceRunShotDetailResponse[]
+  rough_cut_candidates: SequenceRoughCutCandidateResponse[]
+}
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
+
+export async function createSequenceBlueprint(
+  data: SequenceBlueprintCreate,
+): Promise<SequenceBlueprintDetailResponse> {
+  const res = await api.post<SequenceBlueprintDetailResponse>('/sequences/blueprints', data)
+  return res.data
+}
+
+export async function listSequenceBlueprints(query: {
+  content_mode?: SequenceContentMode
+  policy_profile_id?: string
+} = {}): Promise<SequenceBlueprintDetailResponse[]> {
+  const res = await api.get<SequenceBlueprintDetailResponse[]>('/sequences/blueprints', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function createSequenceRun(
+  data: SequenceRunCreateRequest,
+): Promise<SequenceRunDetailResponse> {
+  const res = await api.post<SequenceRunDetailResponse>('/sequences/runs', data)
+  return res.data
+}
+
+export async function listSequenceRuns(query: {
+  sequence_blueprint_id?: string
+  status?: string
+} = {}): Promise<SequenceRunSummaryResponse[]> {
+  const res = await api.get<SequenceRunSummaryResponse[]>('/sequences/runs', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function getSequenceRun(runId: string): Promise<SequenceRunDetailResponse> {
+  const res = await api.get<SequenceRunDetailResponse>(`/sequences/runs/${runId}`)
+  return res.data
+}
+
+export async function startSequenceRun(runId: string): Promise<SequenceRunDetailResponse> {
+  const res = await api.post<SequenceRunDetailResponse>(`/sequences/runs/${runId}/start`)
+  return res.data
+}
 
 export async function createGeneration(data: GenerationCreate): Promise<GenerationResponse> {
   const res = await api.post<GenerationResponse>('/generations', data);
