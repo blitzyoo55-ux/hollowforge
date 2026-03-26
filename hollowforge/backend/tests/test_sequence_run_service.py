@@ -125,6 +125,23 @@ def test_build_remote_worker_payload_preserves_sequence_metadata_for_dict_reques
     }
 
 
+def test_resolve_ffmpeg_bin_rejects_missing_explicit_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_bin = "/tmp/hollowforge-missing-ffmpeg-bin"
+    monkeypatch.setattr(
+        rough_cut_service.settings,
+        "HOLLOWFORGE_SEQUENCE_FFMPEG_BIN",
+        missing_bin,
+    )
+
+    with pytest.raises(
+        rough_cut_service.RoughCutAssemblyError,
+        match="ffmpeg binary not found",
+    ):
+        rough_cut_service.resolve_ffmpeg_bin()
+
+
 class _FailIfCalledGenerationService:
     async def queue_generation_batch(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("queue_generation_batch should not be reached")

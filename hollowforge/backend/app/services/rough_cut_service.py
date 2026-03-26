@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -62,9 +64,23 @@ def build_concat_manifest(timeline: Sequence[Mapping[str, Any]]) -> str:
     )
 
 
+def resolve_ffmpeg_bin() -> str:
+    configured = settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN.strip()
+    candidate = Path(configured).expanduser()
+    if candidate.is_absolute() or os.sep in configured:
+        if candidate.is_file():
+            return str(candidate)
+        raise RoughCutAssemblyError(f"ffmpeg binary not found: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}")
+
+    resolved = shutil.which(configured)
+    if resolved:
+        return resolved
+    raise RoughCutAssemblyError(f"ffmpeg binary not found: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}")
+
+
 async def _run_ffmpeg(manifest_path: Path, output_path: Path) -> None:
     cmd = [
-        settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN,
+        resolve_ffmpeg_bin(),
         "-y",
         "-f",
         "concat",
