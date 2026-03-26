@@ -74,6 +74,8 @@ cd hollowforge/backend
 
 Use `--worker-check skip` only for local development when remote health would create a false failure and you are not trying to launch remote jobs in that session.
 
+Remote worker health only passes when `/healthz` reports a ready state suitable for execution, such as `status=ok`, `status=healthy`, or `status=ready`. Any unhealthy payload should block remote preflight.
+
 ## Safe vs Adult Lane Separation
 
 Do not mix lanes inside a single blueprint, run, or rough cut.

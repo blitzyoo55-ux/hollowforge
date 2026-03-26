@@ -45,6 +45,7 @@ CANONICAL_EXECUTOR_PROFILES: tuple[tuple[str, str], ...] = (
     ("adult_nsfw", "adult_local_preview"),
     ("adult_nsfw", "adult_remote_prod"),
 )
+READY_REMOTE_STATUSES = {"ok", "healthy", "ready"}
 
 
 @dataclass(frozen=True)
@@ -182,19 +183,33 @@ def _canonical_executor_checks() -> list[CheckResult]:
     return checks
 
 
-def _selected_executor_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
+def _selected_executor_profile_ids(args: argparse.Namespace) -> list[str]:
     profile_ids = [str(profile_id) for profile_id in args.executor_profile_id]
     configured_key = settings.ANIMATION_EXECUTOR_KEY.strip()
     if not profile_ids and configured_key and configured_key != "default":
         profile_ids.append(configured_key)
+    return profile_ids
 
+
+def _selected_executor_profiles(
+    args: argparse.Namespace,
+) -> tuple[list[CheckResult], list[dict[str, object]]]:
+    checks: list[CheckResult] = []
     profiles: list[dict[str, object]] = []
-    for profile_id in profile_ids:
+    for profile_id in _selected_executor_profile_ids(args):
         try:
             profiles.append(get_animation_executor_profile(profile_id))
-        except SequenceRegistryError:
+        except SequenceRegistryError as exc:
+            checks.append(_fail(f"selected_executor_profile:{profile_id}", str(exc)))
             continue
-    return profiles
+        profile = profiles[-1]
+        checks.append(
+            _pass(
+                f"selected_executor_profile:{profile_id}",
+                f"content_mode={profile['content_mode']}, mode={profile['executor_mode']}, lane={profile['execution_lane']}",
+            )
+        )
+    return checks, profiles
 
 
 def _check_ffmpeg() -> CheckResult:
@@ -205,8 +220,10 @@ def _check_ffmpeg() -> CheckResult:
     return _pass("ffmpeg_bin", f"resolved to {resolved}")
 
 
-def _check_remote_worker(args: argparse.Namespace) -> CheckResult:
-    selected_profiles = _selected_executor_profiles(args)
+def _check_remote_worker(
+    args: argparse.Namespace,
+    selected_profiles: list[dict[str, object]],
+) -> CheckResult:
     selected_remote_profiles = [
         str(profile["id"])
         for profile in selected_profiles
@@ -234,6 +251,19 @@ def _check_remote_worker(args: argparse.Namespace) -> CheckResult:
         return _fail("remote_worker_health", str(exc))
 
     status = payload.get("status")
+    normalized_status = str(status).strip().lower()
+    if normalized_status not in READY_REMOTE_STATUSES:
+        return _fail(
+            "remote_worker_health",
+            f"{health_url} unhealthy status={status!r}",
+        )
+    for key in ("healthy", "ready", "accepting_jobs"):
+        if key in payload and payload[key] is False:
+            return _fail(
+                "remote_worker_health",
+                f"{health_url} unhealthy {key}=False",
+            )
+
     backend = payload.get("executor_backend")
     profile_detail = ", ".join(selected_remote_profiles) if selected_remote_profiles else "forced check"
     return _pass(
@@ -271,21 +301,24 @@ def run(argv: list[str] | None = None) -> int:
     checks.extend(_check_db_state())
     checks.extend(_check_prompt_profiles())
     checks.extend(_canonical_executor_checks())
+    selected_profile_checks, selected_profiles = _selected_executor_profiles(args)
+    checks.extend(selected_profile_checks)
     checks.append(_check_ffmpeg())
     if args.worker_check == "skip":
         checks.append(_skip("remote_worker_health", "skipped by --worker-check=skip"))
     else:
-        checks.append(_check_remote_worker(args))
+        checks.append(_check_remote_worker(args, selected_profiles))
 
     has_failures = any(check.status == "FAIL" for check in checks)
 
     print("HollowForge Sequence Stage 1 Preflight")
     print(f"backend: {BACKEND_DIR}")
     print(f"db_path: {settings.DB_PATH}")
+    selected_profile_ids = _selected_executor_profile_ids(args)
     if args.executor_profile_id:
         print(f"selected_executor_profiles: {', '.join(args.executor_profile_id)}")
-    elif settings.ANIMATION_EXECUTOR_KEY.strip() and settings.ANIMATION_EXECUTOR_KEY.strip() != "default":
-        print(f"selected_executor_profiles: {settings.ANIMATION_EXECUTOR_KEY.strip()} (from env)")
+    elif selected_profile_ids:
+        print(f"selected_executor_profiles: {', '.join(selected_profile_ids)} (from env)")
     else:
         print("selected_executor_profiles: none")
 
