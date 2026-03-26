@@ -259,3 +259,97 @@ async def test_mark_shot_clip_ready_for_completed_job_updates_sequence_clip(
         6.0,
         0.91,
     )
+
+
+@pytest.mark.asyncio
+async def test_mark_shot_clip_ready_for_completed_job_ignores_non_sequence_jobs(
+    temp_db: Path,
+) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO generations (
+                id,
+                prompt,
+                checkpoint,
+                loras,
+                seed,
+                steps,
+                cfg,
+                width,
+                height,
+                sampler,
+                scheduler,
+                status,
+                image_path,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "gen_non_sequence",
+                "prompt",
+                "checkpoint.safetensors",
+                "[]",
+                7,
+                28,
+                7.0,
+                832,
+                1216,
+                "euler",
+                "normal",
+                "completed",
+                "images/gen_non_sequence.png",
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO animation_jobs (
+                id,
+                candidate_id,
+                generation_id,
+                publish_job_id,
+                target_tool,
+                executor_mode,
+                executor_key,
+                status,
+                request_json,
+                external_job_id,
+                external_job_url,
+                output_path,
+                error_message,
+                submitted_at,
+                completed_at,
+                created_at,
+                updated_at
+            ) VALUES (?, NULL, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, ?, ?)
+            """,
+            (
+                "job_non_sequence",
+                "gen_non_sequence",
+                "custom",
+                "remote_worker",
+                "safe_remote_prod",
+                "submitted",
+                json.dumps({"prompt": "plain animation job"}),
+                _now(),
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+
+    result = await sequence_repository.mark_shot_clip_ready_for_completed_job(
+        animation_job_id="job_non_sequence",
+        clip_path="https://worker.example/outputs/non_sequence.mp4",
+    )
+
+    assert result is None
+
+    with sqlite3.connect(temp_db) as conn:
+        clip_count = conn.execute("SELECT COUNT(*) FROM shot_clips").fetchone()[0]
+
+    assert clip_count == 0

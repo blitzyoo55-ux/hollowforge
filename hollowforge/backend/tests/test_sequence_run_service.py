@@ -709,6 +709,182 @@ async def test_rough_cut_service_assemble_downloads_remote_clip_urls_before_conc
     assert "staged_clips" in manifest_text
 
 
+@pytest.mark.asyncio
+async def test_rough_cut_service_assemble_refreshes_staged_remote_clip_when_url_changes(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await init_db()
+    _insert_blueprint(temp_db)
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO sequence_runs (
+                id,
+                sequence_blueprint_id,
+                content_mode,
+                policy_profile_id,
+                prompt_provider_profile_id,
+                execution_mode,
+                status,
+                selected_rough_cut_id,
+                total_score,
+                error_summary,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "run_refresh",
+                "bp_1",
+                "all_ages",
+                "safe_stage1_v1",
+                "safe_hosted_grok",
+                "remote_worker",
+                "animating",
+                None,
+                None,
+                None,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO sequence_shots (
+                id,
+                sequence_run_id,
+                content_mode,
+                policy_profile_id,
+                shot_no,
+                beat_type,
+                camera_intent,
+                emotion_intent,
+                action_intent,
+                target_duration_sec,
+                continuity_rules,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "shot_refresh",
+                "run_refresh",
+                "all_ages",
+                "safe_stage1_v1",
+                1,
+                "establish",
+                "wide_master",
+                "grounded",
+                "reveal_location",
+                6,
+                "continuity",
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO shot_clips (
+                id,
+                sequence_shot_id,
+                content_mode,
+                policy_profile_id,
+                selected_animation_job_id,
+                clip_path,
+                clip_duration_sec,
+                clip_score,
+                retry_count,
+                is_degraded,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "clip_refresh",
+                "shot_refresh",
+                "all_ages",
+                "safe_stage1_v1",
+                None,
+                "https://worker.example/outputs/shot_refresh_v1.mp4",
+                1.5,
+                0.9,
+                0,
+                0,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+
+    download_calls: list[tuple[str, Path]] = []
+
+    async def _fake_download_remote_clip_to_local(source_url: str, destination_path: Path) -> Path:
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_text(source_url, encoding="utf-8")
+        download_calls.append((source_url, destination_path))
+        return destination_path
+
+    async def _fake_run_ffmpeg(manifest_path: Path, output_path: Path) -> None:
+        output_path.write_bytes(b"fake-mp4")
+
+    async def _fake_create_rough_cut(payload):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(
+            id="rough_cut_refresh",
+            output_path=payload.output_path,
+            timeline_json=payload.timeline_json,
+            total_duration_sec=payload.total_duration_sec,
+        )
+
+    async def _fake_select_rough_cut_for_run(run_id: str, rough_cut_id: str):  # type: ignore[no-untyped-def]
+        return None
+
+    monkeypatch.setattr(
+        rough_cut_service,
+        "_download_remote_clip_to_local",
+        _fake_download_remote_clip_to_local,
+        raising=False,
+    )
+    monkeypatch.setattr(rough_cut_service, "_run_ffmpeg", _fake_run_ffmpeg)
+    monkeypatch.setattr(rough_cut_service, "create_rough_cut", _fake_create_rough_cut)
+    monkeypatch.setattr(
+        rough_cut_service,
+        "select_rough_cut_for_run",
+        _fake_select_rough_cut_for_run,
+    )
+
+    service = RoughCutService()
+    first_result = await service.assemble(sequence_run_id="run_refresh")
+    first_manifest = Path(first_result["manifest_path"]).read_text(encoding="utf-8")
+    first_staged_path = Path(first_manifest.split("'")[1])
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute(
+            "UPDATE shot_clips SET clip_path = ?, updated_at = ? WHERE id = ?",
+            (
+                "https://worker.example/outputs/shot_refresh_v2.mp4",
+                "2026-03-26T00:00:01+00:00",
+                "clip_refresh",
+            ),
+        )
+        conn.commit()
+
+    second_result = await service.assemble(sequence_run_id="run_refresh")
+    second_manifest = Path(second_result["manifest_path"]).read_text(encoding="utf-8")
+    second_staged_path = Path(second_manifest.split("'")[1])
+
+    assert [call[0] for call in download_calls] == [
+        "https://worker.example/outputs/shot_refresh_v1.mp4",
+        "https://worker.example/outputs/shot_refresh_v2.mp4",
+    ]
+    assert second_staged_path.read_text(encoding="utf-8") == (
+        "https://worker.example/outputs/shot_refresh_v2.mp4"
+    )
+    assert first_staged_path != second_staged_path
+
+
 async def _fake_load_prompt_benchmark_snapshot(workflow_lane: str) -> SimpleNamespace:
     return SimpleNamespace(
         model_dump=lambda: {

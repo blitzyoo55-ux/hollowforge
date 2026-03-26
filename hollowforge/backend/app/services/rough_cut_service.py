@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import subprocess
@@ -96,15 +97,14 @@ async def _materialize_clip_for_concat(
     if _is_remote_clip_path(clip_path):
         parsed = urlparse(clip_path)
         suffix = Path(parsed.path).suffix or ".mp4"
+        fingerprint = hashlib.sha256(clip_path.encode("utf-8")).hexdigest()[:12]
         destination_path = (
             settings.DATA_DIR
             / "sequence_runs"
             / sequence_run_id
             / "staged_clips"
-            / f"shot_{shot_no:03d}{suffix}"
+            / f"shot_{shot_no:03d}_{fingerprint}{suffix}"
         )
-        if destination_path.exists():
-            return destination_path
         return await _download_remote_clip_to_local(clip_path, destination_path)
     return _resolve_clip_path(clip_path)
 

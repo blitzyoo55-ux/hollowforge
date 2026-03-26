@@ -719,7 +719,7 @@ async def mark_shot_clip_ready_for_completed_job(
     clip_path: str,
     clip_duration_sec: float | None = None,
     clip_score: float | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     normalized_clip_path = clip_path.strip()
     if not normalized_clip_path:
         raise ValueError("clip_path is required to mark a shot clip ready")
@@ -760,9 +760,7 @@ async def mark_shot_clip_ready_for_completed_job(
             sequence_shot_id = request_json.get("sequence_shot_id")
 
         if not isinstance(sequence_shot_id, str) or not sequence_shot_id:
-            raise ValueError(
-                f"Animation job {animation_job_id} is missing sequence_shot_id metadata"
-            )
+            return None
 
         shot_cursor = await db.execute(
             """
