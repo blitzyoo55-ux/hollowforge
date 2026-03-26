@@ -21,7 +21,7 @@ const CONTENT_MODE_OPTIONS: Array<{ value: SequenceContentMode; label: string; d
   {
     value: 'adult_nsfw',
     label: 'Adult NSFW',
-    description: 'Lane-separated adult orchestration controls. Stage 1 grammar is not registered yet.',
+    description: 'Lane-separated adult Stage 1 controls using the adult grammar and adult executor presets.',
   },
 ]
 
@@ -37,7 +37,7 @@ const POLICY_OPTIONS: Record<SequenceContentMode, ModeOption[]> = {
     {
       value: 'adult_stage1_v1',
       label: 'adult_stage1_v1',
-      description: 'Reserved adult policy lane for future Stage 1 parity.',
+      description: 'Adult policy lane paired with the adult Stage 1 grammar.',
     },
   ],
 }
@@ -77,7 +77,13 @@ const BEAT_GRAMMAR_OPTIONS: Record<SequenceContentMode, ModeOption[]> = {
       description: 'Fixed six-beat grammar for the first single-location sequence slice.',
     },
   ],
-  adult_nsfw: [],
+  adult_nsfw: [
+    {
+      value: 'adult_stage1_v1',
+      label: 'adult_stage1_v1',
+      description: 'Fixed six-beat grammar for the adult single-location sequence slice.',
+    },
+  ],
 }
 
 function selectDefault(options: ModeOption[]): string {
@@ -202,26 +208,15 @@ export default function SequenceBlueprintForm({
           <select
             value={beatGrammarId}
             onChange={(event) => setBeatGrammarId(event.target.value)}
-            disabled={beatGrammarOptions.length === 0}
-            className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-gray-100 outline-none transition focus:border-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-gray-100 outline-none transition focus:border-violet-500"
           >
-            {beatGrammarOptions.length > 0 ? (
-              beatGrammarOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))
-            ) : (
-              <option value="">No Stage 1 grammar registered</option>
-            )}
+            {beatGrammarOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
-          {activeBeatGrammar ? (
-            <p className="text-xs text-gray-500">{activeBeatGrammar.description}</p>
-          ) : (
-            <p className="text-xs text-amber-300">
-              Stage 1 currently exposes only the safe single-location grammar.
-            </p>
-          )}
+          {activeBeatGrammar && <p className="text-xs text-gray-500">{activeBeatGrammar.description}</p>}
         </label>
 
         <label className="space-y-2 text-sm text-gray-300">

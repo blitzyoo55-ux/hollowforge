@@ -25,6 +25,19 @@ _BEAT_GRAMMARS: dict[str, dict[str, Any]] = {
             "close_reaction",
             "settle",
         ],
+    },
+    "adult_stage1_v1": {
+        "id": "adult_stage1_v1",
+        "content_mode": "adult_nsfw",
+        "shot_count": 6,
+        "beats": [
+            "establish",
+            "attention",
+            "approach",
+            "contact_action",
+            "close_reaction",
+            "settle",
+        ],
     }
 }
 

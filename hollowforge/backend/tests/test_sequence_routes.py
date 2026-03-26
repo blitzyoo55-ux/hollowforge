@@ -272,6 +272,32 @@ def test_create_sequence_blueprint_endpoint_is_exposed(temp_db: Path) -> None:
     assert payload["planned_shots"][0]["beat_type"] == "establish"
 
 
+def test_create_adult_sequence_blueprint_endpoint_is_exposed(temp_db: Path) -> None:
+    _init_test_db()
+    client = _build_client()
+
+    response = client.post(
+        "/api/v1/sequences/blueprints",
+        json={
+            "content_mode": "adult_nsfw",
+            "policy_profile_id": "adult_stage1_v1",
+            "character_id": "char_1",
+            "location_id": "location_1",
+            "beat_grammar_id": "adult_stage1_v1",
+            "target_duration_sec": 36,
+            "shot_count": 6,
+            "tone": "tense",
+            "executor_policy": "adult_remote_prod",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["blueprint"]["content_mode"] == "adult_nsfw"
+    assert payload["blueprint"]["beat_grammar_id"] == "adult_stage1_v1"
+    assert len(payload["planned_shots"]) == 6
+
+
 def test_list_sequence_blueprints_returns_planned_shots(temp_db: Path) -> None:
     _init_test_db()
     _insert_blueprint(temp_db)

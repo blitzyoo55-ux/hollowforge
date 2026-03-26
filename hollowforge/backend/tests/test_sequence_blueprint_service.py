@@ -250,6 +250,26 @@ def test_expand_blueprint_rejects_wrong_content_lane() -> None:
         )
 
 
+def test_expand_blueprint_allows_adult_stage1_lane_with_adult_grammar() -> None:
+    from app.services.sequence_blueprint_service import expand_blueprint_into_shots
+
+    shots = expand_blueprint_into_shots(
+        beat_grammar_id="adult_stage1_v1",
+        target_duration_sec=36,
+        content_mode="adult_nsfw",
+    )
+
+    assert [shot["beat_type"] for shot in shots] == [
+        "establish",
+        "attention",
+        "approach",
+        "contact_action",
+        "close_reaction",
+        "settle",
+    ]
+    assert all("same fixed location" in str(shot["continuity_rules"]) for shot in shots)
+
+
 @pytest.mark.asyncio
 async def test_create_anchor_candidate_rejects_primary_backup_overlap(temp_db) -> None:
     await init_db()

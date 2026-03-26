@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 
@@ -40,4 +40,17 @@ test('renders Stage 1 blueprint controls', async () => {
   expect(screen.getByLabelText(/Content Mode/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/Executor Profile/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Create Blueprint/i })).toBeInTheDocument()
+})
+
+test('shows the adult Stage 1 grammar option when adult mode is selected', async () => {
+  renderPage()
+
+  fireEvent.change(screen.getByLabelText(/Content Mode/i), { target: { value: 'adult_nsfw' } })
+
+  const beatGrammarSelect = screen.getByLabelText(/Beat Grammar/i)
+  expect(beatGrammarSelect).toHaveValue('adult_stage1_v1')
+  expect(within(beatGrammarSelect).getByRole('option', { name: /adult_stage1_v1/i })).toBeInTheDocument()
+  expect(
+    screen.getByText(/Lane-separated adult Stage 1 controls using the adult grammar/i),
+  ).toBeInTheDocument()
 })
