@@ -68,8 +68,12 @@ def resolve_ffmpeg_bin() -> str:
     configured = settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN.strip()
     candidate = Path(configured).expanduser()
     if candidate.is_absolute() or os.sep in configured:
-        if candidate.is_file():
+        if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
+        if candidate.is_file():
+            raise RoughCutAssemblyError(
+                f"ffmpeg binary not executable: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}"
+            )
         raise RoughCutAssemblyError(f"ffmpeg binary not found: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}")
 
     resolved = shutil.which(configured)
@@ -106,6 +110,10 @@ async def _run_ffmpeg(manifest_path: Path, output_path: Path) -> None:
     except FileNotFoundError as exc:
         raise RoughCutAssemblyError(
             f"ffmpeg binary not found: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}"
+        ) from exc
+    except PermissionError as exc:
+        raise RoughCutAssemblyError(
+            f"ffmpeg binary not executable: {settings.HOLLOWFORGE_SEQUENCE_FFMPEG_BIN}"
         ) from exc
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.strip() if exc.stderr else "ffmpeg failed"

@@ -142,6 +142,55 @@ def test_resolve_ffmpeg_bin_rejects_missing_explicit_path(
         rough_cut_service.resolve_ffmpeg_bin()
 
 
+def test_resolve_ffmpeg_bin_rejects_non_executable_explicit_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ffmpeg_stub = tmp_path / "ffmpeg"
+    ffmpeg_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    ffmpeg_stub.chmod(0o644)
+    monkeypatch.setattr(
+        rough_cut_service.settings,
+        "HOLLOWFORGE_SEQUENCE_FFMPEG_BIN",
+        str(ffmpeg_stub),
+    )
+
+    with pytest.raises(
+        rough_cut_service.RoughCutAssemblyError,
+        match="ffmpeg binary not executable",
+    ):
+        rough_cut_service.resolve_ffmpeg_bin()
+
+
+@pytest.mark.asyncio
+async def test_run_ffmpeg_wraps_permission_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ffmpeg_stub = tmp_path / "ffmpeg"
+    ffmpeg_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    ffmpeg_stub.chmod(0o755)
+    monkeypatch.setattr(
+        rough_cut_service.settings,
+        "HOLLOWFORGE_SEQUENCE_FFMPEG_BIN",
+        str(ffmpeg_stub),
+    )
+
+    async def _raise_permission_error(func):  # type: ignore[no-untyped-def]
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(rough_cut_service.asyncio, "to_thread", _raise_permission_error)
+
+    with pytest.raises(
+        rough_cut_service.RoughCutAssemblyError,
+        match="ffmpeg binary not executable",
+    ):
+        await rough_cut_service._run_ffmpeg(
+            tmp_path / "manifest.txt",
+            tmp_path / "output.mp4",
+        )
+
+
 class _FailIfCalledGenerationService:
     async def queue_generation_batch(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("queue_generation_batch should not be reached")

@@ -243,6 +243,12 @@ def _check_remote_worker(
             "remote_worker_health",
             "HOLLOWFORGE_ANIMATION_REMOTE_BASE_URL is not configured",
         )
+    public_api_base_url = settings.PUBLIC_API_BASE_URL.strip()
+    if not public_api_base_url:
+        return _fail(
+            "remote_worker_health",
+            "HOLLOWFORGE_PUBLIC_API_BASE_URL is not configured",
+        )
 
     health_url = _join_url(base_url, "/healthz")
     try:

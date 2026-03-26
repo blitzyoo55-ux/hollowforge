@@ -116,3 +116,40 @@ def test_check_remote_worker_passes_when_health_payload_is_ready(
 
     assert result.status == "PASS"
     assert "status=ready" in result.detail
+
+
+def test_check_remote_worker_fails_when_public_api_base_url_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preflight = _load_preflight_module()
+    monkeypatch.setattr(
+        preflight.settings,
+        "ANIMATION_REMOTE_BASE_URL",
+        "http://worker.test",
+    )
+    monkeypatch.setattr(
+        preflight.settings,
+        "PUBLIC_API_BASE_URL",
+        "",
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_fetch_json",
+        lambda url: {"status": "ready", "executor_backend": "stub", "accepting_jobs": True},
+    )
+
+    result = preflight._check_remote_worker(
+        Namespace(
+            executor_profile_id=["safe_remote_prod"],
+            worker_check="auto",
+        ),
+        [
+            {
+                "id": "safe_remote_prod",
+                "executor_mode": "remote_worker",
+            }
+        ],
+    )
+
+    assert result.status == "FAIL"
+    assert "PUBLIC_API_BASE_URL" in result.detail

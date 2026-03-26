@@ -74,7 +74,7 @@ cd hollowforge/backend
 
 Use `--worker-check skip` only for local development when remote health would create a false failure and you are not trying to launch remote jobs in that session.
 
-Remote worker health only passes when `/healthz` reports a ready state suitable for execution, such as `status=ok`, `status=healthy`, or `status=ready`. Any unhealthy payload should block remote preflight.
+Remote worker health only passes when `/healthz` reports a ready state suitable for execution, such as `status=ok`, `status=healthy`, or `status=ready`. Any unhealthy payload should block remote preflight. Remote preflight also requires `HOLLOWFORGE_PUBLIC_API_BASE_URL`, because the remote worker depends on HollowForge-hosted asset and callback URLs.
 
 ## Safe vs Adult Lane Separation
 
@@ -138,10 +138,11 @@ Before running rough-cut assembly:
 
 - Confirm `scripts/check_sequence_pipeline_preflight.py` passes for the lane you intend to use.
 - Confirm `HOLLOWFORGE_SEQUENCE_FFMPEG_BIN` resolves on the machine that will assemble the cut.
+- Confirm an explicit `HOLLOWFORGE_SEQUENCE_FFMPEG_BIN` path is executable by the operator account.
 - Confirm the target run has clips for every planned shot.
 - Confirm shot order is correct and no clip path points across lanes.
 - Confirm the run is using the intended prompt profile and executor profile for its `content_mode`.
-- Confirm remote worker health if the selected executor is `safe_remote_prod` or `adult_remote_prod`.
+- Confirm remote worker health and `HOLLOWFORGE_PUBLIC_API_BASE_URL` if the selected executor is `safe_remote_prod` or `adult_remote_prod`.
 
 After running rough-cut assembly:
 
