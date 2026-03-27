@@ -395,6 +395,76 @@ export interface CaptionResponse {
   hashtags: string;
 }
 
+export type CaptionPublishingPlatform = 'twitter' | 'fansly' | 'pixiv' | 'generic';
+export type PublishJobPlatform = 'twitter' | 'fansly' | 'pixiv' | 'custom';
+export type PublishingTone = 'teaser' | 'clinical' | 'campaign';
+export type PublishingChannel = 'social_short' | 'post_body' | 'launch_copy';
+export type PublishJobStatus = 'draft' | 'queued' | 'scheduled' | 'published' | 'failed';
+
+export interface CaptionGenerateRequest {
+  platform: CaptionPublishingPlatform;
+  tone: PublishingTone;
+  channel: PublishingChannel;
+  approved?: boolean;
+}
+
+export interface CaptionVariantResponse {
+  id: string;
+  generation_id: string;
+  channel: PublishingChannel;
+  platform: CaptionPublishingPlatform;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  tone: PublishingTone;
+  story: string;
+  hashtags: string;
+  approved: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublishJobCreate {
+  generation_id: string;
+  caption_variant_id?: string | null;
+  platform?: PublishJobPlatform;
+  status?: PublishJobStatus;
+  scheduled_at?: string | null;
+  external_post_id?: string | null;
+  external_post_url?: string | null;
+  notes?: string | null;
+}
+
+export interface PublishJobResponse {
+  id: string;
+  generation_id: string;
+  caption_variant_id: string | null;
+  platform: PublishJobPlatform;
+  status: PublishJobStatus;
+  scheduled_at: string | null;
+  published_at: string | null;
+  external_post_id: string | null;
+  external_post_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReadyPublishItemResponse {
+  generation_id: string;
+  image_path: string | null;
+  thumbnail_path: string | null;
+  checkpoint: string;
+  prompt: string;
+  created_at: string;
+  approved_caption_id: string | null;
+  caption_count: number;
+  publish_job_count: number;
+  latest_publish_status: PublishJobStatus | null;
+  latest_animation_status: string | null;
+  latest_animation_score: number | null;
+}
+
 export interface GalleryQuery {
   page?: number;
   per_page?: number;
@@ -1266,6 +1336,57 @@ export async function getSeedanceJob(jobId: string): Promise<SeedanceJobStatus> 
 
 export async function listSeedanceJobs(): Promise<SeedanceJobStatus[]> {
   const res = await api.get<SeedanceJobStatus[]>('/seedance/jobs')
+  return res.data
+}
+
+export async function getReadyPublishItems(
+  generationIds?: string[],
+): Promise<ReadyPublishItemResponse[]> {
+  const params = new URLSearchParams()
+  for (const generationId of generationIds ?? []) {
+    params.append('generation_id', generationId)
+  }
+
+  const res = await api.get<ReadyPublishItemResponse[]>('/publishing/ready-items', {
+    params,
+  })
+  return res.data
+}
+
+export async function getCaptionVariants(
+  generationId: string,
+): Promise<CaptionVariantResponse[]> {
+  const res = await api.get<CaptionVariantResponse[]>(
+    `/publishing/generations/${generationId}/captions`,
+  )
+  return res.data
+}
+
+export async function generateCaptionVariant(
+  generationId: string,
+  payload: CaptionGenerateRequest,
+): Promise<CaptionVariantResponse> {
+  const res = await api.post<CaptionVariantResponse>(
+    `/publishing/generations/${generationId}/captions/generate`,
+    payload,
+  )
+  return res.data
+}
+
+export async function approveCaptionVariant(captionId: string): Promise<CaptionVariantResponse> {
+  const res = await api.post<CaptionVariantResponse>(`/publishing/captions/${captionId}/approve`)
+  return res.data
+}
+
+export async function getPublishJobs(generationId: string): Promise<PublishJobResponse[]> {
+  const res = await api.get<PublishJobResponse[]>(
+    `/publishing/generations/${generationId}/publish-jobs`,
+  )
+  return res.data
+}
+
+export async function createPublishJob(payload: PublishJobCreate): Promise<PublishJobResponse> {
+  const res = await api.post<PublishJobResponse>('/publishing/posts', payload)
   return res.data
 }
 

@@ -29,6 +29,11 @@ from app.services.caption_service import (
     generate_caption_from_image_bytes,
     mime_type_from_image_path,
 )
+from app.services.publishing_service import (
+    create_or_reuse_draft_publish_job,
+    list_publish_jobs_for_generation,
+    list_ready_publish_items as list_ready_publish_items_service,
+)
 
 router = APIRouter(prefix="/api/v1/publishing", tags=["publishing"])
 
@@ -159,86 +164,12 @@ async def _require_generation(generation_id: str) -> dict[str, Any]:
 @router.get("/ready-items", response_model=list[ReadyPublishItemResponse])
 async def list_ready_publish_items(
     limit: int = Query(default=100, ge=1, le=500),
+    generation_id: list[str] | None = Query(default=None),
 ) -> list[ReadyPublishItemResponse]:
-    async with get_db() as db:
-        cursor = await db.execute(
-            """
-            SELECT
-                g.id AS generation_id,
-                g.image_path,
-                g.thumbnail_path,
-                g.checkpoint,
-                g.prompt,
-                g.created_at,
-                (
-                    SELECT c.id
-                    FROM caption_variants c
-                    WHERE c.generation_id = g.id
-                      AND c.approved = 1
-                    ORDER BY c.updated_at DESC
-                    LIMIT 1
-                ) AS approved_caption_id,
-                (
-                    SELECT COUNT(*)
-                    FROM caption_variants c
-                    WHERE c.generation_id = g.id
-                ) AS caption_count,
-                (
-                    SELECT COUNT(*)
-                    FROM publish_jobs p
-                    WHERE p.generation_id = g.id
-                ) AS publish_job_count,
-                (
-                    SELECT p.status
-                    FROM publish_jobs p
-                    WHERE p.generation_id = g.id
-                    ORDER BY p.updated_at DESC
-                    LIMIT 1
-                ) AS latest_publish_status,
-                (
-                    SELECT a.status
-                    FROM animation_candidates a
-                    WHERE a.generation_id = g.id
-                    ORDER BY a.updated_at DESC
-                    LIMIT 1
-                ) AS latest_animation_status,
-                (
-                    SELECT a.trigger_score
-                    FROM animation_candidates a
-                    WHERE a.generation_id = g.id
-                    ORDER BY a.updated_at DESC
-                    LIMIT 1
-                ) AS latest_animation_score
-            FROM generations g
-            WHERE g.publish_approved = 1
-            ORDER BY COALESCE(g.curated_at, g.created_at) DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        rows = await cursor.fetchall()
-
-    return [
-        ReadyPublishItemResponse(
-            generation_id=row["generation_id"],
-            image_path=row.get("image_path"),
-            thumbnail_path=row.get("thumbnail_path"),
-            checkpoint=row["checkpoint"],
-            prompt=row["prompt"],
-            created_at=row["created_at"],
-            approved_caption_id=row.get("approved_caption_id"),
-            caption_count=int(row.get("caption_count") or 0),
-            publish_job_count=int(row.get("publish_job_count") or 0),
-            latest_publish_status=row.get("latest_publish_status"),
-            latest_animation_status=row.get("latest_animation_status"),
-            latest_animation_score=(
-                float(row["latest_animation_score"])
-                if row.get("latest_animation_score") is not None
-                else None
-            ),
-        )
-        for row in rows
-    ]
+    return await list_ready_publish_items_service(
+        limit=limit,
+        selected_generation_ids=generation_id,
+    )
 
 
 @router.get(
@@ -420,6 +351,14 @@ async def create_publish_job(payload: PublishJobCreate) -> PublishJobResponse:
                     detail="Caption variant does not belong to generation",
                 )
 
+    if payload.status == "draft":
+        return await create_or_reuse_draft_publish_job(
+            generation_id=payload.generation_id,
+            platform=payload.platform,
+            caption_variant_id=payload.caption_variant_id,
+            notes=payload.notes,
+        )
+
     now = _now_iso()
     publish_job_id = str(uuid4())
     async with get_db() as db:
@@ -467,6 +406,15 @@ async def create_publish_job(payload: PublishJobCreate) -> PublishJobResponse:
             detail="Failed to create publish job",
         )
     return _row_to_publish_job(row)
+
+
+@router.get(
+    "/generations/{generation_id}/publish-jobs",
+    response_model=list[PublishJobResponse],
+)
+async def list_generation_publish_jobs(generation_id: str) -> list[PublishJobResponse]:
+    await _require_generation(generation_id)
+    return await list_publish_jobs_for_generation(generation_id)
 
 
 @router.patch("/posts/{publish_job_id}", response_model=PublishJobResponse)

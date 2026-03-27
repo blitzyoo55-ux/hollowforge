@@ -374,7 +374,7 @@ export default function App() {
               <Route path="/sequences" element={<SequenceStudio />} />
               <Route path="/quality" element={<QualityPage />} />
               <Route path="/figma-character-board" element={<FigmaCharacterBoard />} />
-              {!LEAN_MODE && <Route path="/marketing" element={<Marketing />} />}
+              <Route path="/marketing" element={<Marketing />} />
               {!LEAN_MODE && <Route path="/timeline" element={<Timeline />} />}
               {!LEAN_MODE && <Route path="/benchmark" element={<Benchmark />} />}
               <Route path="/queue" element={<QueuePage />} />

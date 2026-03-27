@@ -6,11 +6,14 @@ import type { GenerationResponse } from '../api/client'
 import EmptyState from '../components/EmptyState'
 import GalleryGrid from '../components/GalleryGrid'
 import Lightbox from '../components/Lightbox'
+import { notify } from '../lib/toast'
 
 export default function ReadyToGo() {
   const navigate = useNavigate()
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIdsState, setSelectedIdsState] = useState<Set<string>>(new Set())
 
   const queryParams = useMemo<GalleryQuery>(
     () => ({
@@ -53,12 +56,65 @@ export default function ReadyToGo() {
     () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
     [data],
   )
+  const itemIds = useMemo(() => new Set(items.map((item) => item.id)), [items])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedIdsState((prev) => {
+      const next = new Set<string>()
+      prev.forEach((generationId) => {
+        if (itemIds.has(generationId)) {
+          next.add(generationId)
+        }
+      })
+
+      if (next.size === prev.size) {
+        return prev
+      }
+
+      return next
+    })
+  }, [itemIds])
+
+  const selectedIds = selectedIdsState
 
   const total = data?.pages[0]?.total ?? 0
+  const selectedCount = selectedIds.size
   const safeSelectedIndex =
     selectedIndex === null || items.length === 0
       ? null
       : Math.min(selectedIndex, items.length - 1)
+
+  const toggleSelectionMode = () => {
+    setSelectionMode((prev) => !prev)
+  }
+
+  const handleToggleSelect = (item: GenerationResponse) => {
+    if (!selectionMode) return
+
+    setSelectedIdsState((prev) => {
+      const next = new Set(prev)
+      if (next.has(item.id)) {
+        next.delete(item.id)
+        return next
+      }
+      if (next.size >= 10) {
+        notify.info('You can select up to 10 items for the publishing pilot.')
+        return prev
+      }
+      next.add(item.id)
+      return next
+    })
+  }
+
+  const launchPublishingPilot = () => {
+    if (selectedIds.size === 0) return
+
+    const params = new URLSearchParams()
+    selectedIds.forEach((generationId) => {
+      params.append('generation_id', generationId)
+    })
+    navigate(`/marketing?${params.toString()}`)
+  }
 
   return (
     <div className="space-y-6">
@@ -68,10 +124,38 @@ export default function ReadyToGo() {
           <p className="mt-1 text-sm text-gray-400">
             Ready-to-publish images only. Click the green check to cancel the ready status.
           </p>
+          <p className="mt-2 text-sm text-emerald-300">
+            {selectionMode
+              ? `${selectedCount} selected for publishing pilot`
+              : 'Enable batch selection to hand off ready items to marketing.'}
+          </p>
         </div>
-        <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-4 py-3 text-right">
-          <p className="text-xs uppercase tracking-[0.16em] text-emerald-300/70">Ready Count</p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-100">{total}</p>
+        <div className="flex flex-col items-end gap-3">
+          <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-4 py-3 text-right">
+            <p className="text-xs uppercase tracking-[0.16em] text-emerald-300/70">Ready Count</p>
+            <p className="mt-1 text-2xl font-semibold text-zinc-100">{total}</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={toggleSelectionMode}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                selectionMode
+                  ? 'border-violet-400/50 bg-violet-500/15 text-violet-200'
+                  : 'border-gray-700 bg-gray-900 text-gray-200 hover:border-violet-500/50 hover:bg-gray-800'
+              }`}
+            >
+              {selectionMode ? 'Exit batch select' : 'Select for publishing pilot'}
+            </button>
+            <button
+              type="button"
+              onClick={launchPublishingPilot}
+              disabled={!selectionMode || selectedCount === 0}
+              className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-200 transition-colors disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-900 disabled:text-gray-500"
+            >
+              Launch marketing handoff
+            </button>
+          </div>
         </div>
       </div>
 
@@ -98,6 +182,9 @@ export default function ReadyToGo() {
             onItemClick={(item) => navigate(`/gallery/${item.id}`)}
             onImageClick={(_item, index) => setSelectedIndex(index)}
             onRegenerateClick={(item) => navigate(`/generate?from=${item.id}`)}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
           />
           <div className="flex flex-col items-center gap-2 pt-3">
             {isFetchingNextPage && (
