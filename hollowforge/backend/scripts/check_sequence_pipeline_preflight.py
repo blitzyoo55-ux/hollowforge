@@ -187,6 +187,10 @@ def _selected_executor_profile_ids(args: argparse.Namespace) -> list[str]:
     profile_ids = [str(profile_id) for profile_id in args.executor_profile_id]
     configured_key = settings.ANIMATION_EXECUTOR_KEY.strip()
     if not profile_ids and configured_key and configured_key != "default":
+        try:
+            get_animation_executor_profile(configured_key)
+        except SequenceRegistryError:
+            return profile_ids
         profile_ids.append(configured_key)
     return profile_ids
 

@@ -3,20 +3,22 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 import pytest_asyncio
 
 from app.config import settings
 from app.db import get_db, init_db
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def publishing_db(tmp_path, monkeypatch):
+@pytest.fixture
+def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     data_dir = tmp_path / "data"
     monkeypatch.setattr(settings, "DATA_DIR", data_dir)
     monkeypatch.setattr(settings, "DB_PATH", data_dir / "hollowforge.db")
     monkeypatch.setattr(settings, "IMAGES_DIR", data_dir / "images")
     monkeypatch.setattr(settings, "THUMBS_DIR", data_dir / "thumbs")
     monkeypatch.setattr(settings, "WORKFLOWS_DIR", data_dir / "workflows")
+    monkeypatch.setattr(settings, "LEAN_MODE", True)
 
     for path in (
         settings.DATA_DIR,
@@ -26,6 +28,11 @@ async def publishing_db(tmp_path, monkeypatch):
     ):
         Path(path).mkdir(parents=True, exist_ok=True)
 
+    return settings.DB_PATH
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def publishing_db(temp_db: Path):
     await init_db()
 
     now = datetime(2026, 3, 26, 0, 0, tzinfo=timezone.utc).isoformat()
