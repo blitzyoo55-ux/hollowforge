@@ -144,9 +144,9 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
           <div className="h-36 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/70" />
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
-          {generationIds.map((generationId) => (
+          {generationIds.map((generationId, index) => (
             <div
-              key={generationId}
+              key={`${generationId}-${index}`}
               className="h-[28rem] animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/70"
             />
           ))}
