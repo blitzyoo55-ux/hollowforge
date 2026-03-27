@@ -78,10 +78,32 @@ curl -X POST http://127.0.0.1:8000/api/tools/prompt-factory/queue \
   --data @docs/HOLLOWFORGE_MARKET_VALIDATION_PHASE1_QUEUE_PAYLOAD_20260313.json
 ```
 
+## 5.1 Local Still-Image Smoke
+
+대량 발주 전에는 실제 still-image lane이 살아 있는지 먼저 확인한다.
+
+```bash
+cd hollowforge/backend
+./.venv/bin/python scripts/launch_generation_smoke.py --no-wait
+```
+
+위 명령은 `generation_id` 를 출력한다. 같은 ID로 완료까지 감시한다.
+
+```bash
+cd hollowforge/backend
+./.venv/bin/python scripts/launch_generation_smoke.py --generation-id <generation_id>
+```
+
+운영 체크 포인트:
+
+- checkpoint를 명시하지 않으면 `/api/v1/system/models` 의 첫 checkpoint를 사용한다.
+- 성공 기준은 최종 상태가 `completed` 이고 `image_path` 가 채워지는 것이다.
+- 생성 중에는 `/api/v1/generations/queue/summary` 로 running/queued 카운트를 함께 본다.
+- smoke 태그는 기본값으로 `["smoke", "still-image"]` 가 들어간다.
+
 ## 6. 운영 메모
 
 - 이번 버전은 `prefectIllustriousXL_v70.safetensors` 고정 baseline이다.
 - negative prompt는 현재 HollowForge 기본값과 동일하다.
 - `adult woman`, `original character`, `non-IP` 축을 유지하도록 직접 작성했다.
 - `latex / bdsm`는 Phase 1 안에서 `Line D`로 검증하되, 코어 전체를 그 방향으로 몰지 않는다.
-

@@ -40,6 +40,19 @@ def _get_generation_service(request: Request) -> GenerationService:
     return request.app.state.generation_service
 
 
+def _resolve_generation_image_file_path(image_path: str) -> Path:
+    candidate = (settings.DATA_DIR / image_path).resolve()
+    data_root = settings.DATA_DIR.resolve()
+    try:
+        candidate.relative_to(data_root)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsafe image path",
+        ) from exc
+    return candidate
+
+
 @router.post("/api/tools/generate-caption")
 async def generate_caption(image: UploadFile = File(...)) -> dict[str, str]:
     """Generate a short caption story and hashtags from an uploaded image."""
@@ -77,7 +90,7 @@ async def generate_caption_by_id(payload: CaptionByIdRequest) -> dict[str, str]:
             detail="Image file not found",
         )
 
-    image_file_path = settings.IMAGES_DIR / Path(image_path).name
+    image_file_path = _resolve_generation_image_file_path(image_path)
     if not image_file_path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
