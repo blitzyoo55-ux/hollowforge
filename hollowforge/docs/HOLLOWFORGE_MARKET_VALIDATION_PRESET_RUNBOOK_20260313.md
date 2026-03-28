@@ -107,14 +107,16 @@ Story Planner v1은 먼저 catalog를 확인하고, plan preview를 거쳐 `gene
 
 ```bash
 cd hollowforge/backend
-./.venv/bin/python scripts/launch_story_planner_smoke.py --base-url http://127.0.0.1:8000
+./.venv/bin/python scripts/launch_story_planner_smoke.py --base-url http://127.0.0.1:8000 --ui-base-url http://localhost:5173
 ```
 
 운영 체크 포인트:
 
 - `catalog_result` 에서 characters, locations, policy packs 개수를 확인한다.
 - `plan_result` 에서 lane, policy pack, location, shot count를 확인한다.
+- `preview_success: true` 가 plan 뒤에 출력되면 preview 단계가 통과한 것이다.
 - `queue_result` 는 `generate-anchors` handoff 결과로, shot별 queued generation ids를 보여준다.
+- `operator_links` 는 operator용 `/queue` 와 `/gallery` 바로가기다.
 - 성공 기준은 catalog 조회, plan preview, anchor queueing이 모두 200으로 끝나고 shot별 queued generation ids가 생성되는 것이다.
 - queued generations는 `/queue` 와 `/gallery` 에서 확인한다.
 - retry는 shot별 `source_id` 재사용으로 idempotent 하게 처리되며, partial batch는 명확한 에러로 실패해야 한다.

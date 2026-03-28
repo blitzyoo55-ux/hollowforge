@@ -38,6 +38,7 @@ def _print_plan_summary(plan: dict[str, Any]) -> None:
     print(f"policy_pack_id: {plan.get('policy_pack_id')}")
     print(f"location: {(plan.get('location') or {}).get('name')}")
     print(f"shot_count: {len(plan.get('shots') or [])}")
+    print("preview_success: true")
 
 
 def _print_queue_summary(queue_result: dict[str, Any]) -> None:
@@ -47,6 +48,14 @@ def _print_queue_summary(queue_result: dict[str, Any]) -> None:
     print(f"queued_generation_count: {queue_result.get('queued_generation_count')}")
     for shot in queue_result.get("queued_shots") or []:
         print(f"shot_{shot.get('shot_no'):02d}: {shot.get('generation_ids')}")
+
+
+def _print_operator_links(*, ui_base_url: str) -> None:
+    queue_url = f"{ui_base_url.rstrip('/')}/queue"
+    gallery_url = f"{ui_base_url.rstrip('/')}/gallery"
+    print("operator_links:")
+    print(f"queue: {queue_url}")
+    print(f"gallery: {gallery_url}")
 
 
 def main() -> int:
@@ -62,6 +71,7 @@ def main() -> int:
     parser.add_argument("--lane", default="unrestricted")
     parser.add_argument("--candidate-count", type=int, default=2)
     parser.add_argument("--lead-character-id", default="hana_seo")
+    parser.add_argument("--ui-base-url", default="http://localhost:5173")
     parser.add_argument(
         "--support-description",
         default="quiet messenger in a dark coat",
@@ -104,6 +114,7 @@ def main() -> int:
             },
         )
         _print_queue_summary(queue_result)
+        _print_operator_links(ui_base_url=args.ui_base_url)
         return 0
     except (HTTPError, URLError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
