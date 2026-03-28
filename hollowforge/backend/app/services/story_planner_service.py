@@ -71,6 +71,7 @@ _LOCATION_STOPWORDS = {
     "with",
 }
 _STORY_PLANNER_APPROVAL_SECRET_FILENAME = "story_planner_approval_secret.txt"
+_STORY_PLANNER_APPROVAL_SECRET_LOCK_FILENAME = "story_planner_approval_secret.lock"
 
 
 def _tokenize(text: str) -> set[str]:
@@ -121,6 +122,10 @@ def _story_planner_approval_secret_path() -> Path:
     return settings.DATA_DIR / _STORY_PLANNER_APPROVAL_SECRET_FILENAME
 
 
+def _story_planner_approval_secret_lock_path() -> Path:
+    return settings.DATA_DIR / _STORY_PLANNER_APPROVAL_SECRET_LOCK_FILENAME
+
+
 def _read_story_planner_approval_secret(secret_path: Path) -> str | None:
     if not secret_path.is_file():
         return None
@@ -130,14 +135,17 @@ def _read_story_planner_approval_secret(secret_path: Path) -> str | None:
 
 def _wait_for_story_planner_approval_secret(
     secret_path: Path,
+    lock_path: Path,
     *,
-    retries: int = 20,
+    retries: int = 50,
     delay_sec: float = 0.01,
 ) -> str | None:
     for _ in range(retries):
         secret = _read_story_planner_approval_secret(secret_path)
         if secret is not None:
             return secret
+        if not lock_path.exists():
+            return None
         time.sleep(delay_sec)
     return None
 
@@ -149,25 +157,50 @@ def _get_story_planner_approval_secret() -> str:
         return configured_secret
 
     secret_path = _story_planner_approval_secret_path()
+    lock_path = _story_planner_approval_secret_lock_path()
     persisted_secret = _read_story_planner_approval_secret(secret_path)
     if persisted_secret is not None:
         return persisted_secret
 
     secret_path.parent.mkdir(parents=True, exist_ok=True)
-    generated_secret = secrets.token_urlsafe(32)
-    try:
-        with secret_path.open("x", encoding="utf-8") as handle:
-            handle.write(generated_secret)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except FileExistsError:
-        persisted_secret = _wait_for_story_planner_approval_secret(secret_path)
-        if persisted_secret is not None:
-            return persisted_secret
-        raise RuntimeError(
-            "story planner approval secret file exists but could not be read"
-        )
-    return generated_secret
+    for _ in range(50):
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            persisted_secret = _wait_for_story_planner_approval_secret(
+                secret_path,
+                lock_path,
+            )
+            if persisted_secret is not None:
+                return persisted_secret
+            continue
+
+        generated_secret = secrets.token_urlsafe(32)
+        tmp_path = secret_path.with_name(f"{secret_path.name}.tmp-{os.getpid()}")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                handle.write(generated_secret)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, secret_path)
+            return generated_secret
+        finally:
+            os.close(lock_fd)
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+    persisted_secret = _read_story_planner_approval_secret(secret_path)
+    if persisted_secret is not None:
+        return persisted_secret
+    raise RuntimeError(
+        "story planner approval secret file could not be initialized"
+    )
 
 
 def _story_planner_approval_snapshot(

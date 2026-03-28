@@ -248,25 +248,32 @@ def test_story_planner_approval_secret_waits_for_existing_file_to_become_readabl
     _get_story_planner_approval_secret.cache_clear()
 
     secret_path = tmp_path / "story_planner_approval_secret.txt"
-    original_open = Path.open
+    lock_path = tmp_path / "story_planner_approval_secret.lock"
     read_results = iter([None, None, "persisted-secret-token"])
     sleep_calls: list[float] = []
+    original_exists = Path.exists
 
-    def fake_open(self: Path, *args, **kwargs):
-        if self == secret_path and args and args[0] == "x":
+    def fake_os_open(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        if Path(path) == lock_path:
             raise FileExistsError
-        return original_open(self, *args, **kwargs)
+        return os.open(path, flags, mode)
 
     def fake_read(secret_file: Path) -> str | None:
         assert secret_file == secret_path
         return next(read_results)
 
-    monkeypatch.setattr(Path, "open", fake_open)
+    def fake_exists(self: Path) -> bool:
+        if self == lock_path:
+            return True
+        return original_exists(self)
+
+    monkeypatch.setattr(story_planner_service.os, "open", fake_os_open)
     monkeypatch.setattr(
         story_planner_service,
         "_read_story_planner_approval_secret",
         fake_read,
     )
+    monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr(
         story_planner_service.time,
         "sleep",
