@@ -68,7 +68,6 @@ def _location_score(prompt_tokens: set[str], location: StoryPlannerLocationCatal
         location.name,
         location.setting_anchor,
         " ".join(location.visual_rules),
-        " ".join(location.restricted_elements),
     )
     location_tokens = {
         token
@@ -131,7 +130,6 @@ def _resolve_cast_member(
             role=member.role,
             source_type=member.source_type,
             character_id=member.character_id,
-            character_name=member.character_id,
             resolution_note=(
                 f"Registry character '{member.character_id}' was not found in the catalog."
             ),

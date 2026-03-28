@@ -77,5 +77,58 @@ async def test_story_planner_plan_route_returns_four_shot_preview(path: str) -> 
 
     assert response.status_code == 200
     body = response.json()
+    assert body["policy_pack_id"] == "canon_adult_nsfw_v1"
+    assert body["location"]["id"] == "moonlit_bathhouse"
+    assert "matched" in body["location"]["match_note"].lower()
+    assert body["resolved_cast"][0]["source_type"] == "registry"
+    assert body["resolved_cast"][0]["character_id"] == "hana_seo"
+    assert body["resolved_cast"][0]["character_name"] == "Hana Seo"
+    assert body["resolved_cast"][1]["source_type"] == "freeform"
+    assert body["resolved_cast"][1]["character_id"] is None
+    assert body["resolved_cast"][1]["character_name"] is None
+    assert (
+        body["resolved_cast"][1]["freeform_description"]
+        == "quiet messenger in a dark coat"
+    )
     assert body["episode_brief"]["premise"]
     assert len(body["shots"]) == 4
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/tools/story-planner/plan",
+        "/api/tools/story-planner/plan",
+    ],
+)
+async def test_story_planner_plan_route_preserves_unresolved_registry_semantics(
+    path: str,
+) -> None:
+    app = _build_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            path,
+            json={
+                "story_prompt": "An unknown consultant arrives with no clear setting cues.",
+                "lane": "adult_nsfw",
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": "unknown_consultant",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["policy_pack_id"] == "canon_adult_nsfw_v1"
+    assert "fallback" in body["location"]["match_note"].lower()
+    assert body["resolved_cast"][0]["character_id"] == "unknown_consultant"
+    assert body["resolved_cast"][0]["character_name"] is None
+    assert "not found" in body["resolved_cast"][0]["resolution_note"].lower()
