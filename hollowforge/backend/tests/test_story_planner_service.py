@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -284,6 +285,33 @@ def test_story_planner_approval_secret_waits_for_existing_file_to_become_readabl
 
     assert secret == "persisted-secret-token"
     assert sleep_calls == [0.01]
+
+
+def test_story_planner_approval_secret_recovers_from_stale_lock_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(story_planner_service.settings, "ANIMATION_CALLBACK_TOKEN", "")
+    monkeypatch.setattr(story_planner_service.settings, "DATA_DIR", tmp_path)
+    _get_story_planner_approval_secret.cache_clear()
+
+    lock_path = tmp_path / "story_planner_approval_secret.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text("stale-lock", encoding="utf-8")
+    stale_time = story_planner_service.time.time() - 5
+    os.utime(lock_path, (stale_time, stale_time))
+    monkeypatch.setattr(
+        story_planner_service.secrets,
+        "token_urlsafe",
+        lambda _: "recovered-secret-token",
+    )
+
+    secret = _get_story_planner_approval_secret()
+    secret_path = tmp_path / "story_planner_approval_secret.txt"
+
+    assert secret == "recovered-secret-token"
+    assert secret_path.read_text(encoding="utf-8").strip() == "recovered-secret-token"
+    assert not lock_path.exists()
 
 
 def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_needed() -> None:

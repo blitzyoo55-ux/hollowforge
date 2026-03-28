@@ -150,6 +150,24 @@ def _wait_for_story_planner_approval_secret(
     return None
 
 
+def _clear_stale_story_planner_approval_lock(
+    lock_path: Path,
+    *,
+    stale_after_sec: float = 0.5,
+) -> bool:
+    try:
+        lock_age_sec = time.time() - lock_path.stat().st_mtime
+    except FileNotFoundError:
+        return False
+    if lock_age_sec < stale_after_sec:
+        return False
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 @lru_cache(maxsize=1)
 def _get_story_planner_approval_secret() -> str:
     configured_secret = settings.ANIMATION_CALLBACK_TOKEN.strip()
@@ -173,7 +191,11 @@ def _get_story_planner_approval_secret() -> str:
             )
             if persisted_secret is not None:
                 return persisted_secret
-            continue
+            if _clear_stale_story_planner_approval_lock(lock_path):
+                continue
+            raise RuntimeError(
+                "story planner approval secret initialization is locked but did not complete"
+            )
 
         generated_secret = secrets.token_urlsafe(32)
         tmp_path = secret_path.with_name(f"{secret_path.name}.tmp-{os.getpid()}")
