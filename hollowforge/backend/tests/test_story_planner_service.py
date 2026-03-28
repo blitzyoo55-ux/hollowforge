@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import ValidationError
 import pytest
 
@@ -235,6 +237,46 @@ def test_story_planner_approval_secret_falls_back_to_persisted_file(
     assert second_secret == "persisted-secret-token"
     assert token_calls == [32]
     assert secret_path.read_text(encoding="utf-8").strip() == "persisted-secret-token"
+
+
+def test_story_planner_approval_secret_waits_for_existing_file_to_become_readable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(story_planner_service.settings, "ANIMATION_CALLBACK_TOKEN", "")
+    monkeypatch.setattr(story_planner_service.settings, "DATA_DIR", tmp_path)
+    _get_story_planner_approval_secret.cache_clear()
+
+    secret_path = tmp_path / "story_planner_approval_secret.txt"
+    original_open = Path.open
+    read_results = iter([None, None, "persisted-secret-token"])
+    sleep_calls: list[float] = []
+
+    def fake_open(self: Path, *args, **kwargs):
+        if self == secret_path and args and args[0] == "x":
+            raise FileExistsError
+        return original_open(self, *args, **kwargs)
+
+    def fake_read(secret_file: Path) -> str | None:
+        assert secret_file == secret_path
+        return next(read_results)
+
+    monkeypatch.setattr(Path, "open", fake_open)
+    monkeypatch.setattr(
+        story_planner_service,
+        "_read_story_planner_approval_secret",
+        fake_read,
+    )
+    monkeypatch.setattr(
+        story_planner_service.time,
+        "sleep",
+        lambda delay: sleep_calls.append(delay),
+    )
+
+    secret = _get_story_planner_approval_secret()
+
+    assert secret == "persisted-secret-token"
+    assert sleep_calls == [0.01]
 
 
 def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_needed() -> None:

@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
@@ -126,6 +128,20 @@ def _read_story_planner_approval_secret(secret_path: Path) -> str | None:
     return secret or None
 
 
+def _wait_for_story_planner_approval_secret(
+    secret_path: Path,
+    *,
+    retries: int = 20,
+    delay_sec: float = 0.01,
+) -> str | None:
+    for _ in range(retries):
+        secret = _read_story_planner_approval_secret(secret_path)
+        if secret is not None:
+            return secret
+        time.sleep(delay_sec)
+    return None
+
+
 @lru_cache(maxsize=1)
 def _get_story_planner_approval_secret() -> str:
     configured_secret = settings.ANIMATION_CALLBACK_TOKEN.strip()
@@ -142,11 +158,15 @@ def _get_story_planner_approval_secret() -> str:
     try:
         with secret_path.open("x", encoding="utf-8") as handle:
             handle.write(generated_secret)
+            handle.flush()
+            os.fsync(handle.fileno())
     except FileExistsError:
-        persisted_secret = _read_story_planner_approval_secret(secret_path)
+        persisted_secret = _wait_for_story_planner_approval_secret(secret_path)
         if persisted_secret is not None:
             return persisted_secret
-        secret_path.write_text(generated_secret, encoding="utf-8")
+        raise RuntimeError(
+            "story planner approval secret file exists but could not be read"
+        )
     return generated_secret
 
 
