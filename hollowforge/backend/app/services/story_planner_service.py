@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
 import os
 import re
 import secrets
-import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
@@ -133,39 +133,11 @@ def _read_story_planner_approval_secret(secret_path: Path) -> str | None:
     return secret or None
 
 
-def _wait_for_story_planner_approval_secret(
-    secret_path: Path,
-    lock_path: Path,
-    *,
-    retries: int = 50,
-    delay_sec: float = 0.01,
-) -> str | None:
-    for _ in range(retries):
-        secret = _read_story_planner_approval_secret(secret_path)
-        if secret is not None:
-            return secret
-        if not lock_path.exists():
-            return None
-        time.sleep(delay_sec)
-    return None
-
-
-def _clear_stale_story_planner_approval_lock(
-    lock_path: Path,
-    *,
-    stale_after_sec: float = 0.5,
-) -> bool:
-    try:
-        lock_age_sec = time.time() - lock_path.stat().st_mtime
-    except FileNotFoundError:
-        return False
-    if lock_age_sec < stale_after_sec:
-        return False
-    try:
-        lock_path.unlink()
-    except FileNotFoundError:
-        return False
-    return True
+def _acquire_story_planner_approval_lock(lock_path: Path):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    return handle
 
 
 @lru_cache(maxsize=1)
@@ -180,23 +152,10 @@ def _get_story_planner_approval_secret() -> str:
     if persisted_secret is not None:
         return persisted_secret
 
-    secret_path.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(50):
-        try:
-            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            persisted_secret = _wait_for_story_planner_approval_secret(
-                secret_path,
-                lock_path,
-            )
-            if persisted_secret is not None:
-                return persisted_secret
-            if _clear_stale_story_planner_approval_lock(lock_path):
-                continue
-            raise RuntimeError(
-                "story planner approval secret initialization is locked but did not complete"
-            )
-
+    with _acquire_story_planner_approval_lock(lock_path):
+        persisted_secret = _read_story_planner_approval_secret(secret_path)
+        if persisted_secret is not None:
+            return persisted_secret
         generated_secret = secrets.token_urlsafe(32)
         tmp_path = secret_path.with_name(f"{secret_path.name}.tmp-{os.getpid()}")
         try:
@@ -207,22 +166,10 @@ def _get_story_planner_approval_secret() -> str:
             os.replace(tmp_path, secret_path)
             return generated_secret
         finally:
-            os.close(lock_fd)
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
-                pass
             try:
                 tmp_path.unlink()
             except FileNotFoundError:
                 pass
-
-    persisted_secret = _read_story_planner_approval_secret(secret_path)
-    if persisted_secret is not None:
-        return persisted_secret
-    raise RuntimeError(
-        "story planner approval secret file could not be initialized"
-    )
 
 
 def _story_planner_approval_snapshot(

@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import os
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -249,45 +247,26 @@ def test_story_planner_approval_secret_waits_for_existing_file_to_become_readabl
     _get_story_planner_approval_secret.cache_clear()
 
     secret_path = tmp_path / "story_planner_approval_secret.txt"
-    lock_path = tmp_path / "story_planner_approval_secret.lock"
-    read_results = iter([None, None, "persisted-secret-token"])
-    sleep_calls: list[float] = []
-    original_exists = Path.exists
+    class _LockHandle:
+        def __enter__(self):
+            secret_path.write_text("persisted-secret-token", encoding="utf-8")
+            return self
 
-    def fake_os_open(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
-        if Path(path) == lock_path:
-            raise FileExistsError
-        return os.open(path, flags, mode)
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
 
-    def fake_read(secret_file: Path) -> str | None:
-        assert secret_file == secret_path
-        return next(read_results)
-
-    def fake_exists(self: Path) -> bool:
-        if self == lock_path:
-            return True
-        return original_exists(self)
-
-    monkeypatch.setattr(story_planner_service.os, "open", fake_os_open)
     monkeypatch.setattr(
         story_planner_service,
-        "_read_story_planner_approval_secret",
-        fake_read,
-    )
-    monkeypatch.setattr(Path, "exists", fake_exists)
-    monkeypatch.setattr(
-        story_planner_service.time,
-        "sleep",
-        lambda delay: sleep_calls.append(delay),
+        "_acquire_story_planner_approval_lock",
+        lambda _: _LockHandle(),
     )
 
     secret = _get_story_planner_approval_secret()
 
     assert secret == "persisted-secret-token"
-    assert sleep_calls == [0.01]
 
 
-def test_story_planner_approval_secret_recovers_from_stale_lock_file(
+def test_story_planner_approval_secret_ignores_leftover_unlocked_lock_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -297,9 +276,7 @@ def test_story_planner_approval_secret_recovers_from_stale_lock_file(
 
     lock_path = tmp_path / "story_planner_approval_secret.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.write_text("stale-lock", encoding="utf-8")
-    stale_time = story_planner_service.time.time() - 5
-    os.utime(lock_path, (stale_time, stale_time))
+    lock_path.write_text("leftover-lock-file", encoding="utf-8")
     monkeypatch.setattr(
         story_planner_service.secrets,
         "token_urlsafe",
@@ -311,7 +288,7 @@ def test_story_planner_approval_secret_recovers_from_stale_lock_file(
 
     assert secret == "recovered-secret-token"
     assert secret_path.read_text(encoding="utf-8").strip() == "recovered-secret-token"
-    assert not lock_path.exists()
+    assert lock_path.exists()
 
 
 def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_needed() -> None:
