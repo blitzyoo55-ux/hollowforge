@@ -256,6 +256,7 @@ test('renders the story prompt input and Plan Episode button', async () => {
 
   expect(await screen.findByLabelText(/Story Prompt/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Plan Episode/i })).toBeInTheDocument()
+  expect(screen.getByLabelText(/Lane/i)).toHaveValue('unrestricted')
 })
 
 test('renders plan review cards after planner preview succeeds', async () => {
@@ -312,4 +313,34 @@ test('allows approve and generate and shows queued anchor summary', async () => 
   const summary = screen.getByText(/Queued Anchor Results/i).closest('section')
   expect(summary).not.toBeNull()
   expect(within(summary as HTMLElement).getByText(/Shot 4/i)).toBeInTheDocument()
+})
+
+test('clears stale plan and queued results when the story prompt changes after preview', async () => {
+  renderMode()
+
+  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
+  fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
+  fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
+  fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'mina_park' } })
+
+  fireEvent.click(screen.getByRole('button', { name: /Plan Episode/i }))
+
+  await waitFor(() => {
+    expect(planStoryEpisode).toHaveBeenCalledTimes(1)
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Approve And Generate Anchors/i }))
+
+  await waitFor(() => {
+    expect(generateStoryPlannerAnchors).toHaveBeenCalledTimes(1)
+  })
+
+  expect(screen.getByText(/Queued Anchor Results/i)).toBeInTheDocument()
+  expect(screen.getByText(/Plan Review/i)).toBeInTheDocument()
+
+  fireEvent.change(promptInput, { target: { value: 'A revised bathhouse rendezvous.' } })
+
+  expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
 })

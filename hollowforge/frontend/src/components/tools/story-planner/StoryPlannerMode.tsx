@@ -120,7 +120,7 @@ function StoryPlannerShell({
 
 export default function StoryPlannerMode() {
   const [storyPrompt, setStoryPrompt] = useState('')
-  const [lane, setLane] = useState<StoryPlannerLane>('adult_nsfw')
+  const [lane, setLane] = useState<StoryPlannerLane>('unrestricted')
   const [useRegistryCharacters, setUseRegistryCharacters] = useState(false)
   const [leadCharacterId, setLeadCharacterId] = useState('')
   const [supportCharacterId, setSupportCharacterId] = useState('')
@@ -145,6 +145,11 @@ export default function StoryPlannerMode() {
     () => catalog?.characters.find((character) => character.id === supportCharacterId) ?? null,
     [catalog, supportCharacterId],
   )
+
+  const clearPlannedResults = () => {
+    setPlannedEpisode(null)
+    setQueuedResult(null)
+  }
 
   const planMutation = useMutation({
     mutationFn: async () =>
@@ -248,11 +253,26 @@ export default function StoryPlannerMode() {
             leadCharacterId={leadCharacterId}
             supportCharacterId={supportCharacterId}
             isPlanning={planMutation.isPending}
-            onStoryPromptChange={setStoryPrompt}
-            onLaneChange={setLane}
-            onUseRegistryCharactersChange={setUseRegistryCharacters}
-            onLeadCharacterIdChange={setLeadCharacterId}
-            onSupportCharacterIdChange={setSupportCharacterId}
+            onStoryPromptChange={(value) => {
+              clearPlannedResults()
+              setStoryPrompt(value)
+            }}
+            onLaneChange={(value) => {
+              clearPlannedResults()
+              setLane(value)
+            }}
+            onUseRegistryCharactersChange={(value) => {
+              clearPlannedResults()
+              setUseRegistryCharacters(value)
+            }}
+            onLeadCharacterIdChange={(value) => {
+              clearPlannedResults()
+              setLeadCharacterId(value)
+            }}
+            onSupportCharacterIdChange={(value) => {
+              clearPlannedResults()
+              setSupportCharacterId(value)
+            }}
             onSubmit={() => planMutation.mutate()}
           />
 
