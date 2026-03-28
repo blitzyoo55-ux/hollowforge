@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 
@@ -224,6 +224,16 @@ function buildGenerationResponse(id: string) {
   }
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getStoryPlannerCatalog).mockResolvedValue(buildCatalog())
@@ -315,7 +325,39 @@ test('allows approve and generate and shows queued anchor summary', async () => 
   expect(within(summary as HTMLElement).getByText(/Shot 4/i)).toBeInTheDocument()
 })
 
-test('clears stale plan and queued results when the story prompt changes after preview', async () => {
+test('ignores late preview success after the prompt changes', async () => {
+  renderMode()
+
+  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
+  fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
+  fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
+  fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'mina_park' } })
+
+  const deferredPlan = createDeferred<ReturnType<typeof buildPlanResponse>>()
+  vi.mocked(planStoryEpisode).mockImplementationOnce(async () => deferredPlan.promise)
+
+  fireEvent.click(screen.getByRole('button', { name: /Plan Episode/i }))
+
+  await waitFor(() => {
+    expect(planStoryEpisode).toHaveBeenCalledTimes(1)
+  })
+
+  fireEvent.change(promptInput, { target: { value: 'A revised bathhouse rendezvous.' } })
+
+  expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+
+  await act(async () => {
+    deferredPlan.resolve(buildPlanResponse())
+    await Promise.resolve()
+  })
+
+  expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+})
+
+test('ignores late queue success after the support character changes', async () => {
   renderMode()
 
   const promptInput = await screen.findByLabelText(/Story Prompt/i)
@@ -330,17 +372,43 @@ test('clears stale plan and queued results when the story prompt changes after p
     expect(planStoryEpisode).toHaveBeenCalledTimes(1)
   })
 
+  const deferredQueue = createDeferred<Awaited<ReturnType<typeof generateStoryPlannerAnchors>>>()
+  vi.mocked(generateStoryPlannerAnchors).mockImplementationOnce(async () => deferredQueue.promise)
+
   fireEvent.click(screen.getByRole('button', { name: /Approve And Generate Anchors/i }))
 
   await waitFor(() => {
     expect(generateStoryPlannerAnchors).toHaveBeenCalledTimes(1)
   })
 
-  expect(screen.getByText(/Queued Anchor Results/i)).toBeInTheDocument()
-  expect(screen.getByText(/Plan Review/i)).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'hana_seo' } })
 
-  fireEvent.change(promptInput, { target: { value: 'A revised bathhouse rendezvous.' } })
+  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
 
-  expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
+  await act(async () => {
+    deferredQueue.resolve({
+      lane: 'adult_nsfw',
+      requested_shot_count: 4,
+      queued_generation_count: 8,
+      queued_shots: [
+        { shot_no: 1, generation_ids: ['gen-1a', 'gen-1b'] },
+        { shot_no: 2, generation_ids: ['gen-2a', 'gen-2b'] },
+        { shot_no: 3, generation_ids: ['gen-3a', 'gen-3b'] },
+        { shot_no: 4, generation_ids: ['gen-4a', 'gen-4b'] },
+      ],
+      queued_generations: [
+        buildGenerationResponse('gen-1a'),
+        buildGenerationResponse('gen-1b'),
+        buildGenerationResponse('gen-2a'),
+        buildGenerationResponse('gen-2b'),
+        buildGenerationResponse('gen-3a'),
+        buildGenerationResponse('gen-3b'),
+        buildGenerationResponse('gen-4a'),
+        buildGenerationResponse('gen-4b'),
+      ],
+    })
+    await Promise.resolve()
+  })
+
   expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
 })

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 
@@ -126,6 +126,9 @@ export default function StoryPlannerMode() {
   const [supportCharacterId, setSupportCharacterId] = useState('')
   const [plannedEpisode, setPlannedEpisode] = useState<StoryPlannerPlanResponse | null>(null)
   const [queuedResult, setQueuedResult] = useState<StoryPlannerAnchorQueueResponse | null>(null)
+  const draftVersionRef = useRef(0)
+  const planRequestIdRef = useRef(0)
+  const queueRequestIdRef = useRef(0)
 
   const {
     data: catalog,
@@ -147,23 +150,30 @@ export default function StoryPlannerMode() {
   )
 
   const clearPlannedResults = () => {
+    draftVersionRef.current += 1
     setPlannedEpisode(null)
     setQueuedResult(null)
   }
 
   const planMutation = useMutation({
-    mutationFn: async () =>
-      planStoryEpisode(
-        buildPlanRequest({
-          storyPrompt,
-          lane,
-          useRegistryCharacters,
-          leadCharacterId,
-          supportCharacterId,
-        }),
-      ),
-    onSuccess: (data) => {
-      setPlannedEpisode(data)
+    mutationFn: async ({
+      draftVersion,
+      requestId,
+      payload,
+    }: {
+      draftVersion: number
+      requestId: number
+      payload: StoryPlannerPlanRequest
+    }) => ({
+      draftVersion,
+      requestId,
+      response: await planStoryEpisode(payload),
+    }),
+    onSuccess: ({ draftVersion, requestId, response }) => {
+      if (draftVersion !== draftVersionRef.current || requestId !== planRequestIdRef.current) {
+        return
+      }
+      setPlannedEpisode(response)
       setQueuedResult(null)
       notify.success('Story episode plan generated.')
     },
@@ -173,19 +183,64 @@ export default function StoryPlannerMode() {
   })
 
   const generateMutation = useMutation({
-    mutationFn: async (approvedPlan: StoryPlannerPlanResponse) =>
-      generateStoryPlannerAnchors({
+    mutationFn: async ({
+      approvedPlan,
+      draftVersion,
+      requestId,
+    }: {
+      approvedPlan: StoryPlannerPlanResponse
+      draftVersion: number
+      requestId: number
+    }) => ({
+      draftVersion,
+      requestId,
+      response: await generateStoryPlannerAnchors({
         approved_plan: approvedPlan,
         candidate_count: 2,
       }),
-    onSuccess: (data) => {
-      setQueuedResult(data)
-      notify.success(`${data.queued_generation_count}개의 anchor render를 큐에 등록했습니다.`)
+    }),
+    onSuccess: ({ draftVersion, requestId, response }) => {
+      if (draftVersion !== draftVersionRef.current || requestId !== queueRequestIdRef.current) {
+        return
+      }
+      setQueuedResult(response)
+      notify.success(`${response.queued_generation_count}개의 anchor render를 큐에 등록했습니다.`)
     },
     onError: (error) => {
       notify.error(getErrorMessage(error, 'Story Planner anchor queue 실행에 실패했습니다.'))
     },
   })
+
+  const handlePlanSubmit = () => {
+    const requestId = planRequestIdRef.current + 1
+    planRequestIdRef.current = requestId
+    const draftVersion = draftVersionRef.current
+    planMutation.mutate({
+      draftVersion,
+      requestId,
+      payload: buildPlanRequest({
+        storyPrompt,
+        lane,
+        useRegistryCharacters,
+        leadCharacterId,
+        supportCharacterId,
+      }),
+    })
+  }
+
+  const handleApproveAndGenerate = () => {
+    if (!plannedEpisode) {
+      return
+    }
+    const requestId = queueRequestIdRef.current + 1
+    queueRequestIdRef.current = requestId
+    const draftVersion = draftVersionRef.current
+    generateMutation.mutate({
+      approvedPlan: plannedEpisode,
+      draftVersion,
+      requestId,
+    })
+  }
 
   const catalogMetrics = [
     { label: 'Characters', value: `${catalog?.characters.length ?? 0}`, accent: 'default' as const },
@@ -273,14 +328,14 @@ export default function StoryPlannerMode() {
               clearPlannedResults()
               setSupportCharacterId(value)
             }}
-            onSubmit={() => planMutation.mutate()}
+            onSubmit={handlePlanSubmit}
           />
 
           {plannedEpisode ? (
             <StoryPlannerPlanReview
               plan={plannedEpisode}
               isGenerating={generateMutation.isPending}
-              onApproveAndGenerate={() => generateMutation.mutate(plannedEpisode)}
+              onApproveAndGenerate={handleApproveAndGenerate}
             />
           ) : (
             <section className="rounded-3xl border border-dashed border-white/10 bg-gray-950/70 p-6 text-sm leading-6 text-gray-400">
