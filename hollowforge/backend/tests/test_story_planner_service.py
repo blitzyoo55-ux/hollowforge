@@ -4,7 +4,9 @@ from pydantic import ValidationError
 import pytest
 
 from app.models import GenerationResponse, StoryPlannerCastInput, StoryPlannerPlanRequest
+from app.services import story_planner_service
 from app.services.story_planner_service import (
+    _get_story_planner_approval_secret,
     plan_story_episode,
     queue_story_planner_anchor_batch,
 )
@@ -205,6 +207,34 @@ async def test_queue_story_planner_anchor_batch_rejects_tampered_approved_plan_w
             _CapturingGenerationService(),
             candidate_count=2,
         )
+
+
+def test_story_planner_approval_secret_falls_back_to_persisted_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(story_planner_service.settings, "ANIMATION_CALLBACK_TOKEN", "")
+    monkeypatch.setattr(story_planner_service.settings, "DATA_DIR", tmp_path)
+    _get_story_planner_approval_secret.cache_clear()
+
+    token_calls: list[int] = []
+
+    def fake_token_urlsafe(size: int) -> str:
+        token_calls.append(size)
+        return "persisted-secret-token"
+
+    monkeypatch.setattr(story_planner_service.secrets, "token_urlsafe", fake_token_urlsafe)
+
+    first_secret = _get_story_planner_approval_secret()
+    _get_story_planner_approval_secret.cache_clear()
+    second_secret = _get_story_planner_approval_secret()
+
+    secret_path = tmp_path / "story_planner_approval_secret.txt"
+
+    assert first_secret == "persisted-secret-token"
+    assert second_secret == "persisted-secret-token"
+    assert token_calls == [32]
+    assert secret_path.read_text(encoding="utf-8").strip() == "persisted-secret-token"
 
 
 def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_needed() -> None:

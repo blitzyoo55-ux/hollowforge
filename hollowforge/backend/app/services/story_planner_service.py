@@ -7,6 +7,8 @@ import hmac
 import json
 import re
 import secrets
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable
 
 from app.config import settings
@@ -66,9 +68,7 @@ _LOCATION_STOPWORDS = {
     "use",
     "with",
 }
-_STORY_PLANNER_APPROVAL_SECRET = (
-    settings.ANIMATION_CALLBACK_TOKEN or secrets.token_urlsafe(32)
-)
+_STORY_PLANNER_APPROVAL_SECRET_FILENAME = "story_planner_approval_secret.txt"
 
 
 def _tokenize(text: str) -> set[str]:
@@ -115,6 +115,41 @@ def _resolve_location(
     )
 
 
+def _story_planner_approval_secret_path() -> Path:
+    return settings.DATA_DIR / _STORY_PLANNER_APPROVAL_SECRET_FILENAME
+
+
+def _read_story_planner_approval_secret(secret_path: Path) -> str | None:
+    if not secret_path.is_file():
+        return None
+    secret = secret_path.read_text(encoding="utf-8").strip()
+    return secret or None
+
+
+@lru_cache(maxsize=1)
+def _get_story_planner_approval_secret() -> str:
+    configured_secret = settings.ANIMATION_CALLBACK_TOKEN.strip()
+    if configured_secret:
+        return configured_secret
+
+    secret_path = _story_planner_approval_secret_path()
+    persisted_secret = _read_story_planner_approval_secret(secret_path)
+    if persisted_secret is not None:
+        return persisted_secret
+
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_secret = secrets.token_urlsafe(32)
+    try:
+        with secret_path.open("x", encoding="utf-8") as handle:
+            handle.write(generated_secret)
+    except FileExistsError:
+        persisted_secret = _read_story_planner_approval_secret(secret_path)
+        if persisted_secret is not None:
+            return persisted_secret
+        secret_path.write_text(generated_secret, encoding="utf-8")
+    return generated_secret
+
+
 def _story_planner_approval_snapshot(
     plan: StoryPlannerPlanResponse,
 ) -> dict[str, object]:
@@ -131,7 +166,7 @@ def _build_story_planner_approval_token(
         ensure_ascii=False,
     )
     return hmac.new(
-        _STORY_PLANNER_APPROVAL_SECRET.encode("utf-8"),
+        _get_story_planner_approval_secret().encode("utf-8"),
         canonical_snapshot.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
