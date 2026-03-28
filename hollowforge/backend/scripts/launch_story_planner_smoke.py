@@ -59,7 +59,7 @@ def main() -> int:
             "Moonlit Bathhouse corridor after closing."
         ),
     )
-    parser.add_argument("--lane", default="adult_nsfw")
+    parser.add_argument("--lane", default="unrestricted")
     parser.add_argument("--candidate-count", type=int, default=2)
     parser.add_argument("--lead-character-id", default="hana_seo")
     parser.add_argument(

@@ -101,6 +101,24 @@ cd hollowforge/backend
 - 생성 중에는 `/api/v1/generations/queue/summary` 로 running/queued 카운트를 함께 본다.
 - smoke 태그는 기본값으로 `["smoke", "still-image"]` 가 들어간다.
 
+## 5.2 Local Story Planner Smoke
+
+Story Planner v1은 먼저 catalog를 확인하고, plan preview를 거쳐 `generate-anchors` 로 넘긴다.
+
+```bash
+cd hollowforge/backend
+./.venv/bin/python scripts/launch_story_planner_smoke.py --base-url http://127.0.0.1:8000
+```
+
+운영 체크 포인트:
+
+- `catalog_result` 에서 characters, locations, policy packs 개수를 확인한다.
+- `plan_result` 에서 lane, policy pack, location, shot count를 확인한다.
+- `queue_result` 는 `generate-anchors` handoff 결과로, shot별 queued generation ids를 보여준다.
+- 성공 기준은 catalog 조회, plan preview, anchor queueing이 모두 200으로 끝나고 shot별 queued generation ids가 생성되는 것이다.
+- queued generations는 `/queue` 와 `/gallery` 에서 확인한다.
+- retry는 shot별 `source_id` 재사용으로 idempotent 하게 처리되며, partial batch는 명확한 에러로 실패해야 한다.
+
 ## 6. 운영 메모
 
 - 이번 버전은 `prefectIllustriousXL_v70.safetensors` 고정 baseline이다.
