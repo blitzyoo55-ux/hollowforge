@@ -83,6 +83,8 @@ def _parse_json(value: str | None, default: Any = None) -> Any:
 
 
 def _apply_default_negative_prompt(gen: GenerationCreate) -> GenerationCreate:
+    if gen.preserve_blank_negative_prompt:
+        return gen.model_copy(update={"negative_prompt": None})
     if isinstance(gen.negative_prompt, str) and gen.negative_prompt.strip():
         return gen
     return gen.model_copy(update={"negative_prompt": settings.DEFAULT_NEGATIVE_PROMPT})
@@ -357,6 +359,20 @@ class GenerationService:
             raise ValueError("count must be >= 2 for batch generation")
         if seed_increment < 1:
             raise ValueError("seed_increment must be >= 1")
+        if gen.source_id:
+            existing_batch = await self._load_generations_by_source_id(gen.source_id)
+            if existing_batch:
+                if len(existing_batch) == count:
+                    return existing_batch[0].seed, existing_batch
+                if len(existing_batch) < count:
+                    raise ValueError(
+                        f"partial batch exists for source_id '{gen.source_id}': "
+                        f"expected {count}, found {len(existing_batch)}"
+                    )
+                raise ValueError(
+                    f"source_id '{gen.source_id}' already has {len(existing_batch)} "
+                    f"generations; expected {count}"
+                )
 
         span = (count - 1) * seed_increment
         if span > _MAX_SEED:
@@ -378,6 +394,20 @@ class GenerationService:
             queued.append(await self._insert_generation_record(gen, seed))
 
         return base_seed, queued
+
+    async def _load_generations_by_source_id(
+        self,
+        source_id: str,
+    ) -> list[GenerationResponse]:
+        async with get_db() as db:
+            cursor = await db.execute(
+                """SELECT * FROM generations
+                   WHERE source_id = ?
+                   ORDER BY seed ASC, created_at ASC, id ASC""",
+                (source_id,),
+            )
+            rows = await cursor.fetchall()
+        return [_row_to_response(row) for row in rows]
 
     async def _insert_generation_record(
         self, gen: GenerationCreate, seed: int

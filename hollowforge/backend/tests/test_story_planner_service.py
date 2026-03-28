@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pydantic import ValidationError
+import pytest
+
 from app.models import StoryPlannerCastInput, StoryPlannerPlanRequest
 from app.services.story_planner_service import plan_story_episode
 
@@ -41,6 +44,14 @@ def test_plan_story_episode_builds_episode_brief_and_four_shot_plan() -> None:
     assert preview.location.match_note
     assert preview.episode_brief.premise
     assert preview.episode_brief.continuity_guidance
+    assert preview.anchor_render.policy_pack_id == preview.policy_pack_id
+    assert preview.anchor_render.checkpoint == "waiIllustriousSDXL_v140.safetensors"
+    assert preview.anchor_render.workflow_lane == "sdxl_illustrious"
+    assert (
+        preview.anchor_render.negative_prompt
+        == "minors, age ambiguity, non-consensual framing"
+    )
+    assert preview.anchor_render.preserve_blank_negative_prompt is False
     assert len(preview.shots) == 4
     assert [shot.shot_no for shot in preview.shots] == [1, 2, 3, 4]
     assert all(shot.beat for shot in preview.shots)
@@ -123,3 +134,44 @@ def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_ne
     assert fallback_preview.location.id == "moonlit_bathhouse"
     assert fallback_preview.location.match_note
     assert "fallback" in fallback_preview.location.match_note.lower()
+
+
+def test_plan_story_episode_freezes_blank_negative_prompt_for_unrestricted_lane() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt="Hana Seo waits in the bathhouse foyer before dawn.",
+            lane="unrestricted",
+        )
+    )
+
+    assert preview.policy_pack_id == "canon_unrestricted_v1"
+    assert preview.anchor_render.policy_pack_id == "canon_unrestricted_v1"
+    assert preview.anchor_render.negative_prompt is None
+    assert preview.anchor_render.preserve_blank_negative_prompt is True
+    assert preview.anchor_render.workflow_lane == "sdxl_illustrious"
+
+
+def test_story_planner_plan_response_rejects_edited_anchor_render_snapshot() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt="Hana Seo waits in the bathhouse foyer before dawn.",
+        )
+    )
+    payload = preview.model_dump()
+    payload["anchor_render"]["policy_pack_id"] = "canon_all_ages_v1"
+
+    with pytest.raises(ValidationError, match="anchor_render.policy_pack_id"):
+        type(preview).model_validate(payload)
+
+
+def test_story_planner_plan_response_rejects_noncanonical_shot_numbers() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt="Hana Seo waits in the bathhouse foyer before dawn.",
+        )
+    )
+    payload = preview.model_dump()
+    payload["shots"][1]["shot_no"] = 1
+
+    with pytest.raises(ValidationError, match="shots must use canonical shot numbers"):
+        type(preview).model_validate(payload)

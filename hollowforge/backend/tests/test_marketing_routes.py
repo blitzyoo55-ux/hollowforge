@@ -15,6 +15,7 @@ from app.models import (
     PromptFactoryBenchmarkResponse,
 )
 from app.routes import marketing as marketing_routes
+from app.services import story_planner_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -218,6 +219,7 @@ async def test_prompt_factory_generate_and_queue_translates_rows_to_generation_r
 @pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
 async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot(
     base_path: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _StubGenerationService()
     app = _build_app(service)
@@ -251,11 +253,22 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
             json=plan_payload,
         )
         assert preview_response.status_code == 200
+        approved_plan = preview_response.json()
+        assert approved_plan["anchor_render"]["checkpoint"] == "waiIllustriousSDXL_v140.safetensors"
+
+        def fail_catalog_reload():  # type: ignore[no-untyped-def]
+            raise AssertionError("queue path should not reload story planner catalog")
+
+        monkeypatch.setattr(
+            story_planner_service,
+            "load_story_planner_catalog",
+            fail_catalog_reload,
+        )
 
         response = await client.post(
             f"{base_path}/tools/story-planner/generate-anchors",
             json={
-                "approved_plan": preview_response.json(),
+                "approved_plan": approved_plan,
                 "candidate_count": 2,
             },
         )
@@ -275,6 +288,7 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
     assert seed_increment == 1
     assert first_request.checkpoint == "waiIllustriousSDXL_v140.safetensors"
     assert first_request.workflow_lane == "sdxl_illustrious"
+    assert first_request.preserve_blank_negative_prompt is False
     assert "story_planner_anchor" in first_request.prompt
     assert "Moonlit Bathhouse" in first_request.prompt
     assert "Hana Seo" in first_request.prompt
@@ -283,3 +297,88 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
     assert first_request.tags is not None
     assert "story_planner_anchor" in first_request.tags
     assert "shot_01" in first_request.tags
+
+
+@pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
+async def test_story_planner_approve_and_generate_preserves_blank_negative_prompt_for_unrestricted_lane(
+    base_path: str,
+) -> None:
+    service = _StubGenerationService()
+    app = _build_app(service)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        preview_response = await client.post(
+            f"{base_path}/tools/story-planner/plan",
+            json={
+                "story_prompt": "Hana Seo crosses the Moonlit Bathhouse lobby before dawn.",
+                "lane": "unrestricted",
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": "hana_seo",
+                    }
+                ],
+            },
+        )
+        assert preview_response.status_code == 200
+
+        response = await client.post(
+            f"{base_path}/tools/story-planner/generate-anchors",
+            json={
+                "approved_plan": preview_response.json(),
+                "candidate_count": 2,
+            },
+        )
+
+    assert response.status_code == 200
+    first_request, _, _ = service.batch_requests[0]
+    assert first_request.negative_prompt is None
+    assert first_request.preserve_blank_negative_prompt is True
+
+
+@pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
+async def test_story_planner_approve_and_generate_rejects_malformed_shot_numbers(
+    base_path: str,
+) -> None:
+    service = _StubGenerationService()
+    app = _build_app(service)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        preview_response = await client.post(
+            f"{base_path}/tools/story-planner/plan",
+            json={
+                "story_prompt": (
+                    "Hana Seo compares notes with a quiet messenger in the "
+                    "Moonlit Bathhouse corridor after closing."
+                ),
+                "lane": "adult_nsfw",
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": "hana_seo",
+                    }
+                ],
+            },
+        )
+        assert preview_response.status_code == 200
+        approved_plan = preview_response.json()
+        approved_plan["shots"][1]["shot_no"] = 1
+
+        response = await client.post(
+            f"{base_path}/tools/story-planner/generate-anchors",
+            json={
+                "approved_plan": approved_plan,
+                "candidate_count": 2,
+            },
+        )
+
+    assert response.status_code == 422
+    assert "canonical shot numbers" in response.text

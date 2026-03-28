@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.services.workflow_registry import infer_workflow_lane
+
 
 MAX_GENERATION_STEPS = 150
 MAX_GENERATION_CFG = 30.0
@@ -52,6 +54,7 @@ class LoraInput(BaseModel):
 class GenerationCreate(BaseModel):
     prompt: str
     negative_prompt: Optional[str] = None
+    preserve_blank_negative_prompt: bool = False
     checkpoint: str
     workflow_lane: Optional[Literal["classic_clip", "sdxl_illustrious"]] = None
     loras: List[LoraInput] = Field(default_factory=list)
@@ -81,6 +84,14 @@ class GenerationCreate(BaseModel):
         if self.width * self.height > MAX_GENERATION_PIXELS:
             raise ValueError(
                 f"width * height must be <= {MAX_GENERATION_PIXELS} pixels"
+            )
+        if (
+            self.preserve_blank_negative_prompt
+            and isinstance(self.negative_prompt, str)
+            and self.negative_prompt.strip()
+        ):
+            raise ValueError(
+                "preserve_blank_negative_prompt requires negative_prompt to be blank"
             )
         return self
 
@@ -565,16 +576,67 @@ class StoryPlannerShotCard(BaseModel):
     continuity_note: str = Field(min_length=1, max_length=400)
 
 
+class StoryPlannerAnchorRenderSnapshot(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    policy_pack_id: str = Field(min_length=1, max_length=120)
+    checkpoint: str = Field(min_length=1, max_length=255)
+    workflow_lane: Literal["classic_clip", "sdxl_illustrious"]
+    negative_prompt: Optional[str] = Field(default=None, max_length=4000)
+    preserve_blank_negative_prompt: bool = False
+
+    @model_validator(mode="after")
+    def validate_anchor_render_snapshot(self) -> "StoryPlannerAnchorRenderSnapshot":
+        if infer_workflow_lane(self.checkpoint) != self.workflow_lane:
+            raise ValueError(
+                "anchor_render.workflow_lane must match the checkpoint workflow lane"
+            )
+        if (
+            self.preserve_blank_negative_prompt
+            and isinstance(self.negative_prompt, str)
+            and self.negative_prompt.strip()
+        ):
+            raise ValueError(
+                "anchor_render cannot preserve a blank negative prompt and carry a non-blank negative_prompt"
+            )
+        return self
+
+
+def _infer_story_planner_policy_pack_lane(policy_pack_id: str) -> StoryPlannerLane | None:
+    for lane in ("adult_nsfw", "all_ages", "unrestricted"):
+        if lane in policy_pack_id:
+            return lane  # type: ignore[return-value]
+    return None
+
+
 class StoryPlannerPlanResponse(BaseModel):
     model_config = {"extra": "forbid"}
 
     story_prompt: str = Field(min_length=1, max_length=2000)
     lane: StoryPlannerLane
     policy_pack_id: str = Field(min_length=1, max_length=120)
+    anchor_render: StoryPlannerAnchorRenderSnapshot
     resolved_cast: List[StoryPlannerResolvedCastEntry] = Field(default_factory=list)
     location: StoryPlannerResolvedLocationEntry
     episode_brief: StoryPlannerEpisodeBrief
     shots: List[StoryPlannerShotCard] = Field(min_length=4, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_story_planner_plan_response(self) -> "StoryPlannerPlanResponse":
+        expected_shot_numbers = [1, 2, 3, 4]
+        actual_shot_numbers = [shot.shot_no for shot in self.shots]
+        if actual_shot_numbers != expected_shot_numbers:
+            raise ValueError(
+                "shots must use canonical shot numbers [1, 2, 3, 4] in order"
+            )
+        if self.anchor_render.policy_pack_id != self.policy_pack_id:
+            raise ValueError("anchor_render.policy_pack_id must match policy_pack_id")
+        inferred_policy_pack_lane = _infer_story_planner_policy_pack_lane(
+            self.policy_pack_id
+        )
+        if inferred_policy_pack_lane is not None and inferred_policy_pack_lane != self.lane:
+            raise ValueError("policy_pack_id must match lane")
+        return self
 
 
 class StoryPlannerAnchorQueuedShotResponse(BaseModel):

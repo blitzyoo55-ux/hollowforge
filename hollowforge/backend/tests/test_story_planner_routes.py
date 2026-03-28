@@ -78,6 +78,13 @@ async def test_story_planner_plan_route_returns_four_shot_preview(path: str) -> 
     assert response.status_code == 200
     body = response.json()
     assert body["policy_pack_id"] == "canon_adult_nsfw_v1"
+    assert body["anchor_render"]["policy_pack_id"] == "canon_adult_nsfw_v1"
+    assert body["anchor_render"]["checkpoint"] == "waiIllustriousSDXL_v140.safetensors"
+    assert body["anchor_render"]["workflow_lane"] == "sdxl_illustrious"
+    assert body["anchor_render"]["negative_prompt"] == (
+        "minors, age ambiguity, non-consensual framing"
+    )
+    assert body["anchor_render"]["preserve_blank_negative_prompt"] is False
     assert body["location"]["id"] == "moonlit_bathhouse"
     assert "matched" in body["location"]["match_note"].lower()
     assert body["resolved_cast"][0]["source_type"] == "registry"

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Iterable
 
-from app.config import settings
 from app.models import (
     GenerationCreate,
     StoryPlannerCastInput,
     StoryPlannerAnchorQueueResponse,
     StoryPlannerAnchorQueuedShotResponse,
+    StoryPlannerAnchorRenderSnapshot,
     StoryPlannerCharacterCatalogEntry,
     StoryPlannerEpisodeBrief,
     StoryPlannerLocationCatalogEntry,
@@ -158,25 +160,15 @@ def _select_policy_pack(
     return packs[0]
 
 
-def _select_policy_pack_for_plan(
-    plan: StoryPlannerPlanResponse,
-    packs: list[StoryPlannerPolicyPackCatalogEntry],
-) -> StoryPlannerPolicyPackCatalogEntry:
-    for pack in packs:
-        if pack.id == plan.policy_pack_id:
-            return pack
-    return _select_policy_pack(plan.lane, packs)
-
-
 def _resolve_story_planner_checkpoint(
-    plan: StoryPlannerPlanResponse,
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
     catalog: list[StoryPlannerCharacterCatalogEntry],
     policy_pack: StoryPlannerPolicyPackCatalogEntry,
 ) -> str:
     lead = next(
         (
             member
-            for member in plan.resolved_cast
+            for member in resolved_cast
             if member.role == "lead"
             and member.source_type == "registry"
             and member.character_id
@@ -203,10 +195,10 @@ def _resolve_story_planner_checkpoint(
 
 
 def _resolve_story_planner_negative_prompt(
-    plan: StoryPlannerPlanResponse,
+    lane: str,
     policy_pack: StoryPlannerPolicyPackCatalogEntry,
 ) -> str | None:
-    if plan.lane == "unrestricted" or policy_pack.negative_prompt_mode == "blank":
+    if lane == "unrestricted" or policy_pack.negative_prompt_mode == "blank":
         return None
 
     forbidden_defaults = [
@@ -216,7 +208,31 @@ def _resolve_story_planner_negative_prompt(
     ]
     if forbidden_defaults:
         return ", ".join(dict.fromkeys(forbidden_defaults))
-    return settings.DEFAULT_NEGATIVE_PROMPT
+    return None
+
+
+def _build_story_planner_anchor_render_snapshot(
+    *,
+    lane: str,
+    policy_pack: StoryPlannerPolicyPackCatalogEntry,
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
+    characters: list[StoryPlannerCharacterCatalogEntry],
+) -> StoryPlannerAnchorRenderSnapshot:
+    checkpoint = _resolve_story_planner_checkpoint(
+        resolved_cast,
+        characters,
+        policy_pack,
+    )
+    workflow_lane = infer_workflow_lane(checkpoint)
+    negative_prompt = _resolve_story_planner_negative_prompt(lane, policy_pack)
+    preserve_blank_negative_prompt = negative_prompt is None
+    return StoryPlannerAnchorRenderSnapshot(
+        policy_pack_id=policy_pack.id,
+        checkpoint=checkpoint,
+        workflow_lane=workflow_lane,
+        negative_prompt=negative_prompt,
+        preserve_blank_negative_prompt=preserve_blank_negative_prompt,
+    )
 
 
 def _format_story_planner_cast_label(member: StoryPlannerResolvedCastEntry | None) -> str:
@@ -284,23 +300,41 @@ def _build_story_planner_anchor_tags(
     ]
 
 
+def _build_story_planner_anchor_source_id(
+    *,
+    plan: StoryPlannerPlanResponse,
+    shot: StoryPlannerShotCard,
+) -> str:
+    digest_payload = {
+        "story_prompt": plan.story_prompt,
+        "lane": plan.lane,
+        "policy_pack_id": plan.policy_pack_id,
+        "anchor_render": plan.anchor_render.model_dump(),
+        "resolved_cast": [member.model_dump() for member in plan.resolved_cast],
+        "location": plan.location.model_dump(),
+        "shot": shot.model_dump(),
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            digest_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"story_planner_anchor:{digest}:shot_{shot.shot_no:02d}"
+
+
 async def queue_story_planner_anchor_batch(
     approved_plan: StoryPlannerPlanResponse,
     generation_service,
     candidate_count: int = 2,
 ) -> StoryPlannerAnchorQueueResponse:
-    catalog = load_story_planner_catalog()
-    policy_pack = _select_policy_pack_for_plan(approved_plan, catalog.policy_packs)
-    checkpoint = _resolve_story_planner_checkpoint(
-        approved_plan,
-        catalog.characters,
-        policy_pack,
-    )
-    workflow_lane = infer_workflow_lane(checkpoint)
+    checkpoint = approved_plan.anchor_render.checkpoint
+    workflow_lane = approved_plan.anchor_render.workflow_lane
     lane_spec = get_workflow_lane_spec(workflow_lane)
-    negative_prompt = _resolve_story_planner_negative_prompt(
-        approved_plan,
-        policy_pack,
+    negative_prompt = approved_plan.anchor_render.negative_prompt
+    preserve_blank_negative_prompt = (
+        approved_plan.anchor_render.preserve_blank_negative_prompt
     )
 
     queued_generations = []
@@ -314,6 +348,7 @@ async def queue_story_planner_anchor_batch(
                 workflow_lane=workflow_lane,
             ),
             negative_prompt=negative_prompt,
+            preserve_blank_negative_prompt=preserve_blank_negative_prompt,
             checkpoint=checkpoint,
             workflow_lane=workflow_lane,
             steps=int(lane_spec.defaults.get("steps", 28)),
@@ -332,9 +367,9 @@ async def queue_story_planner_anchor_batch(
                 f"policy_pack={approved_plan.policy_pack_id} "
                 f"shot_{shot.shot_no:02d} candidates={candidate_count}"
             ),
-            source_id=(
-                f"story_planner_anchor:{approved_plan.policy_pack_id}:"
-                f"shot_{shot.shot_no:02d}"
+            source_id=_build_story_planner_anchor_source_id(
+                plan=approved_plan,
+                shot=shot,
             ),
         )
         _, shot_generations = await generation_service.queue_generation_batch(
@@ -446,13 +481,21 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         _resolve_cast_member(member, catalog.characters) for member in request.cast
     ]
     policy_pack = _select_policy_pack(request.lane, catalog.policy_packs)
+    shots = _build_shots(resolved_cast, resolved_location)
+    anchor_render = _build_story_planner_anchor_render_snapshot(
+        lane=request.lane,
+        policy_pack=policy_pack,
+        resolved_cast=resolved_cast,
+        characters=catalog.characters,
+    )
 
     return StoryPlannerPlanResponse(
         story_prompt=request.story_prompt,
         lane=request.lane,
         policy_pack_id=policy_pack.id,
+        anchor_render=anchor_render,
         resolved_cast=resolved_cast,
         location=resolved_location,
         episode_brief=_build_episode_brief(resolved_cast, resolved_location),
-        shots=_build_shots(resolved_cast, resolved_location),
+        shots=shots,
     )
