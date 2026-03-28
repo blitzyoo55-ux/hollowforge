@@ -44,6 +44,7 @@ def _build_generation_response(generation_id: str, *, prompt: str) -> Generation
 class _StubGenerationService:
     def __init__(self) -> None:
         self.generation_requests = []
+        self.batch_requests = []
 
     async def queue_generation(self, generation):  # type: ignore[no-untyped-def]
         self.generation_requests.append(generation)
@@ -51,6 +52,23 @@ class _StubGenerationService:
             f"queued-{len(self.generation_requests)}",
             prompt=generation.prompt,
         )
+
+    async def queue_generation_batch(  # type: ignore[no-untyped-def]
+        self,
+        generation,
+        count: int,
+        seed_increment: int,
+    ):
+        self.batch_requests.append((generation, count, seed_increment))
+        base_seed = 700
+        queued = [
+            _build_generation_response(
+                f"queued-batch-{len(self.batch_requests)}-{index + 1}",
+                prompt=generation.prompt,
+            )
+            for index in range(count)
+        ]
+        return base_seed, queued
 
 
 def _build_app(service: _StubGenerationService) -> FastAPI:
@@ -196,3 +214,72 @@ async def test_prompt_factory_generate_and_queue_translates_rows_to_generation_r
     assert queued.tags == ["prompt_batch_001", "series_a", "alpha"]
     assert queued.notes == "Prompt factory batch row 1: alpha"
 
+
+@pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
+async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot(
+    base_path: str,
+) -> None:
+    service = _StubGenerationService()
+    app = _build_app(service)
+
+    plan_payload = {
+        "story_prompt": (
+            "Hana Seo compares notes with a quiet messenger in the "
+            "Moonlit Bathhouse corridor after closing."
+        ),
+        "lane": "adult_nsfw",
+        "cast": [
+            {
+                "role": "lead",
+                "source_type": "registry",
+                "character_id": "hana_seo",
+            },
+            {
+                "role": "support",
+                "source_type": "freeform",
+                "freeform_description": "quiet messenger in a dark coat",
+            },
+        ],
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        preview_response = await client.post(
+            f"{base_path}/tools/story-planner/plan",
+            json=plan_payload,
+        )
+        assert preview_response.status_code == 200
+
+        response = await client.post(
+            f"{base_path}/tools/story-planner/generate-anchors",
+            json={
+                "approved_plan": preview_response.json(),
+                "candidate_count": 2,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["lane"] == "adult_nsfw"
+    assert payload["requested_shot_count"] == 4
+    assert payload["queued_generation_count"] == 8
+    assert [shot["shot_no"] for shot in payload["queued_shots"]] == [1, 2, 3, 4]
+    assert all(len(shot["generation_ids"]) == 2 for shot in payload["queued_shots"])
+    assert len(payload["queued_generations"]) == 8
+
+    assert len(service.batch_requests) == 4
+    first_request, count, seed_increment = service.batch_requests[0]
+    assert count == 2
+    assert seed_increment == 1
+    assert first_request.checkpoint == "waiIllustriousSDXL_v140.safetensors"
+    assert first_request.workflow_lane == "sdxl_illustrious"
+    assert "story_planner_anchor" in first_request.prompt
+    assert "Moonlit Bathhouse" in first_request.prompt
+    assert "Hana Seo" in first_request.prompt
+    assert "shot_01" in first_request.notes
+    assert "story_planner_anchor" in first_request.notes
+    assert first_request.tags is not None
+    assert "story_planner_anchor" in first_request.tags
+    assert "shot_01" in first_request.tags

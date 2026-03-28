@@ -18,6 +18,8 @@ from app.models import (
     PromptBatchGenerateResponse,
     PromptBatchQueueResponse,
     PromptFactoryCapabilitiesResponse,
+    StoryPlannerAnchorQueueRequest,
+    StoryPlannerAnchorQueueResponse,
     StoryPlannerCatalog,
     StoryPlannerPlanRequest,
     StoryPlannerPlanResponse,
@@ -32,7 +34,10 @@ from app.services.prompt_factory_service import (
 )
 from app.services.generation_service import GenerationService
 from app.services.story_planner_catalog import load_story_planner_catalog
-from app.services.story_planner_service import plan_story_episode
+from app.services.story_planner_service import (
+    plan_story_episode,
+    queue_story_planner_anchor_batch,
+)
 
 router = APIRouter(tags=["marketing"])
 
@@ -82,6 +87,32 @@ async def story_planner_plan(
     payload: StoryPlannerPlanRequest,
 ) -> StoryPlannerPlanResponse:
     return plan_story_episode(payload)
+
+
+@router.post(
+    "/api/v1/tools/story-planner/generate-anchors",
+    response_model=StoryPlannerAnchorQueueResponse,
+)
+@router.post(
+    "/api/tools/story-planner/generate-anchors",
+    response_model=StoryPlannerAnchorQueueResponse,
+)
+async def story_planner_generate_anchors(
+    payload: StoryPlannerAnchorQueueRequest,
+    request: Request,
+) -> StoryPlannerAnchorQueueResponse:
+    service = _get_generation_service(request)
+    try:
+        return await queue_story_planner_anchor_batch(
+            payload.approved_plan,
+            service,
+            candidate_count=payload.candidate_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/api/tools/generate-caption")

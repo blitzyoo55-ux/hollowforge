@@ -577,6 +577,32 @@ class StoryPlannerPlanResponse(BaseModel):
     shots: List[StoryPlannerShotCard] = Field(min_length=4, max_length=4)
 
 
+class StoryPlannerAnchorQueuedShotResponse(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    shot_no: int = Field(ge=1, le=4)
+    generation_ids: List[str] = Field(default_factory=list, min_length=1)
+
+
+class StoryPlannerAnchorQueueRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    approved_plan: StoryPlannerPlanResponse
+    candidate_count: int = Field(default=2, ge=2, le=24)
+
+
+class StoryPlannerAnchorQueueResponse(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    lane: StoryPlannerLane
+    requested_shot_count: int = Field(ge=0)
+    queued_generation_count: int = Field(ge=0)
+    queued_shots: List[StoryPlannerAnchorQueuedShotResponse] = Field(
+        default_factory=list
+    )
+    queued_generations: List["GenerationResponse"] = Field(default_factory=list)
+
+
 class SequenceAnchorCandidateResponse(BaseModel):
     id: str
     sequence_shot_id: str = Field(min_length=1, max_length=120)
