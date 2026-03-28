@@ -458,7 +458,7 @@ class StoryPlannerCharacterCatalogEntry(BaseModel):
     anti_drift: str = Field(min_length=1, max_length=1000)
     wardrobe_notes: str = Field(min_length=1, max_length=600)
     personality_notes: str = Field(min_length=1, max_length=600)
-    preferred_checkpoints: List[str] = Field(default_factory=list, min_length=1, max_length=8)
+    preferred_checkpoints: List[str] = Field(min_length=1, max_length=8)
 
 
 class StoryPlannerLocationCatalogEntry(BaseModel):
@@ -467,7 +467,7 @@ class StoryPlannerLocationCatalogEntry(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=120)
     setting_anchor: str = Field(min_length=1, max_length=1000)
-    visual_rules: List[str] = Field(default_factory=list, min_length=1, max_length=12)
+    visual_rules: List[str] = Field(min_length=1, max_length=12)
     restricted_elements: List[str] = Field(default_factory=list, max_length=12)
 
 
@@ -478,9 +478,9 @@ class StoryPlannerPolicyPackCatalogEntry(BaseModel):
     lane: StoryPlannerLane
     prompt_provider_profile_id: str = Field(min_length=1, max_length=120)
     negative_prompt_mode: Literal["blank", "recommended", "custom"]
-    forbidden_defaults: List[str] = Field(default_factory=list, max_length=20)
-    planner_rules: List[str] = Field(default_factory=list, min_length=1, max_length=20)
-    render_preferences: Dict[str, Any] = Field(default_factory=dict)
+    forbidden_defaults: List[str] = Field(min_length=1, max_length=20)
+    planner_rules: List[str] = Field(min_length=1, max_length=20)
+    render_preferences: Dict[str, Any] = Field(min_length=1)
 
 
 class StoryPlannerCatalog(BaseModel):
@@ -490,6 +490,8 @@ class StoryPlannerCatalog(BaseModel):
 
 
 class StoryPlannerCastInput(BaseModel):
+    model_config = {"extra": "forbid"}
+
     role: Literal["lead", "support"]
     source_type: Literal["registry", "freeform"]
     character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
@@ -511,9 +513,18 @@ class StoryPlannerCastInput(BaseModel):
 
 
 class StoryPlannerPlanRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     story_prompt: str = Field(min_length=1, max_length=2000)
     lane: StoryPlannerLane
     cast: List[StoryPlannerCastInput] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_unique_cast_roles(self) -> "StoryPlannerPlanRequest":
+        roles = [member.role for member in self.cast]
+        if len(set(roles)) != len(roles):
+            raise ValueError("duplicate cast roles are not allowed")
+        return self
 
 
 class SequenceAnchorCandidateResponse(BaseModel):
