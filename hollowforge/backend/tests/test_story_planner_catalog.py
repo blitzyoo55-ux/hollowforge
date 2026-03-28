@@ -7,6 +7,13 @@ from app.models import StoryPlannerCastInput, StoryPlannerPlanRequest
 from app.services.story_planner_catalog import load_story_planner_catalog
 
 
+SHARED_HARD_FORBIDDEN_BASELINE = {
+    "minors",
+    "age ambiguity",
+    "non-consensual framing",
+}
+
+
 def test_load_story_planner_catalog_returns_spec_aligned_entries():
     catalog = load_story_planner_catalog()
 
@@ -51,6 +58,10 @@ def test_load_story_planner_catalog_returns_spec_aligned_entries():
     assert all(character.preferred_checkpoints for character in catalog.characters)
     assert all(location.visual_rules for location in catalog.locations)
     assert all(pack.planner_rules for pack in catalog.policy_packs)
+    assert all(
+        SHARED_HARD_FORBIDDEN_BASELINE.issubset(set(pack.forbidden_defaults))
+        for pack in catalog.policy_packs
+    )
 
 
 def test_story_planner_plan_request_accepts_registry_and_freeform_cast_with_supported_roles():

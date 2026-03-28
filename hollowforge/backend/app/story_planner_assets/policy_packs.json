@@ -4,7 +4,11 @@
     "lane": "unrestricted",
     "prompt_provider_profile_id": "adult_local_llm",
     "negative_prompt_mode": "blank",
-    "forbidden_defaults": [],
+    "forbidden_defaults": [
+      "minors",
+      "age ambiguity",
+      "non-consensual framing"
+    ],
     "planner_rules": [
       "Preserve canon continuity for identity, wardrobe, and setting while exploring broad story options.",
       "Do not silently downgrade risky ideas into a safer lane. Surface lane-sensitive beats explicitly for later review.",
@@ -22,6 +26,9 @@
     "prompt_provider_profile_id": "safe_hosted_grok",
     "negative_prompt_mode": "recommended",
     "forbidden_defaults": [
+      "minors",
+      "age ambiguity",
+      "non-consensual framing",
       "explicit sexual contact",
       "fetish framing",
       "nudity"
