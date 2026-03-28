@@ -18,6 +18,9 @@ from app.models import (
     PromptBatchGenerateResponse,
     PromptBatchQueueResponse,
     PromptFactoryCapabilitiesResponse,
+    StoryPlannerCatalog,
+    StoryPlannerPlanRequest,
+    StoryPlannerPlanResponse,
 )
 from app.services.caption_service import (
     generate_caption_from_image_bytes,
@@ -28,6 +31,8 @@ from app.services.prompt_factory_service import (
     get_prompt_factory_capabilities,
 )
 from app.services.generation_service import GenerationService
+from app.services.story_planner_catalog import load_story_planner_catalog
+from app.services.story_planner_service import plan_story_episode
 
 router = APIRouter(tags=["marketing"])
 
@@ -51,6 +56,32 @@ def _resolve_generation_image_file_path(image_path: str) -> Path:
             detail="Unsafe image path",
         ) from exc
     return candidate
+
+
+@router.get(
+    "/api/v1/tools/story-planner/catalog",
+    response_model=StoryPlannerCatalog,
+)
+@router.get(
+    "/api/tools/story-planner/catalog",
+    response_model=StoryPlannerCatalog,
+)
+async def story_planner_catalog() -> StoryPlannerCatalog:
+    return load_story_planner_catalog()
+
+
+@router.post(
+    "/api/v1/tools/story-planner/plan",
+    response_model=StoryPlannerPlanResponse,
+)
+@router.post(
+    "/api/tools/story-planner/plan",
+    response_model=StoryPlannerPlanResponse,
+)
+async def story_planner_plan(
+    payload: StoryPlannerPlanRequest,
+) -> StoryPlannerPlanResponse:
+    return plan_story_episode(payload)
 
 
 @router.post("/api/tools/generate-caption")

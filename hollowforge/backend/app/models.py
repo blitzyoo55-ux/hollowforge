@@ -527,6 +527,56 @@ class StoryPlannerPlanRequest(BaseModel):
         return self
 
 
+class StoryPlannerResolvedCastEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    role: Literal["lead", "support"]
+    source_type: Literal["registry", "freeform"]
+    character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    character_name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    freeform_description: Optional[str] = Field(default=None, min_length=1, max_length=400)
+    resolution_note: str = Field(min_length=1, max_length=1000)
+
+
+class StoryPlannerResolvedLocationEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    setting_anchor: str = Field(min_length=1, max_length=1000)
+    match_note: str = Field(min_length=1, max_length=1000)
+
+
+class StoryPlannerEpisodeBrief(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    premise: str = Field(min_length=1, max_length=1000)
+    continuity_guidance: List[str] = Field(default_factory=list, max_length=6)
+
+
+class StoryPlannerShotCard(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    shot_no: int = Field(ge=1, le=4)
+    beat: str = Field(min_length=1, max_length=160)
+    camera: str = Field(min_length=1, max_length=240)
+    action: str = Field(min_length=1, max_length=400)
+    emotion: str = Field(min_length=1, max_length=240)
+    continuity_note: str = Field(min_length=1, max_length=400)
+
+
+class StoryPlannerPlanResponse(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    story_prompt: str = Field(min_length=1, max_length=2000)
+    lane: StoryPlannerLane
+    policy_pack_id: str = Field(min_length=1, max_length=120)
+    resolved_cast: List[StoryPlannerResolvedCastEntry] = Field(default_factory=list)
+    location: StoryPlannerResolvedLocationEntry
+    episode_brief: StoryPlannerEpisodeBrief
+    shots: List[StoryPlannerShotCard] = Field(min_length=4, max_length=4)
+
+
 class SequenceAnchorCandidateResponse(BaseModel):
     id: str
     sequence_shot_id: str = Field(min_length=1, max_length=120)
