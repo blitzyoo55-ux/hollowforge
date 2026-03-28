@@ -1,0 +1,36 @@
+[
+  {
+    "id": "hana_seo",
+    "name": "Hana Seo",
+    "canonical_anchor": "Adult Korean woman, luxury skincare strategist, sleek obsidian bob, amber-brown eyes, precise jawline, polished symmetry, quiet composure.",
+    "anti_drift": "Keep Hana clearly adult, avoid bright dyed hair, avoid overtly cute styling, preserve the obsidian bob silhouette and refined symmetry.",
+    "wardrobe_notes": "Favors monochrome dresses, camel wool coats, and quietly expensive professional styling.",
+    "personality_notes": "Controlled, observant, and private. She reads a room quickly and reveals intent slowly.",
+    "preferred_checkpoints": [
+      "waiIllustriousSDXL_v140.safetensors",
+      "noobaiXLNAIXL_epsilonPred10Version.safetensors"
+    ]
+  },
+  {
+    "id": "mina_park",
+    "name": "Mina Park",
+    "canonical_anchor": "Adult Korean woman, bathhouse operations manager, dark shoulder-length hair, grounded posture, warm but vigilant expression, practical elegance.",
+    "anti_drift": "Keep Mina clearly adult, avoid idol styling, preserve a dependable silhouette, and avoid glam-heavy makeup or exaggerated fragility.",
+    "wardrobe_notes": "Structured workwear, soft knits, and manager-ready layers that feel practical rather than flashy.",
+    "personality_notes": "Protective, pragmatic, and socially fluent. She notices tension early and stabilizes a scene without theatrics.",
+    "preferred_checkpoints": [
+      "waiIllustriousSDXL_v140.safetensors"
+    ]
+  },
+  {
+    "id": "jiwon_han",
+    "name": "Jiwon Han",
+    "canonical_anchor": "Adult Korean man, visiting strategy consultant, tailored silhouette, immaculate grooming, poised confidence, watchful eyes behind a polished smile.",
+    "anti_drift": "Keep Jiwon clearly adult, avoid comic villain exaggeration, preserve a premium corporate silhouette, and avoid messy streetwear cues.",
+    "wardrobe_notes": "Tailored suits, refined overcoats, and discreet luxury accessories that signal outside influence.",
+    "personality_notes": "Charming, calculating, and adaptive. He performs confidence while constantly testing leverage.",
+    "preferred_checkpoints": [
+      "waiIllustriousSDXL_v140.safetensors"
+    ]
+  }
+]

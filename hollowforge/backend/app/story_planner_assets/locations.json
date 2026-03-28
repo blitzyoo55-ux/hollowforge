@@ -1,0 +1,47 @@
+[
+  {
+    "id": "moonlit_bathhouse",
+    "name": "Moonlit Bathhouse",
+    "setting_anchor": "Premium urban bathhouse with polished stone corridors, warm reflected light, private treatment rooms, controlled guest flow, and ritualized quiet.",
+    "visual_rules": [
+      "Preserve premium spa materials such as stone, wood, steam-softened light, and muted reflective surfaces.",
+      "Keep staff and guest circulation intentional rather than crowded or chaotic.",
+      "Favor composed luxury over fantasy excess."
+    ],
+    "restricted_elements": [
+      "neon club lighting",
+      "sci-fi architecture",
+      "rural onsen scenery"
+    ]
+  },
+  {
+    "id": "north_service_corridor",
+    "name": "North Service Corridor",
+    "setting_anchor": "Back-of-house maintenance corridor connecting treatment rooms, storage, and staff exits, with clinical light, narrow sightlines, and operational tension.",
+    "visual_rules": [
+      "Keep the corridor narrow, functional, and plausibly attached to the main bathhouse.",
+      "Use maintenance details, carts, signage, or service doors sparingly to support realism.",
+      "Frame encounters as tense transitions rather than action spectacle."
+    ],
+    "restricted_elements": [
+      "luxury guest seating areas",
+      "open skyline views",
+      "combat debris"
+    ]
+  },
+  {
+    "id": "rooftop_tea_lounge",
+    "name": "Rooftop Tea Lounge",
+    "setting_anchor": "Elevated tea lounge above the bathhouse with city views, polished hospitality details, and a public atmosphere that rewards guarded conversation.",
+    "visual_rules": [
+      "Keep the space elegant, public, and lightly exposed to the skyline.",
+      "Use tea service, lounge seating, and restrained luxury details as anchors.",
+      "Favor conversational tension over party energy."
+    ],
+    "restricted_elements": [
+      "dance floor staging",
+      "crowded nightclub density",
+      "derelict rooftop clutter"
+    ]
+  }
+]

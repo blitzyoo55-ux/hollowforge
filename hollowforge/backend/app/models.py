@@ -36,6 +36,7 @@ PromptFactoryCheckpointPreferenceMode = Literal[
     "exclude",
 ]
 SequenceContentMode = Literal["all_ages", "adult_nsfw"]
+StoryPlannerLane = Literal["unrestricted", "all_ages", "adult_nsfw"]
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +447,73 @@ class SequenceRunCreateRequest(BaseModel):
     prompt_provider_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     candidate_count: int = Field(default=4, ge=2, le=24)
     target_tool: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
+class StoryPlannerCharacterCatalogEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    canonical_anchor: str = Field(min_length=1, max_length=1000)
+    anti_drift: str = Field(min_length=1, max_length=1000)
+    wardrobe_notes: str = Field(min_length=1, max_length=600)
+    personality_notes: str = Field(min_length=1, max_length=600)
+    preferred_checkpoints: List[str] = Field(default_factory=list, min_length=1, max_length=8)
+
+
+class StoryPlannerLocationCatalogEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    setting_anchor: str = Field(min_length=1, max_length=1000)
+    visual_rules: List[str] = Field(default_factory=list, min_length=1, max_length=12)
+    restricted_elements: List[str] = Field(default_factory=list, max_length=12)
+
+
+class StoryPlannerPolicyPackCatalogEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=120)
+    lane: StoryPlannerLane
+    prompt_provider_profile_id: str = Field(min_length=1, max_length=120)
+    negative_prompt_mode: Literal["blank", "recommended", "custom"]
+    forbidden_defaults: List[str] = Field(default_factory=list, max_length=20)
+    planner_rules: List[str] = Field(default_factory=list, min_length=1, max_length=20)
+    render_preferences: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StoryPlannerCatalog(BaseModel):
+    characters: List[StoryPlannerCharacterCatalogEntry] = Field(default_factory=list)
+    locations: List[StoryPlannerLocationCatalogEntry] = Field(default_factory=list)
+    policy_packs: List[StoryPlannerPolicyPackCatalogEntry] = Field(default_factory=list)
+
+
+class StoryPlannerCastInput(BaseModel):
+    role: Literal["lead", "support"]
+    source_type: Literal["registry", "freeform"]
+    character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    freeform_description: Optional[str] = Field(default=None, min_length=1, max_length=400)
+
+    @model_validator(mode="after")
+    def validate_source_fields(self) -> "StoryPlannerCastInput":
+        if self.source_type == "registry":
+            if not self.character_id:
+                raise ValueError("character_id is required when source_type='registry'")
+            if self.freeform_description is not None:
+                raise ValueError("freeform_description is not allowed when source_type='registry'")
+        else:
+            if not self.freeform_description:
+                raise ValueError("freeform_description is required when source_type='freeform'")
+            if self.character_id is not None:
+                raise ValueError("character_id is not allowed when source_type='freeform'")
+        return self
+
+
+class StoryPlannerPlanRequest(BaseModel):
+    story_prompt: str = Field(min_length=1, max_length=2000)
+    lane: StoryPlannerLane
+    cast: List[StoryPlannerCastInput] = Field(default_factory=list, max_length=2)
 
 
 class SequenceAnchorCandidateResponse(BaseModel):

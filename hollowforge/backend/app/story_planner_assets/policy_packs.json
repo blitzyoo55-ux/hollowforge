@@ -1,0 +1,61 @@
+[
+  {
+    "id": "canon_unrestricted_v1",
+    "lane": "unrestricted",
+    "prompt_provider_profile_id": "adult_local_llm",
+    "negative_prompt_mode": "blank",
+    "forbidden_defaults": [],
+    "planner_rules": [
+      "Preserve canon continuity for identity, wardrobe, and setting while exploring broad story options.",
+      "Do not silently downgrade risky ideas into a safer lane. Surface lane-sensitive beats explicitly for later review.",
+      "Keep the planner focused on episode structure and continuity, not final render prompt wording."
+    ],
+    "render_preferences": {
+      "default_checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "framing_bias": "portrait",
+      "default_size": "832x1216"
+    }
+  },
+  {
+    "id": "canon_all_ages_v1",
+    "lane": "all_ages",
+    "prompt_provider_profile_id": "safe_hosted_grok",
+    "negative_prompt_mode": "recommended",
+    "forbidden_defaults": [
+      "explicit sexual contact",
+      "fetish framing",
+      "nudity"
+    ],
+    "planner_rules": [
+      "Keep every beat suitable for a general audience.",
+      "Use mystery, implication, emotional stakes, and public-risk tension instead of erotic escalation.",
+      "Avoid sexualized body focus, nudity, or fetish-coded scene goals."
+    ],
+    "render_preferences": {
+      "default_checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "styling_bias": "clean narrative realism",
+      "default_size": "832x1216"
+    }
+  },
+  {
+    "id": "canon_adult_nsfw_v1",
+    "lane": "adult_nsfw",
+    "prompt_provider_profile_id": "adult_local_llm_strict_json",
+    "negative_prompt_mode": "recommended",
+    "forbidden_defaults": [
+      "minors",
+      "age ambiguity",
+      "non-consensual framing"
+    ],
+    "planner_rules": [
+      "Treat all beats as adult-only material while preserving canon identity and location continuity.",
+      "Keep consent, role clarity, and escalation logic explicit inside the plan.",
+      "Flag beats that need narrower downstream compliance handling rather than improvising around them."
+    ],
+    "render_preferences": {
+      "default_checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "styling_bias": "high-fidelity character readability",
+      "default_size": "832x1216"
+    }
+  }
+]
