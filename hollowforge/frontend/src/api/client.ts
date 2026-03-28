@@ -801,6 +801,122 @@ export interface PromptTemplatesResponse {
   templates: Record<string, CheckpointPromptTemplates>;
 }
 
+export type StoryPlannerLane = 'unrestricted' | 'all_ages' | 'adult_nsfw'
+
+export interface StoryPlannerCharacterCatalogEntry {
+  id: string
+  name: string
+  canonical_anchor: string
+  anti_drift: string
+  wardrobe_notes: string
+  personality_notes: string
+  preferred_checkpoints: string[]
+}
+
+export interface StoryPlannerLocationCatalogEntry {
+  id: string
+  name: string
+  setting_anchor: string
+  visual_rules: string[]
+  restricted_elements: string[]
+}
+
+export interface StoryPlannerPolicyPackCatalogEntry {
+  id: string
+  lane: StoryPlannerLane
+  prompt_provider_profile_id: string
+  negative_prompt_mode: 'blank' | 'recommended' | 'custom'
+  forbidden_defaults: string[]
+  planner_rules: string[]
+  render_preferences: Record<string, unknown>
+}
+
+export interface StoryPlannerCatalog {
+  characters: StoryPlannerCharacterCatalogEntry[]
+  locations: StoryPlannerLocationCatalogEntry[]
+  policy_packs: StoryPlannerPolicyPackCatalogEntry[]
+}
+
+export interface StoryPlannerCastInput {
+  role: 'lead' | 'support'
+  source_type: 'registry' | 'freeform'
+  character_id?: string | null
+  freeform_description?: string | null
+}
+
+export interface StoryPlannerPlanRequest {
+  story_prompt: string
+  lane: StoryPlannerLane
+  cast: StoryPlannerCastInput[]
+}
+
+export interface StoryPlannerResolvedCastEntry {
+  role: 'lead' | 'support'
+  source_type: 'registry' | 'freeform'
+  character_id: string | null
+  character_name: string | null
+  freeform_description: string | null
+  resolution_note: string
+}
+
+export interface StoryPlannerResolvedLocationEntry {
+  id: string
+  name: string
+  setting_anchor: string
+  match_note: string
+}
+
+export interface StoryPlannerEpisodeBrief {
+  premise: string
+  continuity_guidance: string[]
+}
+
+export interface StoryPlannerShotCard {
+  shot_no: number
+  beat: string
+  camera: string
+  action: string
+  emotion: string
+  continuity_note: string
+}
+
+export interface StoryPlannerAnchorRenderSnapshot {
+  policy_pack_id: string
+  checkpoint: string
+  workflow_lane: Exclude<PromptFactoryWorkflowLane, 'auto'>
+  negative_prompt: string | null
+  preserve_blank_negative_prompt: boolean
+}
+
+export interface StoryPlannerPlanResponse {
+  story_prompt: string
+  lane: StoryPlannerLane
+  policy_pack_id: string
+  anchor_render: StoryPlannerAnchorRenderSnapshot
+  resolved_cast: StoryPlannerResolvedCastEntry[]
+  location: StoryPlannerResolvedLocationEntry
+  episode_brief: StoryPlannerEpisodeBrief
+  shots: StoryPlannerShotCard[]
+}
+
+export interface StoryPlannerAnchorQueuedShotResponse {
+  shot_no: number
+  generation_ids: string[]
+}
+
+export interface StoryPlannerAnchorQueueRequest {
+  approved_plan: StoryPlannerPlanResponse
+  candidate_count?: number
+}
+
+export interface StoryPlannerAnchorQueueResponse {
+  lane: StoryPlannerLane
+  requested_shot_count: number
+  queued_generation_count: number
+  queued_shots: StoryPlannerAnchorQueuedShotResponse[]
+  queued_generations: GenerationResponse[]
+}
+
 export type PromptFactoryProvider = 'default' | 'openrouter' | 'xai'
 export type PromptFactoryWorkflowLane = 'auto' | 'classic_clip' | 'sdxl_illustrious'
 export type PromptFactoryTone = 'clinical' | 'campaign' | 'editorial' | 'teaser'
@@ -1394,6 +1510,28 @@ export async function generateCaptionById(generationId: string): Promise<Caption
   const res = await api.post<CaptionResponse>('/tools/generate-caption-by-id', {
     generation_id: generationId,
   })
+  return res.data
+}
+
+export async function getStoryPlannerCatalog(): Promise<StoryPlannerCatalog> {
+  const res = await api.get<StoryPlannerCatalog>('/tools/story-planner/catalog')
+  return res.data
+}
+
+export async function planStoryEpisode(
+  data: StoryPlannerPlanRequest,
+): Promise<StoryPlannerPlanResponse> {
+  const res = await api.post<StoryPlannerPlanResponse>('/tools/story-planner/plan', data)
+  return res.data
+}
+
+export async function generateStoryPlannerAnchors(
+  data: StoryPlannerAnchorQueueRequest,
+): Promise<StoryPlannerAnchorQueueResponse> {
+  const res = await api.post<StoryPlannerAnchorQueueResponse>(
+    '/tools/story-planner/generate-anchors',
+    data,
+  )
   return res.data
 }
 

@@ -19,6 +19,10 @@ vi.mock('../api/client', () => ({
   updatePromptFactoryCheckpointPreferences: vi.fn(),
 }))
 
+vi.mock('../components/tools/story-planner/StoryPlannerMode', () => ({
+  default: () => <div data-testid="story-planner-panel">Story Planner Mock</div>,
+}))
+
 vi.mock('../lib/toast', () => ({
   notify: {
     success: vi.fn(),
@@ -213,4 +217,14 @@ test('renders preview results after preview generation succeeds', async () => {
   const generatedTile = within(latestResultSection as HTMLElement).getByText(/Generated/i).parentElement
   expect(generatedTile).not.toBeNull()
   expect(within(generatedTile as HTMLElement).getByText(/^2$/)).toBeInTheDocument()
+})
+
+test('switching Prompt Factory into Story Planner mode renders the Story Planner panel', async () => {
+  renderPage()
+
+  expect(await screen.findByRole('heading', { name: /Prompt Factory/i })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Story Planner/i }))
+
+  expect(await screen.findByTestId('story-planner-panel')).toBeInTheDocument()
 })

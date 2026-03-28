@@ -23,6 +23,7 @@ import type {
   PromptFactoryWorkflowLane,
 } from '../api/client'
 import { notify } from '../lib/toast'
+import StoryPlannerMode from '../components/tools/story-planner/StoryPlannerMode'
 
 const DEFAULT_CONCEPT =
   'Lab-451 character exploration, masked containment heroine, glossy materials, control-room and chamber variations, cinematic anime illustration'
@@ -648,6 +649,7 @@ export default function PromptFactory() {
   const [forbiddenElementsRaw, setForbiddenElementsRaw] = useState(toCsv(DEFAULT_FORBIDDEN_ELEMENTS))
   const [checkpointPreferenceSearch, setCheckpointPreferenceSearch] = useState('')
   const [showOnlyCustomizedCheckpoints, setShowOnlyCustomizedCheckpoints] = useState(false)
+  const [mode, setMode] = useState<'advanced' | 'story-planner'>('advanced')
   const [checkpointPreferenceDrafts, setCheckpointPreferenceDrafts] = useState<
     Record<string, PromptFactoryCheckpointPreferenceEntry> | null
   >(null)
@@ -1013,6 +1015,42 @@ export default function PromptFactory() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-gray-950/90 p-3 shadow-2xl shadow-black/20">
+        <button
+          type="button"
+          onClick={() => setMode('story-planner')}
+          className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+            mode === 'story-planner'
+              ? 'border-violet-500/40 bg-violet-500/10 text-violet-100'
+              : 'border-gray-700 bg-gray-950 text-gray-300 hover:border-gray-500 hover:text-white'
+          }`}
+        >
+          Story Planner
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('advanced')}
+          className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+            mode === 'advanced'
+              ? 'border-violet-500/40 bg-violet-500/10 text-violet-100'
+              : 'border-gray-700 bg-gray-950 text-gray-300 hover:border-gray-500 hover:text-white'
+          }`}
+        >
+          Advanced Batch
+        </button>
+        <button
+          type="button"
+          disabled
+          className="cursor-not-allowed rounded-full border border-gray-800 bg-gray-950 px-4 py-2 text-sm font-semibold text-gray-500 opacity-70"
+        >
+          Character Profile - Coming Soon
+        </button>
+      </div>
+
+      {mode === 'story-planner' ? (
+        <StoryPlannerMode />
+      ) : (
+        <>
       <Surface
         title="Prompt Factory"
         description="브리프를 넣으면 benchmark를 읽고, 필요하면 direction pack을 먼저 발명한 뒤, 최종 프롬프트를 프리뷰하거나 그대로 큐에 넣습니다."
@@ -1807,6 +1845,8 @@ export default function PromptFactory() {
           </Link>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }
