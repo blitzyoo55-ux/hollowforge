@@ -3,8 +3,11 @@ from __future__ import annotations
 from pydantic import ValidationError
 import pytest
 
-from app.models import StoryPlannerCastInput, StoryPlannerPlanRequest
-from app.services.story_planner_service import plan_story_episode
+from app.models import GenerationResponse, StoryPlannerCastInput, StoryPlannerPlanRequest
+from app.services.story_planner_service import (
+    plan_story_episode,
+    queue_story_planner_anchor_batch,
+)
 
 
 def _build_request(
@@ -30,6 +33,45 @@ def _build_request(
     )
 
 
+def _build_generation_response(generation_id: str, *, prompt: str) -> GenerationResponse:
+    return GenerationResponse(
+        id=generation_id,
+        prompt=prompt,
+        checkpoint="waiIllustriousSDXL_v140.safetensors",
+        loras=[],
+        seed=700,
+        steps=28,
+        cfg=7.0,
+        width=832,
+        height=1216,
+        sampler="euler",
+        scheduler="normal",
+        status="queued",
+        created_at="2026-03-27T00:00:00+00:00",
+    )
+
+
+class _CapturingGenerationService:
+    def __init__(self) -> None:
+        self.batch_requests = []
+
+    async def queue_generation_batch(  # type: ignore[no-untyped-def]
+        self,
+        generation,
+        count: int,
+        seed_increment: int,
+    ):
+        self.batch_requests.append((generation, count, seed_increment))
+        queued = [
+            _build_generation_response(
+                f"queued-{len(self.batch_requests)}-{index + 1}",
+                prompt=generation.prompt,
+            )
+            for index in range(count)
+        ]
+        return 700, queued
+
+
 def test_plan_story_episode_builds_episode_brief_and_four_shot_plan() -> None:
     preview = plan_story_episode(
         _build_request(
@@ -52,6 +94,14 @@ def test_plan_story_episode_builds_episode_brief_and_four_shot_plan() -> None:
         == "minors, age ambiguity, non-consensual framing"
     )
     assert preview.anchor_render.preserve_blank_negative_prompt is False
+    assert preview.approval_token
+    assert len(preview.approval_token) == 64
+    assert preview.resolved_cast[0].canonical_anchor
+    assert preview.resolved_cast[0].anti_drift
+    assert preview.resolved_cast[0].wardrobe_notes
+    assert preview.resolved_cast[0].personality_notes
+    assert preview.location.visual_rules
+    assert preview.location.restricted_elements
     assert len(preview.shots) == 4
     assert [shot.shot_no for shot in preview.shots] == [1, 2, 3, 4]
     assert all(shot.beat for shot in preview.shots)
@@ -106,6 +156,55 @@ def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_
     assert lead.character_name is None
     assert "unknown_consultant" in lead.resolution_note
     assert "not found" in lead.resolution_note.lower()
+
+
+@pytest.mark.asyncio
+async def test_queue_story_planner_anchor_batch_includes_continuity_details_in_anchor_prompt() -> None:
+    approved_plan = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger in the Moonlit Bathhouse corridor after closing."
+            )
+        )
+    )
+    service = _CapturingGenerationService()
+
+    await queue_story_planner_anchor_batch(approved_plan, service, candidate_count=2)
+
+    first_request = service.batch_requests[0][0]
+    assert "canonical_anchor" in first_request.prompt
+    assert "Adult Korean woman, luxury skincare strategist" in first_request.prompt
+    assert "anti_drift" in first_request.prompt
+    assert "wardrobe_notes" in first_request.prompt
+    assert "personality_notes" in first_request.prompt
+    assert "location_visual_rules" in first_request.prompt
+    assert (
+        "Preserve premium spa materials such as stone, wood, steam-softened light, and muted reflective surfaces."
+        in first_request.prompt
+    )
+    assert "location_restricted_elements" in first_request.prompt
+    assert "neon club lighting" in first_request.prompt
+
+
+@pytest.mark.asyncio
+async def test_queue_story_planner_anchor_batch_rejects_tampered_approved_plan_with_stale_token() -> None:
+    approved_plan = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger in the Moonlit Bathhouse corridor after closing."
+            )
+        )
+    )
+    payload = approved_plan.model_dump()
+    payload["story_prompt"] = "Hana Seo compares notes in a different corridor after closing."
+    tampered_plan = type(approved_plan).model_validate(payload)
+
+    with pytest.raises(ValueError, match="approval_token"):
+        await queue_story_planner_anchor_batch(
+            tampered_plan,
+            _CapturingGenerationService(),
+            candidate_count=2,
+        )
 
 
 def test_plan_story_episode_resolves_location_from_prompt_and_falls_back_when_needed() -> None:

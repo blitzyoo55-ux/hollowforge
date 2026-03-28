@@ -856,6 +856,10 @@ export interface StoryPlannerResolvedCastEntry {
   character_id: string | null
   character_name: string | null
   freeform_description: string | null
+  canonical_anchor: string | null
+  anti_drift: string | null
+  wardrobe_notes: string | null
+  personality_notes: string | null
   resolution_note: string
 }
 
@@ -863,6 +867,8 @@ export interface StoryPlannerResolvedLocationEntry {
   id: string
   name: string
   setting_anchor: string
+  visual_rules: string[]
+  restricted_elements: string[]
   match_note: string
 }
 
@@ -892,6 +898,7 @@ export interface StoryPlannerPlanResponse {
   story_prompt: string
   lane: StoryPlannerLane
   policy_pack_id: string
+  approval_token: string
   anchor_render: StoryPlannerAnchorRenderSnapshot
   resolved_cast: StoryPlannerResolvedCastEntry[]
   location: StoryPlannerResolvedLocationEntry

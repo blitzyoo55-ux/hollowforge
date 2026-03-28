@@ -106,6 +106,7 @@ function buildPlanResponse() {
     story_prompt: 'A tense bathhouse rendezvous under soft reflected light.',
     lane: 'adult_nsfw' as const,
     policy_pack_id: 'canon_adult_nsfw_v1',
+    approval_token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     anchor_render: {
       policy_pack_id: 'canon_adult_nsfw_v1',
       checkpoint: 'waiIllustriousSDXL_v140.safetensors',
@@ -120,6 +121,10 @@ function buildPlanResponse() {
         character_id: 'hana_seo',
         character_name: 'Hana Seo',
         freeform_description: null,
+        canonical_anchor: 'Adult Korean woman, luxury skincare strategist.',
+        anti_drift: 'Keep Hana adult and composed.',
+        wardrobe_notes: 'Monochrome dresses and expensive styling.',
+        personality_notes: 'Controlled, observant, private.',
         resolution_note: "Resolved registry character 'hana_seo' from catalog.",
       },
       {
@@ -128,6 +133,10 @@ function buildPlanResponse() {
         character_id: 'mina_park',
         character_name: 'Mina Park',
         freeform_description: null,
+        canonical_anchor: 'Adult Korean woman, bathhouse operations manager.',
+        anti_drift: 'Keep Mina adult and practical.',
+        wardrobe_notes: 'Structured workwear and soft knits.',
+        personality_notes: 'Protective and pragmatic.',
         resolution_note: "Resolved registry character 'mina_park' from catalog.",
       },
     ],
@@ -135,6 +144,8 @@ function buildPlanResponse() {
       id: 'moonlit_bathhouse',
       name: 'Moonlit Bathhouse',
       setting_anchor: 'Premium urban bathhouse with polished stone corridors.',
+      visual_rules: ['Stone, wood, steam-softened light.'],
+      restricted_elements: ['neon club lighting'],
       match_note: 'Matched prompt keywords to Moonlit Bathhouse.',
     },
     episode_brief: {

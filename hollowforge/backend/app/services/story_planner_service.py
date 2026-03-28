@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
+import secrets
 from typing import Iterable
 
+from app.config import settings
 from app.models import (
     GenerationCreate,
     StoryPlannerCastInput,
@@ -63,6 +66,9 @@ _LOCATION_STOPWORDS = {
     "use",
     "with",
 }
+_STORY_PLANNER_APPROVAL_SECRET = (
+    settings.ANIMATION_CALLBACK_TOKEN or secrets.token_urlsafe(32)
+)
 
 
 def _tokenize(text: str) -> set[str]:
@@ -109,6 +115,40 @@ def _resolve_location(
     )
 
 
+def _story_planner_approval_snapshot(
+    plan: StoryPlannerPlanResponse,
+) -> dict[str, object]:
+    return plan.model_dump(mode="json", exclude={"approval_token"})
+
+
+def _build_story_planner_approval_token(
+    snapshot: dict[str, object],
+) -> str:
+    canonical_snapshot = json.dumps(
+        snapshot,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hmac.new(
+        _STORY_PLANNER_APPROVAL_SECRET.encode("utf-8"),
+        canonical_snapshot.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _validate_story_planner_approval_token(plan: StoryPlannerPlanResponse) -> None:
+    if not plan.approval_token.strip():
+        raise ValueError("approved_plan approval_token is required")
+    expected_token = _build_story_planner_approval_token(
+        _story_planner_approval_snapshot(plan)
+    )
+    if not hmac.compare_digest(plan.approval_token, expected_token):
+        raise ValueError(
+            "approved_plan approval_token does not match the approved plan snapshot"
+        )
+
+
 def _resolve_registry_character(
     character_id: str,
     characters: list[StoryPlannerCharacterCatalogEntry],
@@ -131,6 +171,10 @@ def _resolve_cast_member(
                 source_type=member.source_type,
                 character_id=character.id,
                 character_name=character.name,
+                canonical_anchor=character.canonical_anchor,
+                anti_drift=character.anti_drift,
+                wardrobe_notes=character.wardrobe_notes,
+                personality_notes=character.personality_notes,
                 resolution_note=f"Resolved registry character '{character.id}' from catalog.",
             )
         return StoryPlannerResolvedCastEntry(
@@ -271,6 +315,17 @@ def _build_story_planner_anchor_prompt(
         "resolved_cast:",
         f"- lead: {_format_story_planner_cast_label(lead)}",
         f"- support: {_format_story_planner_cast_label(support)}",
+        "continuity_details:",
+        f"- lead_canonical_anchor: {lead.canonical_anchor if lead and lead.canonical_anchor else 'none'}",
+        f"- lead_anti_drift: {lead.anti_drift if lead and lead.anti_drift else 'none'}",
+        f"- lead_wardrobe_notes: {lead.wardrobe_notes if lead and lead.wardrobe_notes else 'none'}",
+        f"- lead_personality_notes: {lead.personality_notes if lead and lead.personality_notes else 'none'}",
+        f"- support_canonical_anchor: {support.canonical_anchor if support and support.canonical_anchor else 'none'}",
+        f"- support_anti_drift: {support.anti_drift if support and support.anti_drift else 'none'}",
+        f"- support_wardrobe_notes: {support.wardrobe_notes if support and support.wardrobe_notes else 'none'}",
+        f"- support_personality_notes: {support.personality_notes if support and support.personality_notes else 'none'}",
+        f"- location_visual_rules: {'; '.join(plan.location.visual_rules)}",
+        f"- location_restricted_elements: {', '.join(plan.location.restricted_elements) if plan.location.restricted_elements else 'none'}",
         "shot_card:",
         f"- beat: {shot.beat}",
         f"- camera: {shot.camera}",
@@ -329,6 +384,7 @@ async def queue_story_planner_anchor_batch(
     generation_service,
     candidate_count: int = 2,
 ) -> StoryPlannerAnchorQueueResponse:
+    _validate_story_planner_approval_token(approved_plan)
     checkpoint = approved_plan.anchor_render.checkpoint
     workflow_lane = approved_plan.anchor_render.workflow_lane
     lane_spec = get_workflow_lane_spec(workflow_lane)
@@ -475,6 +531,8 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         id=location.id,
         name=location.name,
         setting_anchor=location.setting_anchor,
+        visual_rules=location.visual_rules,
+        restricted_elements=location.restricted_elements,
         match_note=match_note,
     )
     resolved_cast = [
@@ -488,14 +546,18 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         resolved_cast=resolved_cast,
         characters=catalog.characters,
     )
+    plan_payload = {
+        "story_prompt": request.story_prompt,
+        "lane": request.lane,
+        "policy_pack_id": policy_pack.id,
+        "anchor_render": anchor_render.model_dump(mode="json"),
+        "resolved_cast": [member.model_dump(mode="json") for member in resolved_cast],
+        "location": resolved_location.model_dump(mode="json"),
+        "episode_brief": _build_episode_brief(resolved_cast, resolved_location).model_dump(
+            mode="json"
+        ),
+        "shots": [shot.model_dump(mode="json") for shot in shots],
+    }
+    plan_payload["approval_token"] = _build_story_planner_approval_token(plan_payload)
 
-    return StoryPlannerPlanResponse(
-        story_prompt=request.story_prompt,
-        lane=request.lane,
-        policy_pack_id=policy_pack.id,
-        anchor_render=anchor_render,
-        resolved_cast=resolved_cast,
-        location=resolved_location,
-        episode_brief=_build_episode_brief(resolved_cast, resolved_location),
-        shots=shots,
-    )
+    return StoryPlannerPlanResponse.model_validate(plan_payload)

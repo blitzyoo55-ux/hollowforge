@@ -546,6 +546,14 @@ class StoryPlannerResolvedCastEntry(BaseModel):
     character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     character_name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     freeform_description: Optional[str] = Field(default=None, min_length=1, max_length=400)
+    canonical_anchor: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+    )
+    anti_drift: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    wardrobe_notes: Optional[str] = Field(default=None, min_length=1, max_length=600)
+    personality_notes: Optional[str] = Field(default=None, min_length=1, max_length=600)
     resolution_note: str = Field(min_length=1, max_length=1000)
 
 
@@ -555,6 +563,8 @@ class StoryPlannerResolvedLocationEntry(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=120)
     setting_anchor: str = Field(min_length=1, max_length=1000)
+    visual_rules: List[str] = Field(default_factory=list, min_length=1, max_length=12)
+    restricted_elements: List[str] = Field(default_factory=list, max_length=12)
     match_note: str = Field(min_length=1, max_length=1000)
 
 
@@ -615,6 +625,7 @@ class StoryPlannerPlanResponse(BaseModel):
     story_prompt: str = Field(min_length=1, max_length=2000)
     lane: StoryPlannerLane
     policy_pack_id: str = Field(min_length=1, max_length=120)
+    approval_token: str = Field(min_length=64, max_length=64)
     anchor_render: StoryPlannerAnchorRenderSnapshot
     resolved_cast: List[StoryPlannerResolvedCastEntry] = Field(default_factory=list)
     location: StoryPlannerResolvedLocationEntry

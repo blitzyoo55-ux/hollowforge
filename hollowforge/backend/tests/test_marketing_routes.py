@@ -255,6 +255,13 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
         assert preview_response.status_code == 200
         approved_plan = preview_response.json()
         assert approved_plan["anchor_render"]["checkpoint"] == "waiIllustriousSDXL_v140.safetensors"
+        assert approved_plan["approval_token"]
+        assert approved_plan["resolved_cast"][0]["canonical_anchor"]
+        assert approved_plan["resolved_cast"][0]["anti_drift"]
+        assert approved_plan["resolved_cast"][0]["wardrobe_notes"]
+        assert approved_plan["resolved_cast"][0]["personality_notes"]
+        assert approved_plan["location"]["visual_rules"]
+        assert approved_plan["location"]["restricted_elements"]
 
         def fail_catalog_reload():  # type: ignore[no-untyped-def]
             raise AssertionError("queue path should not reload story planner catalog")
@@ -292,11 +299,82 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
     assert "story_planner_anchor" in first_request.prompt
     assert "Moonlit Bathhouse" in first_request.prompt
     assert "Hana Seo" in first_request.prompt
+    assert "canonical_anchor" in first_request.prompt
+    assert "anti_drift" in first_request.prompt
+    assert "wardrobe_notes" in first_request.prompt
+    assert "personality_notes" in first_request.prompt
+    assert "location_visual_rules" in first_request.prompt
+    assert (
+        "Preserve premium spa materials such as stone, wood, steam-softened light, and muted reflective surfaces."
+        in first_request.prompt
+    )
+    assert "location_restricted_elements" in first_request.prompt
     assert "shot_01" in first_request.notes
     assert "story_planner_anchor" in first_request.notes
     assert first_request.tags is not None
     assert "story_planner_anchor" in first_request.tags
     assert "shot_01" in first_request.tags
+
+
+@pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
+async def test_story_planner_approve_and_generate_rejects_tampered_approval_token(
+    base_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _StubGenerationService()
+    app = _build_app(service)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        preview_response = await client.post(
+            f"{base_path}/tools/story-planner/plan",
+            json={
+                "story_prompt": (
+                    "Hana Seo compares notes with a quiet messenger in the "
+                    "Moonlit Bathhouse corridor after closing."
+                ),
+                "lane": "adult_nsfw",
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": "hana_seo",
+                    },
+                    {
+                        "role": "support",
+                        "source_type": "freeform",
+                        "freeform_description": "quiet messenger in a dark coat",
+                    },
+                ],
+            },
+        )
+        assert preview_response.status_code == 200
+        approved_plan = preview_response.json()
+        approved_plan["story_prompt"] = (
+            "Hana Seo compares notes in a different corridor after closing."
+        )
+
+        def fail_catalog_reload():  # type: ignore[no-untyped-def]
+            raise AssertionError("queue path should not reload story planner catalog")
+
+        monkeypatch.setattr(
+            story_planner_service,
+            "load_story_planner_catalog",
+            fail_catalog_reload,
+        )
+        response = await client.post(
+            f"{base_path}/tools/story-planner/generate-anchors",
+            json={
+                "approved_plan": approved_plan,
+                "candidate_count": 2,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "approval_token" in response.text.lower()
+    assert service.batch_requests == []
 
 
 @pytest.mark.parametrize("base_path", ["/api/v1", "/api"])
