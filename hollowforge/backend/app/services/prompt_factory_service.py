@@ -214,6 +214,10 @@ _AUTONOMY_DIRECTIVES = {
     "director": "Aggressively invent sharper scene architecture, bolder apparatus, and extremely provocative, uncensored visual tension."
 }
 
+_PROFILE_MODEL_OVERRIDE_SETTINGS = {
+    "adult_openrouter_grok": "HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL",
+}
+
 
 @dataclass
 class _ProviderConfig:
@@ -461,6 +465,19 @@ def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str 
     return None
 
 
+def _model_override_for_profile(profile_id: str, explicit_model_override: str | None) -> str | None:
+    if explicit_model_override:
+        return explicit_model_override
+    setting_name = _PROFILE_MODEL_OVERRIDE_SETTINGS.get(profile_id)
+    if not setting_name:
+        return None
+    raw_value = getattr(settings, setting_name, "")
+    if not isinstance(raw_value, str):
+        return None
+    resolved_value = raw_value.strip()
+    return resolved_value or None
+
+
 def _resolve_legacy_default_provider_config(*, model_override: str | None = None) -> _ProviderConfig:
     provider = settings.PROMPT_FACTORY_PROVIDER.strip().lower() or "openrouter"
     if provider not in _VALID_PROVIDERS:
@@ -588,12 +605,10 @@ def _provider_config_from_profile(
                 f"'{provider_kind}' in the current prompt factory runtime"
             ),
         )
-    if profile_id == "adult_openrouter_grok":
-        return _provider_config_for_kind(
-            provider_kind,
-            model_override=model_override or settings.HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL,
-        )
-    return _provider_config_for_kind(provider_kind, model_override=model_override)
+    return _provider_config_for_kind(
+        provider_kind,
+        model_override=_model_override_for_profile(profile_id, model_override),
+    )
 
 async def load_prompt_factory_checkpoint_preferences() -> dict[str, _CheckpointPreference]:
     async with get_db() as db:
