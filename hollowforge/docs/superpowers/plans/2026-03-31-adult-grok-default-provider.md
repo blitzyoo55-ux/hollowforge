@@ -507,7 +507,7 @@ Run:
 
 ```bash
 cd backend && rg -n "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE|adult_local_llm" app/services/sequence_run_service.py
-cd .. && rg -n "Expected Stage 1 default: `adult_local_llm`" docs/HOLLOWFORGE_SEQUENCE_STAGE1_RUNBOOK_20260325.md
+cd .. && rg -n 'Expected Stage 1 default: `adult_local_llm`' docs/HOLLOWFORGE_SEQUENCE_STAGE1_RUNBOOK_20260325.md
 ```
 
 Expected: The runtime code and runbook still point to `adult_local_llm` for sequence-stage adult defaults.
@@ -520,13 +520,15 @@ Run:
 curl -s http://127.0.0.1:8000/api/v1/tools/prompt-factory/capabilities | jq '.content_mode_defaults[] | select(.content_mode=="adult_nsfw")'
 curl -s -X POST http://127.0.0.1:8000/api/v1/tools/prompt-factory/generate -H 'Content-Type: application/json' -d '{"concept_brief":"adult pilot concept","count":1,"chunk_size":1,"content_mode":"adult_nsfw","provider":"default","direction_pass_enabled":false,"dedupe":false}' | jq '{provider, model, row_count:(.rows|length)}'
 curl -s -X POST http://127.0.0.1:8000/api/v1/tools/story-planner/plan -H 'Content-Type: application/json' -d '{"story_prompt":"Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.","lane":"adult_nsfw"}' | jq '{policy_pack_id, anchor_render: .anchor_render.policy_pack_id, resolved_cast}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/tools/story-planner/plan -H 'Content-Type: application/json' -d '{"story_prompt":"Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.","lane":"adult_nsfw"}' > /tmp/hf-story-plan.json
+jq '{approved_plan: ., candidate_count: 1}' /tmp/hf-story-plan.json | curl -s -X POST http://127.0.0.1:8000/api/v1/tools/story-planner/generate-anchors -H 'Content-Type: application/json' --data @- | jq '{lane, requested_shot_count, queued_generation_count}'
 ```
 
-Expected: capabilities report `adult_openrouter_grok`; Prompt Factory generate resolves through OpenRouter/Grok; Story Planner still returns `policy_pack_id: "canon_adult_nsfw_v1"` and a stable anchor payload.
+Expected: capabilities report `adult_openrouter_grok`; Prompt Factory generate resolves through OpenRouter/Grok; Story Planner still returns `policy_pack_id: "canon_adult_nsfw_v1"` with a stable anchor payload; `generate-anchors` returns the adult lane with queued shots.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/GROK_PROMPT_FACTORY_20260311.md
+git add backend/tests/test_sequence_run_service.py docs/GROK_PROMPT_FACTORY_20260311.md
 git commit -m "docs(hollowforge): document adult grok default split"
 ```
