@@ -182,6 +182,13 @@ def test_sequence_runtime_adult_default_remains_local_llm(
     )
 
 
+def test_sequence_runtime_adult_default_setting_is_local_llm() -> None:
+    assert (
+        sequence_run_service.settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
+        == "adult_local_llm"
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_ffmpeg_wraps_permission_error(
     tmp_path: Path,
