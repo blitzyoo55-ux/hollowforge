@@ -299,6 +299,7 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
     assert first_request.workflow_lane == "sdxl_illustrious"
     assert first_request.preserve_blank_negative_prompt is False
     assert "story_planner_anchor" in first_request.prompt
+    assert "policy_pack: canon_adult_nsfw_v1" in first_request.prompt
     assert "Moonlit Bathhouse" in first_request.prompt
     assert "Hana Seo" in first_request.prompt
     assert "canonical_anchor" in first_request.prompt
@@ -313,9 +314,14 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
     assert "location_restricted_elements" in first_request.prompt
     assert "shot_01" in first_request.notes
     assert "story_planner_anchor" in first_request.notes
+    assert "policy_pack=canon_adult_nsfw_v1" in first_request.notes
     assert first_request.tags is not None
     assert "story_planner_anchor" in first_request.tags
+    assert "policy_pack:canon_adult_nsfw_v1" in first_request.tags
     assert "shot_01" in first_request.tags
+    assert first_request.source_id is not None
+    assert first_request.source_id.startswith("story_planner_anchor:")
+    assert ":shot_01" in first_request.source_id
 
 
 @pytest.mark.parametrize("base_path", ["/api/v1", "/api"])

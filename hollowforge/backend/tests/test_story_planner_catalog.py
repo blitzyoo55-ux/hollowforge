@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.config import settings
 from app.models import (
     StoryPlannerCastInput,
     StoryPlannerCharacterCatalogEntry,
@@ -74,12 +75,14 @@ def test_load_story_planner_catalog_returns_spec_aligned_entries():
 def test_adult_policy_pack_points_to_adult_grok_profile():
     catalog = load_story_planner_catalog()
     adult_pack = next(pack for pack in catalog.policy_packs if pack.id == "canon_adult_nsfw_v1")
+    configured_default_profile_id = settings.HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE
 
-    assert adult_pack.prompt_provider_profile_id == "adult_openrouter_grok"
+    assert adult_pack.prompt_provider_profile_id == configured_default_profile_id
     profile = get_prompt_provider_profile(
         adult_pack.prompt_provider_profile_id,
         content_mode="adult_nsfw",
     )
+    assert configured_default_profile_id == "adult_openrouter_grok"
     assert profile["provider_kind"] == "openrouter"
 
 
