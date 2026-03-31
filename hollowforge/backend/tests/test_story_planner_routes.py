@@ -36,6 +36,8 @@ async def test_story_planner_catalog_route_returns_catalog_sections(path: str) -
     assert body["characters"]
     assert body["locations"]
     assert body["policy_packs"]
+    adult_pack = next(pack for pack in body["policy_packs"] if pack["id"] == "canon_adult_nsfw_v1")
+    assert adult_pack["prompt_provider_profile_id"] == "adult_openrouter_grok"
 
 
 @pytest.mark.parametrize(

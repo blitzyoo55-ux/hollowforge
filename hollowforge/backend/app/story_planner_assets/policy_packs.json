@@ -47,7 +47,7 @@
   {
     "id": "canon_adult_nsfw_v1",
     "lane": "adult_nsfw",
-    "prompt_provider_profile_id": "adult_local_llm_strict_json",
+    "prompt_provider_profile_id": "adult_openrouter_grok",
     "negative_prompt_mode": "recommended",
     "forbidden_defaults": [
       "minors",

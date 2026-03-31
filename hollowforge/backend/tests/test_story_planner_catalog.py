@@ -11,6 +11,7 @@ from app.models import (
     StoryPlannerPolicyPackCatalogEntry,
 )
 from app.services.story_planner_catalog import load_story_planner_catalog
+from app.services.sequence_registry import get_prompt_provider_profile
 
 
 SHARED_HARD_FORBIDDEN_BASELINE = {
@@ -68,6 +69,18 @@ def test_load_story_planner_catalog_returns_spec_aligned_entries():
         SHARED_HARD_FORBIDDEN_BASELINE.issubset(set(pack.forbidden_defaults))
         for pack in catalog.policy_packs
     )
+
+
+def test_adult_policy_pack_points_to_adult_grok_profile():
+    catalog = load_story_planner_catalog()
+    adult_pack = next(pack for pack in catalog.policy_packs if pack.id == "canon_adult_nsfw_v1")
+
+    assert adult_pack.prompt_provider_profile_id == "adult_openrouter_grok"
+    profile = get_prompt_provider_profile(
+        adult_pack.prompt_provider_profile_id,
+        content_mode="adult_nsfw",
+    )
+    assert profile["provider_kind"] == "openrouter"
 
 
 def test_story_planner_plan_request_accepts_registry_and_freeform_cast_with_supported_roles():

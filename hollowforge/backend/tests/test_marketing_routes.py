@@ -254,6 +254,8 @@ async def test_story_planner_approve_and_generate_queues_two_candidates_per_shot
         )
         assert preview_response.status_code == 200
         approved_plan = preview_response.json()
+        assert approved_plan["policy_pack_id"] == "canon_adult_nsfw_v1"
+        assert approved_plan["anchor_render"]["policy_pack_id"] == "canon_adult_nsfw_v1"
         assert approved_plan["anchor_render"]["checkpoint"] == "waiIllustriousSDXL_v140.safetensors"
         assert approved_plan["approval_token"]
         assert approved_plan["resolved_cast"][0]["canonical_anchor"]
