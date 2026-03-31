@@ -193,6 +193,90 @@ function buildPlanResponse() {
   }
 }
 
+function buildPromptOnlyPlanResponse() {
+  return {
+    ...buildPlanResponse(),
+    story_prompt: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
+    lane: 'unrestricted' as const,
+    policy_pack_id: 'canon_unrestricted_v1',
+    anchor_render: {
+      policy_pack_id: 'canon_unrestricted_v1',
+      checkpoint: 'waiIllustriousSDXL_v140.safetensors',
+      workflow_lane: 'sdxl_illustrious' as const,
+      negative_prompt: null,
+      preserve_blank_negative_prompt: true,
+    },
+    resolved_cast: [
+      {
+        role: 'lead' as const,
+        source_type: 'freeform' as const,
+        character_id: null,
+        character_name: null,
+        freeform_description: 'Hana Seo',
+        canonical_anchor: null,
+        anti_drift: null,
+        wardrobe_notes: null,
+        personality_notes: null,
+        resolution_note: 'Derived lead candidate from the story prompt.',
+      },
+      {
+        role: 'support' as const,
+        source_type: 'freeform' as const,
+        character_id: null,
+        character_name: null,
+        freeform_description: 'a quiet messenger',
+        canonical_anchor: null,
+        anti_drift: null,
+        wardrobe_notes: null,
+        personality_notes: null,
+        resolution_note: 'Derived support presence from the story prompt.',
+      },
+    ],
+    episode_brief: {
+      premise: 'At Moonlit Bathhouse, Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
+      continuity_guidance: [
+        'Keep Moonlit Bathhouse as the only location and preserve its visual rules.',
+        'Keep Hana Seo canon details stable across all shots.',
+        'Keep the support cast secondary while the prompt tension stays anchored on closing.',
+      ],
+    },
+    shots: [
+      {
+        shot_no: 1,
+        beat: 'Establish the scene',
+        camera: 'Wide establishing shot inside Moonlit Bathhouse.',
+        action: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing',
+        emotion: 'Measured alertness',
+        continuity_note: "Hold Moonlit Bathhouse's visual rules.",
+      },
+      {
+        shot_no: 2,
+        beat: 'Introduce the exchange',
+        camera: 'Medium tracking shot at shoulder height.',
+        action: 'a quiet messenger shifts the exchange around closing while Hana Seo stays in focus.',
+        emotion: 'Quiet curiosity',
+        continuity_note: 'Keep the support presence secondary and readable.',
+      },
+      {
+        shot_no: 3,
+        beat: 'Reveal the key detail',
+        camera: 'Over-the-shoulder close-up.',
+        action: 'The key detail comes into focus: closing.',
+        emotion: 'Focused concern',
+        continuity_note: 'Preserve the same wardrobe and framing.',
+      },
+      {
+        shot_no: 4,
+        beat: 'Close on a decision',
+        camera: 'Tight two-shot with shallow depth of field.',
+        action: 'Hana Seo commits to the next move after closing.',
+        emotion: 'Controlled resolve',
+        continuity_note: 'End on the same setting anchor.',
+      },
+    ],
+  }
+}
+
 function buildGenerationResponse(id: string) {
   return {
     id,
@@ -278,6 +362,33 @@ test('renders the story prompt input and Plan Episode button', async () => {
   expect(await screen.findByLabelText(/Story Prompt/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Plan Episode/i })).toBeInTheDocument()
   expect(screen.getByLabelText(/Lane/i)).toHaveValue('unrestricted')
+})
+
+test('plans a prompt-only episode without registry characters', async () => {
+  vi.mocked(planStoryEpisode).mockResolvedValueOnce(buildPromptOnlyPlanResponse())
+
+  renderMode()
+
+  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  fireEvent.change(promptInput, {
+    target: {
+      value: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
+    },
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Plan Episode/i }))
+
+  await waitFor(() => {
+    expect(planStoryEpisode).toHaveBeenCalledWith({
+      story_prompt: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
+      lane: 'unrestricted',
+      cast: [],
+    })
+  })
+
+  expect(screen.getByText('Hana Seo')).toBeInTheDocument()
+  expect(screen.getByText('a quiet messenger')).toBeInTheDocument()
+  expect(screen.getByText(/Derived lead candidate from the story prompt/i)).toBeInTheDocument()
 })
 
 test('renders plan review cards after planner preview succeeds', async () => {

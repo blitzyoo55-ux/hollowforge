@@ -72,6 +72,54 @@ _LOCATION_STOPWORDS = {
 }
 _STORY_PLANNER_APPROVAL_SECRET_FILENAME = "story_planner_approval_secret.txt"
 _STORY_PLANNER_APPROVAL_SECRET_LOCK_FILENAME = "story_planner_approval_secret.lock"
+_LEAD_VERB_MARKERS = (
+    " meets ",
+    " pauses ",
+    " compares ",
+    " arrives ",
+    " enters ",
+    " waits ",
+    " reads ",
+    " finds ",
+    " sees ",
+    " hears ",
+    " follows ",
+    " steps ",
+    " crosses ",
+    " stops ",
+    " studies ",
+    " checks ",
+)
+_SUPPORT_CONNECTOR_MARKERS = (
+    " meets ",
+    " with ",
+    " and ",
+    " beside ",
+    " alongside ",
+)
+_CLAUSE_STOP_MARKERS = (
+    " in ",
+    " at ",
+    " inside ",
+    " near ",
+    " after ",
+    " before ",
+    " while ",
+    " during ",
+    " as ",
+    " when ",
+    " because ",
+    " under ",
+    " by ",
+    " on ",
+)
+_REVEAL_DETAIL_MARKERS = (
+    " after ",
+    " when ",
+    " while ",
+    " because ",
+    " as ",
+)
 
 
 def _tokenize(text: str) -> set[str]:
@@ -116,6 +164,124 @@ def _resolve_location(
         fallback_location,
         f"No location match found; fallback to {fallback_location.name}.",
     )
+
+
+def _normalize_story_prompt(prompt: str) -> str:
+    normalized = re.sub(r"\s+", " ", prompt).strip()
+    return normalized.rstrip(" .,!?:;")
+
+
+def _sentence_case(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return cleaned
+    return f"{cleaned[0].upper()}{cleaned[1:]}"
+
+
+def _truncate_at_markers(text: str, markers: tuple[str, ...]) -> str:
+    candidate = text
+    lowered = text.lower()
+    cut_indexes = [lowered.find(marker) for marker in markers if lowered.find(marker) != -1]
+    if cut_indexes:
+        candidate = text[: min(cut_indexes)]
+    return candidate.strip(" ,.;:!-")
+
+
+def _extract_lead_from_prompt(prompt: str) -> str | None:
+    normalized = _normalize_story_prompt(prompt)
+    lowered = f" {normalized.lower()} "
+    for marker in _LEAD_VERB_MARKERS:
+        index = lowered.find(marker)
+        if index != -1:
+            lead = normalized[: max(0, index - 1)].strip(" ,.;:!-")
+            if lead:
+                return lead
+    return None
+
+
+def _extract_support_from_prompt(prompt: str, lead_hint: str | None) -> str | None:
+    normalized = _normalize_story_prompt(prompt)
+    lowered = f" {normalized.lower()} "
+
+    for marker in _SUPPORT_CONNECTOR_MARKERS:
+        index = lowered.find(marker)
+        if index == -1:
+            continue
+        start = index + len(marker) - 1
+        tail = normalized[start:].strip()
+        support = _truncate_at_markers(tail, _CLAUSE_STOP_MARKERS)
+        if support and support != lead_hint:
+            return support
+    return None
+
+
+def _extract_reveal_detail(prompt: str) -> str:
+    normalized = _normalize_story_prompt(prompt)
+    lowered = f" {normalized.lower()} "
+    for marker in _REVEAL_DETAIL_MARKERS:
+        index = lowered.find(marker)
+        if index == -1:
+            continue
+        detail = normalized[index + len(marker) - 1 :].strip()
+        detail = _truncate_at_markers(detail, (" and ",))
+        if detail:
+            return detail
+    return normalized
+
+
+def _infer_prompt_cast(
+    prompt: str,
+) -> list[StoryPlannerResolvedCastEntry]:
+    lead_hint = _extract_lead_from_prompt(prompt)
+    support_hint = _extract_support_from_prompt(prompt, lead_hint)
+    inferred_cast: list[StoryPlannerResolvedCastEntry] = []
+
+    inferred_cast.append(
+        StoryPlannerResolvedCastEntry(
+            role="lead",
+            source_type="freeform",
+            freeform_description=lead_hint or "unresolved lead implied by the story prompt",
+            resolution_note="Derived lead candidate from the story prompt.",
+        )
+    )
+
+    if support_hint:
+        inferred_cast.append(
+            StoryPlannerResolvedCastEntry(
+                role="support",
+                source_type="freeform",
+                freeform_description=support_hint,
+                resolution_note="Derived support presence from the story prompt.",
+            )
+        )
+
+    return inferred_cast
+
+
+def _merge_prompt_cast(
+    prompt: str,
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
+) -> list[StoryPlannerResolvedCastEntry]:
+    if any(member.role == "lead" for member in resolved_cast) and any(
+        member.role == "support" for member in resolved_cast
+    ):
+        return resolved_cast
+
+    inferred_by_role = {
+        member.role: member for member in _infer_prompt_cast(prompt)
+    }
+    merged = list(resolved_cast)
+
+    for role in ("lead", "support"):
+        if role in {member.role for member in merged}:
+            continue
+        inferred = inferred_by_role.get(role)
+        if inferred is not None:
+            merged.append(inferred)
+
+    role_order = {"lead": 0, "support": 1}
+    merged.sort(key=lambda member: role_order.get(member.role, 99))
+    return merged
 
 
 def _story_planner_approval_secret_path() -> Path:
@@ -523,34 +689,39 @@ def _format_cast_labels(resolved_cast: list[StoryPlannerResolvedCastEntry]) -> t
 
 
 def _build_episode_brief(
+    story_prompt: str,
     resolved_cast: list[StoryPlannerResolvedCastEntry],
     location: StoryPlannerResolvedLocationEntry,
 ) -> StoryPlannerEpisodeBrief:
     lead_label, support_label = _format_cast_labels(resolved_cast)
+    story_focus = _normalize_story_prompt(story_prompt)
+    reveal_detail = _extract_reveal_detail(story_prompt)
     return StoryPlannerEpisodeBrief(
         premise=(
-            f"At {location.name}, {lead_label} and {support_label} work through "
-            f"the prompt's central tension in a single, contained scene."
+            f"At {location.name}, {story_focus}."
         ),
         continuity_guidance=[
             f"Keep {location.name} as the only location and preserve its visual rules.",
             f"Keep {lead_label}'s canon details stable across all shots.",
-            "Keep the support cast secondary and unresolved if freeform.",
+            f"Keep the support cast secondary while the prompt tension stays anchored on {reveal_detail}.",
         ],
     )
 
 
 def _build_shots(
+    story_prompt: str,
     resolved_cast: list[StoryPlannerResolvedCastEntry],
     location: StoryPlannerResolvedLocationEntry,
 ) -> list[StoryPlannerShotCard]:
     lead_label, support_label = _format_cast_labels(resolved_cast)
+    story_focus = _normalize_story_prompt(story_prompt)
+    reveal_detail = _extract_reveal_detail(story_prompt)
     return [
         StoryPlannerShotCard(
             shot_no=1,
             beat="Establish the scene",
             camera=f"Wide establishing shot inside {location.name}.",
-            action=f"{lead_label} enters and takes in the room before anyone speaks.",
+            action=_sentence_case(story_focus),
             emotion="Measured alertness",
             continuity_note=f"Hold {location.name}'s visual rules and keep the lead silhouette consistent.",
         ),
@@ -558,7 +729,10 @@ def _build_shots(
             shot_no=2,
             beat="Introduce the exchange",
             camera="Medium tracking shot at shoulder height.",
-            action=f"{support_label} meets {lead_label} and the first cue is exchanged.",
+            action=(
+                f"{support_label} shifts the exchange around {reveal_detail} while "
+                f"{lead_label} stays in focus."
+            ),
             emotion="Quiet curiosity",
             continuity_note="Keep the support presence secondary and readable.",
         ),
@@ -566,7 +740,7 @@ def _build_shots(
             shot_no=3,
             beat="Reveal the key detail",
             camera="Over-the-shoulder close-up.",
-            action="A message, gesture, or object shifts the scene's stakes.",
+            action=f"The key detail comes into focus: {reveal_detail}.",
             emotion="Focused concern",
             continuity_note="Preserve the same wardrobe, lighting, and single-location framing.",
         ),
@@ -574,7 +748,7 @@ def _build_shots(
             shot_no=4,
             beat="Close on a decision",
             camera="Tight two-shot with shallow depth of field.",
-            action=f"{lead_label} commits to the next move while the support beat lingers.",
+            action=f"{lead_label} commits to the next move after {reveal_detail}.",
             emotion="Controlled resolve",
             continuity_note="End on the same setting anchor to preserve continuity into the next episode.",
         ),
@@ -595,8 +769,9 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
     resolved_cast = [
         _resolve_cast_member(member, catalog.characters) for member in request.cast
     ]
+    resolved_cast = _merge_prompt_cast(request.story_prompt, resolved_cast)
     policy_pack = _select_policy_pack(request.lane, catalog.policy_packs)
-    shots = _build_shots(resolved_cast, resolved_location)
+    shots = _build_shots(request.story_prompt, resolved_cast, resolved_location)
     anchor_render = _build_story_planner_anchor_render_snapshot(
         lane=request.lane,
         policy_pack=policy_pack,
@@ -610,7 +785,11 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         "anchor_render": anchor_render.model_dump(mode="json"),
         "resolved_cast": [member.model_dump(mode="json") for member in resolved_cast],
         "location": resolved_location.model_dump(mode="json"),
-        "episode_brief": _build_episode_brief(resolved_cast, resolved_location).model_dump(
+        "episode_brief": _build_episode_brief(
+            request.story_prompt,
+            resolved_cast,
+            resolved_location,
+        ).model_dump(
             mode="json"
         ),
         "shots": [shot.model_dump(mode="json") for shot in shots],
