@@ -162,6 +162,26 @@ def test_resolve_ffmpeg_bin_rejects_non_executable_explicit_path(
         rough_cut_service.resolve_ffmpeg_bin()
 
 
+def test_sequence_runtime_adult_default_remains_local_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sequence_run_service.settings,
+        "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_local_llm",
+    )
+    monkeypatch.setattr(
+        sequence_run_service.settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_openrouter_grok",
+    )
+
+    assert (
+        sequence_run_service._default_prompt_provider_profile_id("adult_nsfw")
+        == "adult_local_llm"
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_ffmpeg_wraps_permission_error(
     tmp_path: Path,

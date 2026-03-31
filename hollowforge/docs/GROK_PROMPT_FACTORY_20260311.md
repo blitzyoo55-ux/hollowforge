@@ -174,3 +174,12 @@ Do not jump straight to `count=100+` until:
 - HollowForge import rows stay consistent
 
 Once that is confirmed, this prompt-factory path is suitable for high-volume batch generation.
+
+## Adult Lane Default Split
+
+Prompt Factory adult defaults now use OpenRouter/Grok through:
+
+- `HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE`
+- `HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL`
+
+This only changes the prompt-factory lane. Sequence runtime adult defaults remain `adult_local_llm`, so the Stage 1 sequence path keeps its existing local-first behavior unless that runtime setting is changed separately.
