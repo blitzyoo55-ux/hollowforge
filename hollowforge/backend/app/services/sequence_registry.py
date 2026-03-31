@@ -56,6 +56,13 @@ _PROMPT_PROVIDER_PROFILES: dict[str, dict[str, Any]] = {
         "structured_json": True,
         "strict_json": False,
     },
+    "adult_openrouter_grok": {
+        "id": "adult_openrouter_grok",
+        "content_mode": "adult_nsfw",
+        "provider_kind": "openrouter",
+        "structured_json": True,
+        "strict_json": False,
+    },
     "adult_local_llm": {
         "id": "adult_local_llm",
         "content_mode": "adult_nsfw",

@@ -44,6 +44,13 @@ def test_adult_prompt_profile_defaults_to_local() -> None:
     assert profile["provider_kind"] == "local_llm"
 
 
+def test_adult_openrouter_grok_profile_is_registered() -> None:
+    profile = get_prompt_provider_profile("adult_openrouter_grok", content_mode="adult_nsfw")
+    assert profile["provider_kind"] == "openrouter"
+    assert profile["structured_json"] is True
+    assert profile["strict_json"] is False
+
+
 def test_registry_lookups_return_independent_copies() -> None:
     first = get_beat_grammar("stage1_single_location_v1")
     first["beats"].append("mutated")

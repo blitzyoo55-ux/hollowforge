@@ -190,6 +190,14 @@ class Settings:
         "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE",
         "adult_local_llm",
     ).strip() or "adult_local_llm"
+    HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE: str = os.getenv(
+        "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_openrouter_grok",
+    ).strip() or "adult_openrouter_grok"
+    HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL: str = os.getenv(
+        "HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL",
+        "x-ai/grok-4.1-fast",
+    ).strip() or "x-ai/grok-4.1-fast"
     HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL: str = os.getenv(
         "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL",
         "http://127.0.0.1:11434/v1",
