@@ -455,7 +455,7 @@ def _require_provider_config_ready(
 
 def _default_prompt_provider_profile_id(content_mode: str | None = None) -> str | None:
     if content_mode == "adult_nsfw":
-        return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
+        return settings.HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE
     if content_mode == "all_ages":
         return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE
     return None
@@ -587,6 +587,11 @@ def _provider_config_from_profile(
                 f"Prompt provider profile '{profile_id}' resolves to unsupported provider kind "
                 f"'{provider_kind}' in the current prompt factory runtime"
             ),
+        )
+    if profile_id == "adult_openrouter_grok":
+        return _provider_config_for_kind(
+            provider_kind,
+            model_override=model_override or settings.HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL,
         )
     return _provider_config_for_kind(provider_kind, model_override=model_override)
 

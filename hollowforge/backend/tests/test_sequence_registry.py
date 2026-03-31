@@ -323,6 +323,7 @@ def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypat
     monkeypatch.setattr(settings, "XAI_API_KEY", "xai-key")
     monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE", "safe_hosted_grok")
+    monkeypatch.setattr(settings, "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL", "http://local-llm.test/v1")
     monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL", "local-test-model")
@@ -341,6 +342,183 @@ def test_prompt_factory_capabilities_follow_profile_default_resolution(monkeypat
     assert defaults_by_mode["adult_nsfw"].provider_kind == "local_llm"
     assert defaults_by_mode["adult_nsfw"].model == "local-test-model"
     assert defaults_by_mode["adult_nsfw"].ready is True
+
+
+def test_prompt_factory_capabilities_use_prompt_facing_adult_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+    monkeypatch.setenv("XAI_API_KEY", "xai-key")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE", "adult_openrouter_grok")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
+    monkeypatch.setenv("HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "openrouter-key")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "xai-key")
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_openrouter_grok",
+    )
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL",
+        "x-ai/grok-4.1-fast",
+    )
+    monkeypatch.setattr(settings, "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE", "adult_local_llm")
+
+    capabilities = prompt_factory_service.get_prompt_factory_capabilities()
+    defaults_by_mode = {item.content_mode: item for item in capabilities.content_mode_defaults}
+
+    assert defaults_by_mode["adult_nsfw"].prompt_provider_profile_id == "adult_openrouter_grok"
+    assert defaults_by_mode["adult_nsfw"].provider_kind == "openrouter"
+    assert defaults_by_mode["adult_nsfw"].model == "x-ai/grok-4.1-fast"
+    assert defaults_by_mode["adult_nsfw"].ready is True
+    assert settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE == "adult_local_llm"
+
+
+def test_prompt_factory_capabilities_report_adult_default_not_ready_without_openrouter_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE", "adult_openrouter_grok")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_openrouter_grok",
+    )
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL",
+        "x-ai/grok-4.1-fast",
+    )
+
+    capabilities = prompt_factory_service.get_prompt_factory_capabilities()
+    defaults_by_mode = {item.content_mode: item for item in capabilities.content_mode_defaults}
+
+    assert defaults_by_mode["adult_nsfw"].prompt_provider_profile_id == "adult_openrouter_grok"
+    assert defaults_by_mode["adult_nsfw"].provider_kind == "openrouter"
+    assert defaults_by_mode["adult_nsfw"].ready is False
+
+
+@pytest.mark.asyncio
+async def test_generate_prompt_batch_uses_adult_prompt_facing_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE", "adult_openrouter_grok")
+    monkeypatch.setenv("HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
+    monkeypatch.setenv("PROMPT_FACTORY_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "openrouter-key")
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_DEFAULT_ADULT_PROMPT_PROFILE",
+        "adult_openrouter_grok",
+    )
+    monkeypatch.setattr(
+        settings,
+        "HOLLOWFORGE_PROMPT_FACTORY_ADULT_OPENROUTER_MODEL",
+        "x-ai/grok-4.1-fast",
+    )
+    monkeypatch.setattr(settings, "PROMPT_FACTORY_PROVIDER", "openrouter")
+
+    benchmark = PromptFactoryBenchmarkResponse(
+        favorites_total=0,
+        workflow_lane="sdxl_illustrious",
+        prompt_dialect="natural_language",
+        top_checkpoints=["checkpoint-a"],
+        top_loras=["lora-a"],
+        avg_lora_strength=0.5,
+        cfg_values=[5.0],
+        steps_values=[30],
+        sampler="euler",
+        scheduler="normal",
+        clip_skip=2,
+        width=832,
+        height=1216,
+        theme_keywords=["theme"],
+        material_cues=["material"],
+        control_cues=["control"],
+        camera_cues=["camera"],
+        environment_cues=["environment"],
+        exposure_cues=["exposure"],
+        negative_prompt="negative",
+    )
+
+    async def _fake_load_prompt_benchmark_snapshot(requested_lane: str = "auto") -> PromptFactoryBenchmarkResponse:
+        return benchmark
+
+    class _FakeCompletion:
+        def __init__(self) -> None:
+            self.choices = [
+                types.SimpleNamespace(
+                    message=types.SimpleNamespace(
+                        content=json.dumps(
+                            {
+                                "rows": [
+                                    {
+                                        "codename": "shot-a",
+                                        "series": "series-a",
+                                        "checkpoint": "checkpoint-a",
+                                        "loras": [],
+                                        "sampler": "euler",
+                                        "steps": 30,
+                                        "cfg": 5.0,
+                                        "clip_skip": 2,
+                                        "width": 832,
+                                        "height": 1216,
+                                        "positive_prompt": "prompt-a",
+                                        "negative_prompt": "negative-a",
+                                    }
+                                ]
+                            }
+                        )
+                    )
+                )
+            ]
+
+    class _FakeCompletions:
+        def __init__(self, recorder: dict[str, object]) -> None:
+            self._recorder = recorder
+
+        async def create(self, **kwargs: object) -> _FakeCompletion:
+            self._recorder["create_kwargs"] = kwargs
+            return _FakeCompletion()
+
+    class _FakeChat:
+        def __init__(self, recorder: dict[str, object]) -> None:
+            self.completions = _FakeCompletions(recorder)
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, *, base_url: str, api_key: str) -> None:
+            recorder["base_url"] = base_url
+            recorder["api_key"] = api_key
+            self.chat = _FakeChat(recorder)
+
+    recorder: dict[str, object] = {}
+    fake_openai = types.SimpleNamespace(AsyncOpenAI=_FakeAsyncOpenAI)
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    monkeypatch.setattr(prompt_factory_service, "load_prompt_benchmark_snapshot", _fake_load_prompt_benchmark_snapshot)
+
+    request = PromptBatchGenerateRequest(
+        concept_brief="adult pilot concept",
+        workflow_lane="auto",
+        count=1,
+        chunk_size=1,
+        content_mode="adult_nsfw",
+        provider="default",
+        direction_pass_enabled=False,
+        dedupe=False,
+    )
+
+    response = await prompt_factory_service.generate_prompt_batch(request)
+
+    assert recorder["base_url"] == "https://openrouter.ai/api/v1"
+    assert recorder["api_key"] == "openrouter-key"
+    assert "response_format" not in recorder["create_kwargs"]
+    assert response.provider == "openrouter"
+    assert response.model == "x-ai/grok-4.1-fast"
 
 
 @pytest.mark.asyncio
