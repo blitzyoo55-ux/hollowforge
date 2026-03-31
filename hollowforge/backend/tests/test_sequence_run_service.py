@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import sqlite3
 from pathlib import Path
@@ -187,6 +188,42 @@ def test_sequence_runtime_adult_default_setting_is_local_llm() -> None:
         sequence_run_service.settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
         == "adult_local_llm"
     )
+
+
+def test_sequence_runtime_adult_default_code_literal_is_local_llm() -> None:
+    config_path = Path(__file__).resolve().parents[1] / "app" / "config.py"
+    module = ast.parse(config_path.read_text(encoding="utf-8"), filename=str(config_path))
+
+    settings_class = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "Settings"
+    )
+    assignment = next(
+        node
+        for node in settings_class.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE"
+    )
+    assert isinstance(assignment.value, ast.BoolOp)
+    assert isinstance(assignment.value.op, ast.Or)
+
+    getenv_call = assignment.value.values[0]
+    fallback_literal = assignment.value.values[1]
+
+    assert isinstance(getenv_call, ast.Call)
+    assert isinstance(getenv_call.func, ast.Attribute)
+    assert getenv_call.func.attr == "strip"
+    assert isinstance(getenv_call.func.value, ast.Call)
+    assert isinstance(getenv_call.func.value.func, ast.Attribute)
+    assert getenv_call.func.value.func.attr == "getenv"
+    assert len(getenv_call.func.value.args) == 2
+    assert isinstance(getenv_call.func.value.args[1], ast.Constant)
+    assert getenv_call.func.value.args[1].value == "adult_local_llm"
+
+    assert isinstance(fallback_literal, ast.Constant)
+    assert fallback_literal.value == "adult_local_llm"
 
 
 @pytest.mark.asyncio
