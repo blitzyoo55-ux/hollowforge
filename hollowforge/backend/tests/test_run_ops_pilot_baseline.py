@@ -211,6 +211,32 @@ def test_execute_check_reports_zero_exit_as_pass(tmp_path: Path) -> None:
     assert result.summary == "ok from stdout"
 
 
+def test_execute_check_collapses_multiline_success_summary_and_preserves_details(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="backend tests",
+        command=["pytest"],
+        cwd=tmp_path,
+        timeout_sec=60,
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(
+            args=kwargs["args"],
+            returncode=0,
+            stdout="................................ [100%]\n62 passed in 3.03s\n",
+            stderr="",
+        )
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "PASS"
+    assert result.summary == "62 passed in 3.03s"
+    assert result.details == "................................ [100%]\n62 passed in 3.03s"
+
+
 def test_execute_check_reports_non_zero_exit_prefers_stderr_summary(tmp_path: Path) -> None:
     module = _load_module()
     spec = module.CheckSpec(
@@ -232,6 +258,32 @@ def test_execute_check_reports_non_zero_exit_prefers_stderr_summary(tmp_path: Pa
 
     assert result.status == "FAIL"
     assert result.summary == "boom"
+
+
+def test_execute_check_collapses_multiline_failure_summary_and_preserves_details(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="story planner smoke",
+        command=["python"],
+        cwd=tmp_path,
+        timeout_sec=60,
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(
+            args=kwargs["args"],
+            returncode=1,
+            stdout="ignored stdout",
+            stderr="[ERROR] connection refused\nTraceback line 1\nTraceback line 2\n",
+        )
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "FAIL"
+    assert result.summary == "[ERROR] connection refused"
+    assert result.details == "[ERROR] connection refused\nTraceback line 1\nTraceback line 2"
 
 
 def test_execute_check_uses_parser_result_on_pass(tmp_path: Path) -> None:
@@ -394,6 +446,27 @@ def test_parse_story_planner_smoke_summary_fails_on_missing_required_label() -> 
 
     assert result.status == "FAIL"
     assert result.summary == "missing labels: policy_pack_id:"
+
+
+def test_parse_story_planner_smoke_summary_fails_on_none_placeholder_values() -> None:
+    module = _load_module()
+    completed = subprocess.CompletedProcess(
+        args=["python"],
+        returncode=0,
+        stdout=(
+            "plan_result:\n"
+            "lane: None\n"
+            "policy_pack_id: None\n"
+            "queue_result:\n"
+            "queued_generation_count: None\n"
+        ),
+        stderr="",
+    )
+
+    result = module._parse_story_planner_smoke_result(completed)
+
+    assert result.status == "FAIL"
+    assert result.summary == "missing labels: lane:, policy_pack_id:, queued_generation_count:"
 
 
 def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(

@@ -63,6 +63,21 @@ def _extract_labeled_value(stdout: str, label: str) -> str | None:
     return None
 
 
+def _summarize_output(text: str, *, prefer_last_line: bool) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    selected_line = lines[-1] if prefer_last_line else lines[0]
+    return " ".join(selected_line.split())
+
+
+def _is_missing_value(value: str | None) -> bool:
+    if value is None:
+        return True
+    normalized = value.strip()
+    return not normalized or normalized == "None"
+
+
 def _parse_provider_resolution_result(
     completed: subprocess.CompletedProcess[str],
 ) -> CheckResult:
@@ -131,6 +146,13 @@ def _parse_story_planner_smoke_result(
             continue
         if saw_queue_result and line.startswith("queued_generation_count:"):
             queued_generation_count = line.split(":", 1)[1].strip()
+
+    if _is_missing_value(lane):
+        lane = None
+    if _is_missing_value(policy_pack_id):
+        policy_pack_id = None
+    if _is_missing_value(queued_generation_count):
+        queued_generation_count = None
 
     if saw_plan_result and saw_queue_result and lane and policy_pack_id and queued_generation_count:
         return CheckResult(
@@ -262,7 +284,12 @@ def _execute_command_check(
     details = stderr or stdout
 
     if completed.returncode != 0:
-        summary = stderr or stdout or f"exit {completed.returncode}"
+        summary_source = stderr or stdout
+        summary = (
+            _summarize_output(summary_source, prefer_last_line=False)
+            if summary_source
+            else f"exit {completed.returncode}"
+        )
         return CheckResult(spec.name, "FAIL", summary, details, duration_sec)
 
     if spec.parser is not None:
@@ -275,7 +302,8 @@ def _execute_command_check(
             duration_sec=duration_sec,
         )
 
-    return CheckResult(spec.name, "PASS", stdout or "ok", details, duration_sec)
+    summary = _summarize_output(stdout, prefer_last_line=True) or "ok"
+    return CheckResult(spec.name, "PASS", summary, details, duration_sec)
 
 
 def _run_checks(
