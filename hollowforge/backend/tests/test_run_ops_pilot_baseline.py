@@ -211,7 +211,7 @@ def test_execute_check_reports_zero_exit_as_pass(tmp_path: Path) -> None:
     assert result.summary == "ok from stdout"
 
 
-def test_execute_check_reports_non_zero_exit_as_fail(tmp_path: Path) -> None:
+def test_execute_check_reports_non_zero_exit_prefers_stderr_summary(tmp_path: Path) -> None:
     module = _load_module()
     spec = module.CheckSpec(
         name="frontend tests",
@@ -231,17 +231,27 @@ def test_execute_check_reports_non_zero_exit_as_fail(tmp_path: Path) -> None:
     result = module._execute_command_check(spec, run_command=fake_subprocess_run)
 
     assert result.status == "FAIL"
-    assert result.summary == "exit 3"
+    assert result.summary == "boom"
 
 
-def test_execute_check_uses_parser_summary_on_pass(tmp_path: Path) -> None:
+def test_execute_check_uses_parser_result_on_pass(tmp_path: Path) -> None:
     module = _load_module()
+
+    def parser(completed: subprocess.CompletedProcess[str]) -> object:
+        return module.CheckResult(
+            name="parser check",
+            status="PASS",
+            summary=f"parsed: {completed.stdout.upper()}",
+            details=completed.stdout,
+            duration_sec=999.0,
+        )
+
     spec = module.CheckSpec(
         name="parser check",
         command=["tool"],
         cwd=tmp_path,
         timeout_sec=60,
-        parser=lambda stdout: f"parsed: {stdout.upper()}",
+        parser=parser,
     )
 
     def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -321,7 +331,7 @@ def test_parse_story_planner_smoke_summary_extracts_lane_policy_and_queue() -> N
         stderr="",
     )
 
-    result = module._parse_story_planner_smoke_result(completed, duration_sec=2.4)
+    result = module._parse_story_planner_smoke_result(completed)
 
     assert result.status == "PASS"
     assert result.summary == "lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8"
@@ -339,10 +349,51 @@ def test_parse_provider_resolution_summary_extracts_both_defaults() -> None:
         stderr="",
     )
 
-    result = module._parse_provider_resolution_result(completed, duration_sec=0.2)
+    result = module._parse_provider_resolution_result(completed)
 
     assert result.status == "PASS"
     assert result.summary == "prompt=adult_openrouter_grok runtime=adult_local_llm"
+
+
+def test_parse_provider_resolution_summary_fails_on_mismatched_default() -> None:
+    module = _load_module()
+    completed = subprocess.CompletedProcess(
+        args=["python"],
+        returncode=0,
+        stdout=(
+            "prompt_factory_adult_default: adult_local_llm\n"
+            "sequence_runtime_adult_default: adult_local_llm\n"
+        ),
+        stderr="",
+    )
+
+    result = module._parse_provider_resolution_result(completed)
+
+    assert result.status == "FAIL"
+    assert (
+        result.summary
+        == "unexpected defaults: prompt=adult_local_llm runtime=adult_local_llm"
+    )
+
+
+def test_parse_story_planner_smoke_summary_fails_on_missing_required_label() -> None:
+    module = _load_module()
+    completed = subprocess.CompletedProcess(
+        args=["python"],
+        returncode=0,
+        stdout=(
+            "plan_result:\n"
+            "lane: adult_nsfw\n"
+            "queue_result:\n"
+            "queued_generation_count: 8\n"
+        ),
+        stderr="",
+    )
+
+    result = module._parse_story_planner_smoke_result(completed)
+
+    assert result.status == "FAIL"
+    assert result.summary == "missing labels: policy_pack_id:"
 
 
 def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(
@@ -445,3 +496,74 @@ def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(
         in stdout
     )
     assert log_path.read_text(encoding="utf-8") == original
+
+
+def test_dry_run_main_prints_final_aggregate_fail_status(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _load_module()
+    log_path = tmp_path / "pilot-log.md"
+    log_path.write_text(
+        "# HollowForge Ops Pilot Log\n\n"
+        "## Baseline\n"
+        "- backend tests:\n"
+        "- frontend tests:\n"
+        "- adult provider resolution:\n"
+        "- story planner smoke:\n",
+        encoding="utf-8",
+    )
+
+    def fake_build_check_specs(**kwargs):  # type: ignore[no-untyped-def]
+        return [
+            module.CheckSpec(
+                name="backend tests",
+                command=["backend"],
+                cwd=Path("/tmp"),
+                timeout_sec=1,
+            )
+        ]
+
+    def fake_run_checks(specs):  # type: ignore[no-untyped-def]
+        assert len(specs) == 1
+        return [
+            module.CheckResult(
+                name="backend tests",
+                status="PASS",
+                summary="ok",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="frontend tests",
+                status="FAIL",
+                summary="boom",
+                details="[ERROR] boom",
+                duration_sec=0.2,
+            ),
+            module.CheckResult(
+                name="adult provider resolution",
+                status="PASS",
+                summary="prompt=adult_openrouter_grok runtime=adult_local_llm",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="story planner smoke",
+                status="FAIL",
+                summary="lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=0",
+                details="[ERROR] connection refused",
+                duration_sec=0.4,
+            ),
+        ]
+
+    monkeypatch.setattr(module, "_build_check_specs", fake_build_check_specs)
+    monkeypatch.setattr(module, "_run_checks", fake_run_checks)
+
+    exit_code = module.main(["--dry-run", "--log-path", str(log_path)])
+
+    stdout = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Overall status: FAIL" in stdout

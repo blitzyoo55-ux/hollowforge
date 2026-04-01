@@ -1,5 +1,4 @@
 import argparse
-import inspect
 import subprocess
 import sys
 import time
@@ -53,7 +52,7 @@ class CheckSpec:
     command: list[str]
     cwd: Path
     timeout_sec: float
-    parser: Callable[..., str | CheckResult] | None = None
+    parser: Callable[[subprocess.CompletedProcess[str]], CheckResult] | None = None
 
 
 def _extract_labeled_value(stdout: str, label: str) -> str | None:
@@ -64,30 +63,8 @@ def _extract_labeled_value(stdout: str, label: str) -> str | None:
     return None
 
 
-def _call_parser(
-    parser: Callable[..., str | CheckResult],
-    completed: subprocess.CompletedProcess[str],
-    duration_sec: float,
-    *,
-    fallback_name: str,
-) -> CheckResult:
-    parameter_count = len(inspect.signature(parser).parameters)
-    if parameter_count == 1:
-        summary = parser((completed.stdout or "").strip())
-        assert isinstance(summary, str)
-        details = ((completed.stderr or "").strip() or (completed.stdout or "").strip())
-        status = "PASS" if completed.returncode == 0 else "FAIL"
-        return CheckResult(fallback_name, status, summary, details, duration_sec)
-
-    parsed = parser(completed, duration_sec=duration_sec)
-    assert isinstance(parsed, CheckResult)
-    return parsed
-
-
 def _parse_provider_resolution_result(
     completed: subprocess.CompletedProcess[str],
-    *,
-    duration_sec: float,
 ) -> CheckResult:
     stdout = (completed.stdout or "").strip()
     prompt_default = _extract_labeled_value(stdout, PROVIDER_PROMPT_LABEL)
@@ -105,7 +82,7 @@ def _parse_provider_resolution_result(
             status="PASS",
             summary=expected_summary,
             details=stdout,
-            duration_sec=duration_sec,
+            duration_sec=0.0,
         )
 
     missing_labels: list[str] = []
@@ -124,14 +101,12 @@ def _parse_provider_resolution_result(
         status="FAIL",
         summary=summary,
         details=stdout,
-        duration_sec=duration_sec,
+        duration_sec=0.0,
     )
 
 
 def _parse_story_planner_smoke_result(
     completed: subprocess.CompletedProcess[str],
-    *,
-    duration_sec: float,
 ) -> CheckResult:
     stdout = (completed.stdout or "").strip()
     saw_plan_result = False
@@ -166,7 +141,7 @@ def _parse_story_planner_smoke_result(
                 f"queued={queued_generation_count}"
             ),
             details=stdout,
-            duration_sec=duration_sec,
+            duration_sec=0.0,
         )
 
     missing_parts: list[str] = []
@@ -185,7 +160,7 @@ def _parse_story_planner_smoke_result(
         status="FAIL",
         summary="missing labels: " + ", ".join(missing_parts),
         details=stdout,
-        duration_sec=duration_sec,
+        duration_sec=0.0,
     )
 
 
@@ -287,11 +262,18 @@ def _execute_command_check(
     details = stderr or stdout
 
     if completed.returncode != 0:
-        summary = stdout or f"exit {completed.returncode}"
+        summary = stderr or stdout or f"exit {completed.returncode}"
         return CheckResult(spec.name, "FAIL", summary, details, duration_sec)
 
     if spec.parser is not None:
-        return _call_parser(spec.parser, completed, duration_sec, fallback_name=spec.name)
+        parsed = spec.parser(completed)
+        return CheckResult(
+            name=parsed.name,
+            status=parsed.status,
+            summary=parsed.summary,
+            details=parsed.details,
+            duration_sec=duration_sec,
+        )
 
     return CheckResult(spec.name, "PASS", stdout or "ok", details, duration_sec)
 
@@ -377,10 +359,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         rendered_baseline=rendered_baseline,
         dry_run=args.dry_run,
     )
+    overall_status = "PASS" if all(result.status == "PASS" for result in results) else "FAIL"
 
     print("")
     print(written_baseline.rstrip())
-    return 0 if all(result.status == "PASS" for result in results) else 1
+    print("")
+    print(f"Overall status: {overall_status}")
+    return 0 if overall_status == "PASS" else 1
 
 
 if __name__ == "__main__":
