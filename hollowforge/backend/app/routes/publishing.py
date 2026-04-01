@@ -142,8 +142,7 @@ def _compute_engagement_score(payload: EngagementSnapshotCreate) -> float:
     )
 
 
-@router.get("/readiness", response_model=PublishingReadinessResponse)
-async def get_publishing_readiness() -> PublishingReadinessResponse:
+def _get_publishing_readiness() -> PublishingReadinessResponse:
     caption_generation_ready = bool(settings.OPENROUTER_API_KEY.strip())
     missing_requirements: list[str] = []
     degraded_mode: Literal["full", "draft_only"] = "full"
@@ -161,6 +160,11 @@ async def get_publishing_readiness() -> PublishingReadinessResponse:
         missing_requirements=missing_requirements,
         notes=[],
     )
+
+
+@router.get("/readiness", response_model=PublishingReadinessResponse)
+async def get_publishing_readiness() -> PublishingReadinessResponse:
+    return _get_publishing_readiness()
 
 
 async def _require_generation(generation_id: str) -> dict[str, Any]:
@@ -222,6 +226,13 @@ async def generate_caption_variant(
     generation_id: str,
     payload: CaptionGenerateRequest,
 ) -> CaptionVariantResponse:
+    readiness = _get_publishing_readiness()
+    if not readiness.caption_generation_ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Caption generation unavailable: OPENROUTER_API_KEY is not configured",
+        )
+
     generation = await _require_generation(generation_id)
     image_path = generation.get("image_path")
     if not isinstance(image_path, str) or not image_path:

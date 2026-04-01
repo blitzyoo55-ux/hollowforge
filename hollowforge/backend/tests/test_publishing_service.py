@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest
 
+from app.config import settings
 from app.db import get_db
 from app.models import PublishJobCreate
 from app.routes.publishing import (
@@ -86,6 +87,23 @@ async def test_route_draft_publish_job_creation_is_idempotent_for_same_pair():
 
     assert second_job.id == first_job.id
     assert second_job.status == "draft"
+
+
+async def test_draft_publish_job_creation_still_succeeds_without_openrouter_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+
+    job = await create_publish_job(
+        PublishJobCreate(
+            generation_id="gen-ready-2",
+            platform="twitter",
+            status="draft",
+        )
+    )
+
+    assert job.generation_id == "gen-ready-2"
+    assert job.status == "draft"
 
 
 async def test_generation_publish_jobs_route_lists_jobs_for_requested_generation():
