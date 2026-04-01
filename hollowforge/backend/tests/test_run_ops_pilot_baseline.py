@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 
@@ -144,3 +145,43 @@ def test_write_baseline_section_preserves_other_sections(tmp_path: Path) -> None
     assert "premise: keep-me" in updated
     assert "selected generation ids: keep-me" in updated
     assert "generation id: keep-me" in updated
+
+
+def test_run_checks_continues_after_failure() -> None:
+    module = _load_module()
+    seen: list[str] = []
+
+    def fake_runner(spec: module.CheckSpec) -> module.CheckResult:
+        seen.append(spec.name)
+        if spec.name == "backend tests":
+            return module.CheckResult(spec.name, "FAIL", "pytest failed", "exit 1", 0.2)
+        return module.CheckResult(spec.name, "PASS", "ok", "", 0.1)
+
+    results = module._run_checks(
+        [
+            module.CheckSpec(name="backend tests", command=["backend"], cwd=Path("/tmp"), timeout_sec=1),
+            module.CheckSpec(name="frontend tests", command=["frontend"], cwd=Path("/tmp"), timeout_sec=1),
+        ],
+        runner=fake_runner,
+    )
+
+    assert seen == ["backend tests", "frontend tests"]
+    assert [result.status for result in results] == ["FAIL", "PASS"]
+
+
+def test_execute_check_reports_timeout_as_fail(tmp_path: Path) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="frontend tests",
+        command=["npm", "test"],
+        cwd=tmp_path,
+        timeout_sec=180,
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise subprocess.TimeoutExpired(cmd=kwargs["args"], timeout=180)
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "FAIL"
+    assert result.summary == "timeout after 180s"
