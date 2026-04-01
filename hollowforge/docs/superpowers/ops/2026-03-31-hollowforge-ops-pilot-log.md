@@ -3,6 +3,7 @@
 ## Baseline
 - backend tests:
 - frontend tests:
+- adult provider resolution:
 - story planner smoke:
 
 ## Episode Runs
