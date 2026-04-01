@@ -270,6 +270,18 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
         </div>
       </section>
 
+      {readinessQuery.isLoading && (
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-300">
+          Checking publishing readiness...
+        </section>
+      )}
+
+      {readinessQuery.isError && (
+        <section className="rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4 text-sm text-amber-100/90">
+          Publishing readiness is unavailable right now.
+        </section>
+      )}
+
       {(invalidIds.length > 0 || missingGenerationIds.length > 0) && (
         <section className="rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4 text-sm text-amber-100/90">
           {invalidIds.length > 0 && (
@@ -302,6 +314,13 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
               item={item}
               controls={controls}
               readiness={readinessQuery.data ?? null}
+              readinessState={
+                readinessQuery.isError
+                  ? 'error'
+                  : readinessQuery.isLoading
+                    ? 'loading'
+                    : 'ready'
+              }
               captionQuery={{
                 data: (captionQueries[index]?.data ?? []) as CaptionVariantResponse[],
                 isLoading: captionQueries[index]?.isLoading ?? false,

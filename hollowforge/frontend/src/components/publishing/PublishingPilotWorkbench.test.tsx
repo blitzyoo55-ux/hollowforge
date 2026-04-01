@@ -24,11 +24,13 @@ vi.mock('./PublishingPilotCard', () => ({
     controls,
     captionQuery,
     publishJobsQuery,
+    readinessState,
   }: {
     item: { generation_id: string }
     controls: { platform: string; tone: string; channel: string }
     captionQuery: { data: unknown[]; isLoading: boolean; isError: boolean }
     publishJobsQuery: { data: unknown[]; isLoading: boolean; isError: boolean }
+    readinessState?: string
   }) => (
     <div data-testid={`publishing-card-${item.generation_id}`}>
       <div>{item.generation_id}</div>
@@ -37,6 +39,7 @@ vi.mock('./PublishingPilotCard', () => ({
       <div>{`jobs:${publishJobsQuery.data.length}`}</div>
       <div>{`caption-loading:${captionQuery.isLoading}`}</div>
       <div>{`jobs-loading:${publishJobsQuery.isLoading}`}</div>
+      <div>{`readiness:${readinessState ?? 'unknown'}`}</div>
     </div>
   ),
 }))

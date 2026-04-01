@@ -29,6 +29,7 @@ interface PublishingPilotCardProps {
     isError: boolean
   }
   readiness: PublishingReadinessResponse | null
+  readinessState: 'loading' | 'error' | 'ready'
   publishJobsQuery: {
     data: PublishJobResponse[]
     isLoading: boolean
@@ -67,6 +68,7 @@ export default function PublishingPilotCard({
   controls,
   captionQuery,
   readiness,
+  readinessState,
   publishJobsQuery,
 }: PublishingPilotCardProps) {
   const queryClient = useQueryClient()
@@ -160,18 +162,23 @@ export default function PublishingPilotCard({
 
   const previewPath = getAssetPath(item.thumbnail_path ?? item.image_path)
   const hasApprovedCaption = Boolean(approvedCaption?.id)
-  const canGenerateCaption = readiness?.caption_generation_ready ?? true
-  const generateCaptionReason = !canGenerateCaption
-    ? [
-        readiness?.missing_requirements.includes('OPENROUTER_API_KEY')
-          ? 'OPENROUTER_API_KEY is not configured'
-          : readiness?.missing_requirements.join(', '),
-        readiness?.notes.join(' '),
-      ]
-        .filter(Boolean)
-        .join(' ')
-    : ''
-  const canCreateDraft = (readiness?.draft_publish_ready ?? true) && hasApprovedCaption && !existingDraft
+  const readinessKnown = readinessState === 'ready' && readiness !== null
+  const canGenerateCaption = readinessKnown && readiness.caption_generation_ready
+  const canCreateDraft = readinessKnown && readiness.draft_publish_ready && hasApprovedCaption && !existingDraft
+  const readinessNotice = !readinessKnown
+    ? readinessState === 'loading'
+      ? 'Publishing readiness is still loading.'
+      : 'Publishing readiness is unavailable right now.'
+    : !readiness.caption_generation_ready
+      ? [
+          readiness.missing_requirements.includes('OPENROUTER_API_KEY')
+            ? 'OPENROUTER_API_KEY is not configured'
+            : readiness.missing_requirements.join(', '),
+          readiness.notes.join(' '),
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : ''
 
   return (
     <article className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/80">
@@ -231,8 +238,8 @@ export default function PublishingPilotCard({
             </button>
           </div>
 
-          {!canGenerateCaption && generateCaptionReason && (
-            <p className="text-sm text-amber-200/90">{generateCaptionReason}</p>
+          {readinessNotice && (
+            <p className="text-sm text-amber-200/90">{readinessNotice}</p>
           )}
 
           {localError && (
@@ -329,7 +336,7 @@ export default function PublishingPilotCard({
               </p>
             )}
 
-            {readiness?.draft_publish_ready === false && (
+            {readinessKnown && readiness.draft_publish_ready === false && (
               <p className="mt-3 text-sm text-amber-200/90">
                 Draft publishing is unavailable until the publishing pipeline is ready.
               </p>

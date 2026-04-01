@@ -4,7 +4,21 @@ import { expect, test } from 'vitest'
 
 import PublishingPilotCard from './PublishingPilotCard'
 
-function renderCard() {
+function renderCard({
+  readiness,
+  readinessState,
+}: {
+  readiness: {
+    caption_generation_ready: boolean
+    draft_publish_ready: boolean
+    degraded_mode: 'full' | 'draft_only'
+    provider: string
+    model: string
+    missing_requirements: string[]
+    notes: string[]
+  } | null
+  readinessState: 'loading' | 'error' | 'ready'
+}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -35,15 +49,8 @@ function renderCard() {
           tone: 'teaser',
           channel: 'social_short',
         }}
-        readiness={{
-          caption_generation_ready: false,
-          draft_publish_ready: true,
-          degraded_mode: 'draft_only',
-          provider: 'openrouter',
-          model: 'x-ai/grok-2-vision-1212',
-          missing_requirements: ['OPENROUTER_API_KEY'],
-          notes: ['Caption generation unavailable'],
-        }}
+        readiness={readiness}
+        readinessState={readinessState}
         captionQuery={{
           data: [
             {
@@ -76,11 +83,33 @@ function renderCard() {
 }
 
 test('disables caption generation and keeps draft creation available in draft-only mode', () => {
-  renderCard()
+  renderCard({
+    readiness: {
+      caption_generation_ready: false,
+      draft_publish_ready: true,
+      degraded_mode: 'draft_only',
+      provider: 'openrouter',
+      model: 'x-ai/grok-2-vision-1212',
+      missing_requirements: ['OPENROUTER_API_KEY'],
+      notes: ['Caption generation unavailable'],
+    },
+    readinessState: 'ready',
+  })
 
   expect(screen.getByRole('button', { name: /Generate caption/i })).toBeDisabled()
   expect(
     screen.getByText(/OPENROUTER_API_KEY is not configured/i),
   ).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Create draft/i })).toBeEnabled()
+})
+
+test('disables caption generation and draft creation while readiness is unresolved', () => {
+  renderCard({
+    readiness: null,
+    readinessState: 'loading',
+  })
+
+  expect(screen.getByRole('button', { name: /Generate caption/i })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /Create draft/i })).toBeDisabled()
+  expect(screen.getByText(/Publishing readiness is still loading/i)).toBeInTheDocument()
 })
