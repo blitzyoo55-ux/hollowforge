@@ -11,6 +11,7 @@ BACKEND_TEST_TIMEOUT_SEC = 120
 PROVIDER_RESOLUTION_TIMEOUT_SEC = 15
 STORY_PLANNER_SMOKE_TIMEOUT_SEC = 60
 FRONTEND_TEST_TIMEOUT_SEC = 180
+PUBLISHING_READINESS_TIMEOUT_SEC = 60
 
 DEFAULT_LOG_RELATIVE_PATH = Path(
     "docs/superpowers/ops/2026-03-31-hollowforge-ops-pilot-log.md"
@@ -113,6 +114,52 @@ def _parse_provider_resolution_result(
         )
     return CheckResult(
         name="adult provider resolution",
+        status="FAIL",
+        summary=summary,
+        details=stdout,
+        duration_sec=0.0,
+    )
+
+
+def _parse_publishing_readiness_result(
+    completed: subprocess.CompletedProcess[str],
+) -> CheckResult:
+    stdout = (completed.stdout or "").strip()
+    readiness_mode = _extract_labeled_value(stdout, "readiness_mode")
+    provider = _extract_labeled_value(stdout, "provider")
+    model = _extract_labeled_value(stdout, "model")
+
+    if _is_missing_value(readiness_mode):
+        readiness_mode = None
+    if _is_missing_value(provider):
+        provider = None
+    if _is_missing_value(model):
+        model = None
+
+    if readiness_mode == "full" and provider and model:
+        return CheckResult(
+            name="publishing readiness",
+            status="PASS",
+            summary=f"mode={readiness_mode} provider={provider} model={model}",
+            details=stdout,
+            duration_sec=0.0,
+        )
+
+    missing_labels: list[str] = []
+    if readiness_mode is None:
+        missing_labels.append("readiness_mode")
+    if provider is None:
+        missing_labels.append("provider")
+    if model is None:
+        missing_labels.append("model")
+    if missing_labels:
+        summary = "missing labels: " + ", ".join(f"{label}:" for label in missing_labels)
+    else:
+        summary = (
+            f"unexpected readiness: mode={readiness_mode} provider={provider} model={model}"
+        )
+    return CheckResult(
+        name="publishing readiness",
         status="FAIL",
         summary=summary,
         details=stdout,
@@ -224,11 +271,30 @@ def _build_check_specs(
             timeout_sec=BACKEND_TEST_TIMEOUT_SEC,
         ),
         CheckSpec(
+            name="frontend tests",
+            command=["npm", "test"],
+            cwd=frontend_dir,
+            timeout_sec=FRONTEND_TEST_TIMEOUT_SEC,
+        ),
+        CheckSpec(
             name="adult provider resolution",
             command=[sys.executable, "-c", provider_resolution_code],
             cwd=backend_dir,
             timeout_sec=PROVIDER_RESOLUTION_TIMEOUT_SEC,
             parser=_parse_provider_resolution_result,
+        ),
+        CheckSpec(
+            name="publishing readiness",
+            command=[
+                sys.executable,
+                "scripts/run_publishing_caption_smoke.py",
+                "--base-url",
+                base_url,
+                "--readiness-only",
+            ],
+            cwd=backend_dir,
+            timeout_sec=PUBLISHING_READINESS_TIMEOUT_SEC,
+            parser=_parse_publishing_readiness_result,
         ),
         CheckSpec(
             name="story planner smoke",
@@ -249,12 +315,6 @@ def _build_check_specs(
             cwd=backend_dir,
             timeout_sec=STORY_PLANNER_SMOKE_TIMEOUT_SEC,
             parser=_parse_story_planner_smoke_result,
-        ),
-        CheckSpec(
-            name="frontend tests",
-            command=["npm", "test"],
-            cwd=frontend_dir,
-            timeout_sec=FRONTEND_TEST_TIMEOUT_SEC,
         ),
     ]
 
@@ -324,6 +384,7 @@ def _render_baseline_section(results: Sequence[CheckResult]) -> str:
         "backend tests",
         "frontend tests",
         "adult provider resolution",
+        "publishing readiness",
         "story planner smoke",
     ):
         result = by_name.get(check_name)

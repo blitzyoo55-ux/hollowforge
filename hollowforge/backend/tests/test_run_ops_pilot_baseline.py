@@ -42,6 +42,13 @@ def test_render_baseline_section_includes_all_expected_lines() -> None:
             duration_sec=0.1,
         ),
         module.CheckResult(
+            name="publishing readiness",
+            status="PASS",
+            summary="mode=full provider=openrouter model=x-ai/grok-2-vision-1212",
+            details="",
+            duration_sec=0.1,
+        ),
+        module.CheckResult(
             name="story planner smoke",
             status="FAIL",
             summary="lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=0",
@@ -57,8 +64,55 @@ def test_render_baseline_section_includes_all_expected_lines() -> None:
         "- backend tests: PASS - 5 files / 62 passed",
         "- frontend tests: PASS - vitest ok",
         "- adult provider resolution: PASS - prompt=adult_openrouter_grok runtime=adult_local_llm",
+        "- publishing readiness: PASS - mode=full provider=openrouter model=x-ai/grok-2-vision-1212",
         "- story planner smoke: FAIL - lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=0",
     ]
+
+
+def test_render_baseline_section_includes_publishing_readiness_line() -> None:
+    module = _load_module()
+
+    rendered = module._render_baseline_section(
+        [
+            module.CheckResult(
+                name="backend tests",
+                status="PASS",
+                summary="ok",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="frontend tests",
+                status="PASS",
+                summary="ok",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="adult provider resolution",
+                status="PASS",
+                summary="prompt=adult_openrouter_grok runtime=adult_local_llm",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="publishing readiness",
+                status="PASS",
+                summary="mode=full provider=openrouter model=x-ai/grok-2-vision-1212",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="story planner smoke",
+                status="PASS",
+                summary="lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8",
+                details="",
+                duration_sec=0.1,
+            ),
+        ]
+    )
+
+    assert "- publishing readiness: PASS - mode=full provider=openrouter model=x-ai/grok-2-vision-1212" in rendered
 
 
 def test_write_baseline_section_dry_run_does_not_modify_file(tmp_path: Path) -> None:
@@ -333,22 +387,36 @@ def test_build_check_specs_uses_expected_commands_and_workdirs() -> None:
         candidate_count=2,
     )
 
-    assert len(specs) == 4
+    assert len(specs) == 5
 
     assert specs[0].name == "backend tests"
     assert specs[0].cwd == repo_root / "backend"
     assert specs[0].command[:3] == [sys.executable, "-m", "pytest"]
     assert "tests/test_sequence_registry.py" in specs[0].command
 
-    assert specs[1].name == "adult provider resolution"
-    assert specs[1].cwd == repo_root / "backend"
-    assert specs[1].command[:2] == [sys.executable, "-c"]
-    assert "prompt_factory_adult_default" in specs[1].command[2]
-    assert "sequence_runtime_adult_default" in specs[1].command[2]
+    assert specs[1].name == "frontend tests"
+    assert specs[1].cwd == repo_root / "frontend"
+    assert specs[1].command == ["npm", "test"]
 
-    assert specs[2].name == "story planner smoke"
+    assert specs[2].name == "adult provider resolution"
     assert specs[2].cwd == repo_root / "backend"
-    assert specs[2].command == [
+    assert specs[2].command[:2] == [sys.executable, "-c"]
+    assert "prompt_factory_adult_default" in specs[2].command[2]
+    assert "sequence_runtime_adult_default" in specs[2].command[2]
+
+    assert specs[3].name == "publishing readiness"
+    assert specs[3].cwd == repo_root / "backend"
+    assert specs[3].command == [
+        sys.executable,
+        "scripts/run_publishing_caption_smoke.py",
+        "--base-url",
+        "http://127.0.0.1:8000",
+        "--readiness-only",
+    ]
+
+    assert specs[4].name == "story planner smoke"
+    assert specs[4].cwd == repo_root / "backend"
+    assert specs[4].command == [
         sys.executable,
         "scripts/launch_story_planner_smoke.py",
         "--base-url",
@@ -363,9 +431,21 @@ def test_build_check_specs_uses_expected_commands_and_workdirs() -> None:
         "2",
     ]
 
-    assert specs[3].name == "frontend tests"
-    assert specs[3].cwd == repo_root / "frontend"
-    assert specs[3].command == ["npm", "test"]
+
+def test_build_check_specs_includes_readiness_only_caption_smoke() -> None:
+    module = _load_module()
+    repo_root = Path("/repo/hollowforge")
+
+    specs = module._build_check_specs(
+        repo_root=repo_root,
+        base_url="http://127.0.0.1:8000",
+        ui_base_url="http://localhost:5173",
+        story_prompt="adult pilot story",
+        lane="adult_nsfw",
+        candidate_count=2,
+    )
+
+    assert "--readiness-only" in specs[3].command
 
 
 def test_parse_story_planner_smoke_summary_extracts_lane_policy_and_queue() -> None:
@@ -525,6 +605,13 @@ def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(
                 duration_sec=0.1,
             ),
             module.CheckResult(
+                name="publishing readiness",
+                status="PASS",
+                summary="mode=full provider=openrouter model=x-ai/grok-2-vision-1212",
+                details="",
+                duration_sec=0.3,
+            ),
+            module.CheckResult(
                 name="story planner smoke",
                 status="PASS",
                 summary="lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8",
@@ -564,6 +651,7 @@ def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(
     assert captured_kwargs["candidate_count"] == 2
     assert "## Baseline" in stdout
     assert "- backend tests: PASS - ok" in stdout
+    assert "- publishing readiness: PASS - mode=full provider=openrouter model=x-ai/grok-2-vision-1212" in stdout
     assert (
         "- story planner smoke: PASS - lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8"
         in stdout
@@ -621,6 +709,13 @@ def test_dry_run_main_prints_final_aggregate_fail_status(
                 summary="prompt=adult_openrouter_grok runtime=adult_local_llm",
                 details="",
                 duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="publishing readiness",
+                status="PASS",
+                summary="mode=full provider=openrouter model=x-ai/grok-2-vision-1212",
+                details="",
+                duration_sec=0.3,
             ),
             module.CheckResult(
                 name="story planner smoke",
