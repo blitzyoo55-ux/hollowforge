@@ -7,6 +7,7 @@ import {
   getCaptionVariants,
   getPublishJobs,
   getReadyPublishItems,
+  getPublishingReadiness,
 } from '../../api/client'
 import PublishingPilotWorkbench from './PublishingPilotWorkbench'
 
@@ -14,6 +15,7 @@ vi.mock('../../api/client', () => ({
   getCaptionVariants: vi.fn(),
   getPublishJobs: vi.fn(),
   getReadyPublishItems: vi.fn(),
+  getPublishingReadiness: vi.fn(),
 }))
 
 vi.mock('./PublishingPilotCard', () => ({
@@ -59,6 +61,16 @@ function renderWorkbench(generationIds: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+
+  vi.mocked(getPublishingReadiness).mockResolvedValue({
+    caption_generation_ready: true,
+    draft_publish_ready: true,
+    degraded_mode: 'full',
+    provider: 'openrouter',
+    model: 'x-ai/grok-2-vision-1212',
+    missing_requirements: [],
+    notes: [],
+  })
 
   vi.mocked(getReadyPublishItems).mockResolvedValue([
     {
@@ -196,6 +208,25 @@ test('renders invalid and missing id notices and propagates shared control chang
 
   expect(screen.getByTestId('publishing-card-gen-1')).toHaveTextContent('fansly|campaign|launch_copy')
   expect(screen.getByTestId('publishing-card-gen-2')).toHaveTextContent('fansly|campaign|launch_copy')
+})
+
+test('shows draft-only readiness mode and missing OPENROUTER_API_KEY notice', async () => {
+  vi.mocked(getPublishingReadiness).mockResolvedValue({
+    caption_generation_ready: false,
+    draft_publish_ready: true,
+    degraded_mode: 'draft_only',
+    provider: 'openrouter',
+    model: 'x-ai/grok-2-vision-1212',
+    missing_requirements: ['OPENROUTER_API_KEY'],
+    notes: ['Caption generation is unavailable'],
+  })
+
+  renderWorkbench(['gen-1'])
+
+  expect(await screen.findByText(/draft-only mode/i)).toBeInTheDocument()
+  expect(screen.getByText(/Missing requirements:/i)).toHaveTextContent('OPENROUTER_API_KEY')
+  expect(screen.getByTestId('publishing-card-gen-1')).toBeInTheDocument()
+  expect(getPublishingReadiness).toHaveBeenCalledTimes(1)
 })
 
 test('shows the no-valid-ids state and skips the ready-items query', async () => {

@@ -8,6 +8,7 @@ import {
   type CaptionVariantResponse,
   type PublishJobPlatform,
   type PublishJobResponse,
+  type PublishingReadinessResponse,
   type PublishingChannel,
   type PublishingTone,
   type ReadyPublishItemResponse,
@@ -27,6 +28,7 @@ interface PublishingPilotCardProps {
     isLoading: boolean
     isError: boolean
   }
+  readiness: PublishingReadinessResponse | null
   publishJobsQuery: {
     data: PublishJobResponse[]
     isLoading: boolean
@@ -64,6 +66,7 @@ export default function PublishingPilotCard({
   item,
   controls,
   captionQuery,
+  readiness,
   publishJobsQuery,
 }: PublishingPilotCardProps) {
   const queryClient = useQueryClient()
@@ -157,6 +160,18 @@ export default function PublishingPilotCard({
 
   const previewPath = getAssetPath(item.thumbnail_path ?? item.image_path)
   const hasApprovedCaption = Boolean(approvedCaption?.id)
+  const canGenerateCaption = readiness?.caption_generation_ready ?? true
+  const generateCaptionReason = !canGenerateCaption
+    ? [
+        readiness?.missing_requirements.includes('OPENROUTER_API_KEY')
+          ? 'OPENROUTER_API_KEY is not configured'
+          : readiness?.missing_requirements.join(', '),
+        readiness?.notes.join(' '),
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : ''
+  const canCreateDraft = (readiness?.draft_publish_ready ?? true) && hasApprovedCaption && !existingDraft
 
   return (
     <article className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/80">
@@ -209,12 +224,16 @@ export default function PublishingPilotCard({
             <button
               type="button"
               onClick={() => generateMutation.mutate()}
-              disabled={generateMutation.isPending}
+              disabled={generateMutation.isPending || !canGenerateCaption}
               className="rounded-lg border border-violet-400/40 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 transition-colors hover:border-violet-300/60 hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-500"
             >
               {generateMutation.isPending ? 'Generating...' : 'Generate caption'}
             </button>
           </div>
+
+          {!canGenerateCaption && generateCaptionReason && (
+            <p className="text-sm text-amber-200/90">{generateCaptionReason}</p>
+          )}
 
           {localError && (
             <div className="rounded-xl border border-red-900/50 bg-red-950/20 px-3 py-2 text-sm text-red-200">
@@ -296,7 +315,7 @@ export default function PublishingPilotCard({
               <button
                 type="button"
                 onClick={() => createDraftMutation.mutate()}
-                disabled={!hasApprovedCaption || Boolean(existingDraft) || createDraftMutation.isPending}
+                disabled={!canCreateDraft || createDraftMutation.isPending}
                 className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 transition-colors hover:border-emerald-300/60 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-500"
               >
                 {createDraftMutation.isPending ? 'Creating...' : 'Create draft'}
@@ -307,6 +326,12 @@ export default function PublishingPilotCard({
               <p className="mt-3 text-sm text-amber-200/90">
                 Approve a caption variant that matches the active platform and channel before
                 creating the draft job.
+              </p>
+            )}
+
+            {readiness?.draft_publish_ready === false && (
+              <p className="mt-3 text-sm text-amber-200/90">
+                Draft publishing is unavailable until the publishing pipeline is ready.
               </p>
             )}
 

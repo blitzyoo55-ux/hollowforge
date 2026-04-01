@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   getCaptionVariants,
   getPublishJobs,
+  getPublishingReadiness,
   getReadyPublishItems,
   type CaptionVariantResponse,
   type PublishJobPlatform,
@@ -84,6 +85,13 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
     queryKey: ['publishing-pilot', 'ready-items', validIds],
     queryFn: () => getReadyPublishItems(validIds),
     enabled: validIds.length > 0,
+  })
+
+  const readinessQuery = useQuery({
+    queryKey: ['publishing-pilot', 'readiness'],
+    queryFn: getPublishingReadiness,
+    enabled: validIds.length > 0,
+    staleTime: 60_000,
   })
 
   const itemsById = useMemo(
@@ -168,6 +176,15 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
 
   return (
     <div className="space-y-6">
+      {readinessQuery.data?.degraded_mode === 'draft_only' && (
+        <section className="rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4 text-sm text-amber-100/90">
+          <p className="font-medium">Draft-only mode</p>
+          <p className="mt-1">Caption generation is unavailable until OPENROUTER_API_KEY is configured.</p>
+          <p className="mt-1 text-amber-100/80">
+            Missing requirements: {readinessQuery.data.missing_requirements.join(', ')}
+          </p>
+        </section>
+      )}
       <section className="grid gap-4 lg:grid-cols-[1.15fr,0.85fr]">
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-5">
           <p className="text-xs uppercase tracking-[0.18em] text-emerald-300/80">Selected Batch</p>
@@ -284,6 +301,7 @@ export default function PublishingPilotWorkbench({ generationIds }: PublishingPi
               key={item.generation_id}
               item={item}
               controls={controls}
+              readiness={readinessQuery.data ?? null}
               captionQuery={{
                 data: (captionQueries[index]?.data ?? []) as CaptionVariantResponse[],
                 isLoading: captionQueries[index]?.isLoading ?? false,
