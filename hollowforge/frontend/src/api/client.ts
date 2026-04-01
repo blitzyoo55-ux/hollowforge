@@ -400,6 +400,7 @@ export type PublishJobPlatform = 'twitter' | 'fansly' | 'pixiv' | 'custom';
 export type PublishingTone = 'teaser' | 'clinical' | 'campaign';
 export type PublishingChannel = 'social_short' | 'post_body' | 'launch_copy';
 export type PublishJobStatus = 'draft' | 'queued' | 'scheduled' | 'published' | 'failed';
+export type PublishingDegradedMode = 'full' | 'draft_only';
 
 export interface CaptionGenerateRequest {
   platform: CaptionPublishingPlatform;
@@ -448,6 +449,16 @@ export interface PublishJobResponse {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PublishingReadinessResponse {
+  caption_generation_ready: boolean;
+  draft_publish_ready: boolean;
+  degraded_mode: PublishingDegradedMode;
+  provider: string;
+  model: string;
+  missing_requirements: string[];
+  notes: string[];
 }
 
 export interface ReadyPublishItemResponse {
@@ -1473,6 +1484,11 @@ export async function getReadyPublishItems(
   const res = await api.get<ReadyPublishItemResponse[]>('/publishing/ready-items', {
     params,
   })
+  return res.data
+}
+
+export async function getPublishingReadiness(): Promise<PublishingReadinessResponse> {
+  const res = await api.get<PublishingReadinessResponse>('/publishing/readiness')
   return res.data
 }
 
