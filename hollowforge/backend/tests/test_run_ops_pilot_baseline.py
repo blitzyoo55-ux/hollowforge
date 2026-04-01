@@ -87,6 +87,7 @@ def test_write_baseline_section_dry_run_does_not_modify_file(tmp_path: Path) -> 
     )
 
     assert "PASS - ok" in preview
+    assert preview.count("- backend tests: PASS - ok") == 1
     assert log_path.read_text(encoding="utf-8") == original
 
 
@@ -101,6 +102,8 @@ def test_write_baseline_section_preserves_other_sections(tmp_path: Path) -> None
         "- frontend tests:\n"
         "- adult provider resolution:\n"
         "- story planner smoke:\n\n"
+        "## Unexpected Section\n"
+        "- keep-this-section\n\n"
         "## Episode Runs\n"
         "- episode:\n"
         "  - premise: keep-me\n\n"
@@ -124,7 +127,20 @@ def test_write_baseline_section_preserves_other_sections(tmp_path: Path) -> None
     )
 
     updated = log_path.read_text(encoding="utf-8")
-    assert "- backend tests: PASS - ok" in updated
+    rendered_baseline = (
+        "## Baseline\n"
+        "- backend tests: PASS - ok\n"
+        "- frontend tests: PASS - ok\n"
+        "- adult provider resolution: PASS - ok\n"
+        "- story planner smoke: FAIL - offline\n"
+    )
+
+    assert updated.count(rendered_baseline) == 1
+    assert "- backend tests:\n" not in updated
+    assert "- frontend tests:\n" not in updated
+    assert "- adult provider resolution:\n" not in updated
+    assert "- story planner smoke:\n" not in updated
+    assert "## Unexpected Section\n- keep-this-section" in updated
     assert "premise: keep-me" in updated
     assert "selected generation ids: keep-me" in updated
     assert "generation id: keep-me" in updated

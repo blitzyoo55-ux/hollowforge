@@ -32,18 +32,15 @@ def _render_baseline_section(results: Sequence[CheckResult]) -> str:
 def _write_baseline_section(*, log_path: Path, rendered_baseline: str, dry_run: bool) -> str:
     original = log_path.read_text(encoding="utf-8")
     start_marker = "## Baseline\n"
-    next_markers = ("\n## Episode Runs\n", "\n## Ready Queue\n", "\n## Publishing Pilot\n")
 
     start = original.find(start_marker)
     if start == -1:
         raise ValueError("Baseline section not found")
 
     section_start = start + len(start_marker)
-    section_end = len(original)
-    for marker in next_markers:
-        marker_index = original.find(marker, section_start)
-        if marker_index != -1:
-            section_end = min(section_end, marker_index)
+    section_end = original.find("\n## ", section_start)
+    if section_end == -1:
+        section_end = len(original)
 
     updated = original[:start] + rendered_baseline + original[section_end:]
     if not dry_run:
