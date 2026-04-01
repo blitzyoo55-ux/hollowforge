@@ -170,3 +170,70 @@ def test_smoke_reports_created_caption_metadata() -> None:
         "http://127.0.0.1:8000/api/v1/publishing/readiness",
         "http://127.0.0.1:8000/api/v1/publishing/generations/generation-123/captions/generate",
     ]
+
+
+def test_smoke_sends_approved_true_when_flag_is_present() -> None:
+    module = _load_module()
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        if url.endswith("/api/v1/publishing/readiness"):
+            return {
+                "caption_generation_ready": True,
+                "draft_publish_ready": True,
+                "degraded_mode": "full",
+                "provider": "openrouter",
+                "model": "x-ai/grok-2-vision-1212",
+                "missing_requirements": [],
+                "notes": [],
+            }
+        if url.endswith("/api/v1/publishing/generations/generation-123/captions/generate"):
+            assert payload is not None
+            captured_payloads.append(payload)
+            return {
+                "id": "caption-123",
+                "generation_id": "generation-123",
+                "channel": "social_short",
+                "platform": "pixiv",
+                "provider": "openrouter",
+                "model": "x-ai/grok-2-vision-1212",
+                "prompt_version": "v1",
+                "tone": "teaser",
+                "story": "caption story",
+                "hashtags": "#smoke",
+                "approved": True,
+                "created_at": "2026-04-01T00:00:00Z",
+                "updated_at": "2026-04-01T00:00:00Z",
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "run_publishing_caption_smoke.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--generation-id",
+            "generation-123",
+            "--platform",
+            "pixiv",
+            "--tone",
+            "teaser",
+            "--channel",
+            "social_short",
+            "--approved",
+        ],
+        fake_request_json,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    assert captured_payloads == [
+        {
+            "platform": "pixiv",
+            "tone": "teaser",
+            "channel": "social_short",
+            "approved": True,
+        }
+    ]
+    assert "approved: true" in stdout
