@@ -1198,6 +1198,16 @@ class PublishJobResponse(BaseModel):
     updated_at: str
 
 
+class PublishingReadinessResponse(BaseModel):
+    caption_generation_ready: bool
+    draft_publish_ready: bool
+    degraded_mode: Literal["full", "draft_only"]
+    provider: str
+    model: str
+    missing_requirements: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class EngagementSnapshotCreate(BaseModel):
     likes: int = Field(default=0, ge=0)
     replies: int = Field(default=0, ge=0)

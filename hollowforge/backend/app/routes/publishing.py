@@ -6,7 +6,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -24,6 +24,7 @@ from app.models import (
     PublishJobResponse,
     PublishJobUpdate,
     ReadyPublishItemResponse,
+    PublishingReadinessResponse,
 )
 from app.services.caption_service import (
     generate_caption_from_image_bytes,
@@ -138,6 +139,27 @@ def _compute_engagement_score(payload: EngagementSnapshotCreate) -> float:
         + float(payload.bookmarks * 4)
         + float(payload.impressions) / 500.0,
         2,
+    )
+
+
+@router.get("/readiness", response_model=PublishingReadinessResponse)
+async def get_publishing_readiness() -> PublishingReadinessResponse:
+    caption_generation_ready = bool(settings.OPENROUTER_API_KEY.strip())
+    missing_requirements: list[str] = []
+    degraded_mode: Literal["full", "draft_only"] = "full"
+
+    if not caption_generation_ready:
+        missing_requirements.append("OPENROUTER_API_KEY")
+        degraded_mode = "draft_only"
+
+    return PublishingReadinessResponse(
+        caption_generation_ready=caption_generation_ready,
+        draft_publish_ready=True,
+        degraded_mode=degraded_mode,
+        provider=settings.MARKETING_PROVIDER_NAME,
+        model=settings.MARKETING_MODEL,
+        missing_requirements=missing_requirements,
+        notes=[],
     )
 
 
