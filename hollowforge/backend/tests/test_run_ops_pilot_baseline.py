@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -255,3 +256,192 @@ def test_execute_check_uses_parser_summary_on_pass(tmp_path: Path) -> None:
 
     assert result.status == "PASS"
     assert result.summary == "parsed: CUSTOM SUMMARY"
+
+
+def test_build_check_specs_uses_expected_commands_and_workdirs() -> None:
+    module = _load_module()
+    repo_root = Path("/repo/hollowforge")
+
+    specs = module._build_check_specs(
+        repo_root=repo_root,
+        base_url="http://127.0.0.1:8000",
+        ui_base_url="http://localhost:5173",
+        story_prompt="adult pilot story",
+        lane="adult_nsfw",
+        candidate_count=2,
+    )
+
+    assert len(specs) == 4
+
+    assert specs[0].name == "backend tests"
+    assert specs[0].cwd == repo_root / "backend"
+    assert specs[0].command[:3] == [sys.executable, "-m", "pytest"]
+    assert "tests/test_sequence_registry.py" in specs[0].command
+
+    assert specs[1].name == "adult provider resolution"
+    assert specs[1].cwd == repo_root / "backend"
+    assert specs[1].command[:2] == [sys.executable, "-c"]
+    assert "prompt_factory_adult_default" in specs[1].command[2]
+    assert "sequence_runtime_adult_default" in specs[1].command[2]
+
+    assert specs[2].name == "story planner smoke"
+    assert specs[2].cwd == repo_root / "backend"
+    assert specs[2].command == [
+        sys.executable,
+        "scripts/launch_story_planner_smoke.py",
+        "--base-url",
+        "http://127.0.0.1:8000",
+        "--ui-base-url",
+        "http://localhost:5173",
+        "--story-prompt",
+        "adult pilot story",
+        "--lane",
+        "adult_nsfw",
+        "--candidate-count",
+        "2",
+    ]
+
+    assert specs[3].name == "frontend tests"
+    assert specs[3].cwd == repo_root / "frontend"
+    assert specs[3].command == ["npm", "test"]
+
+
+def test_parse_story_planner_smoke_summary_extracts_lane_policy_and_queue() -> None:
+    module = _load_module()
+    completed = subprocess.CompletedProcess(
+        args=["python"],
+        returncode=0,
+        stdout=(
+            "plan_result:\n"
+            "lane: adult_nsfw\n"
+            "policy_pack_id: canon_adult_nsfw_v1\n"
+            "queue_result:\n"
+            "queued_generation_count: 8\n"
+        ),
+        stderr="",
+    )
+
+    result = module._parse_story_planner_smoke_result(completed, duration_sec=2.4)
+
+    assert result.status == "PASS"
+    assert result.summary == "lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8"
+
+
+def test_parse_provider_resolution_summary_extracts_both_defaults() -> None:
+    module = _load_module()
+    completed = subprocess.CompletedProcess(
+        args=["python"],
+        returncode=0,
+        stdout=(
+            "prompt_factory_adult_default: adult_openrouter_grok\n"
+            "sequence_runtime_adult_default: adult_local_llm\n"
+        ),
+        stderr="",
+    )
+
+    result = module._parse_provider_resolution_result(completed, duration_sec=0.2)
+
+    assert result.status == "PASS"
+    assert result.summary == "prompt=adult_openrouter_grok runtime=adult_local_llm"
+
+
+def test_dry_run_main_prints_rendered_baseline_and_does_not_modify_log(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _load_module()
+    log_path = tmp_path / "pilot-log.md"
+    log_path.write_text(
+        "# HollowForge Ops Pilot Log\n\n"
+        "## Baseline\n"
+        "- backend tests:\n"
+        "- frontend tests:\n"
+        "- adult provider resolution:\n"
+        "- story planner smoke:\n",
+        encoding="utf-8",
+    )
+    original = log_path.read_text(encoding="utf-8")
+
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_build_check_specs(**kwargs):  # type: ignore[no-untyped-def]
+        captured_kwargs.update(kwargs)
+        return [
+            module.CheckSpec(
+                name="backend tests",
+                command=["backend"],
+                cwd=Path("/tmp"),
+                timeout_sec=1,
+            )
+        ]
+
+    def fake_run_checks(specs):  # type: ignore[no-untyped-def]
+        assert len(specs) == 1
+        return [
+            module.CheckResult(
+                name="backend tests",
+                status="PASS",
+                summary="ok",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="frontend tests",
+                status="PASS",
+                summary="vitest ok",
+                details="",
+                duration_sec=0.2,
+            ),
+            module.CheckResult(
+                name="adult provider resolution",
+                status="PASS",
+                summary="prompt=adult_openrouter_grok runtime=adult_local_llm",
+                details="",
+                duration_sec=0.1,
+            ),
+            module.CheckResult(
+                name="story planner smoke",
+                status="PASS",
+                summary="lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8",
+                details="",
+                duration_sec=0.4,
+            ),
+        ]
+
+    monkeypatch.setattr(module, "_build_check_specs", fake_build_check_specs)
+    monkeypatch.setattr(module, "_run_checks", fake_run_checks)
+
+    exit_code = module.main(
+        [
+            "--dry-run",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--ui-base-url",
+            "http://localhost:5173",
+            "--story-prompt",
+            "adult pilot story",
+            "--lane",
+            "adult_nsfw",
+            "--candidate-count",
+            "2",
+            "--log-path",
+            str(log_path),
+        ]
+    )
+
+    stdout = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert captured_kwargs["base_url"] == "http://127.0.0.1:8000"
+    assert captured_kwargs["ui_base_url"] == "http://localhost:5173"
+    assert captured_kwargs["story_prompt"] == "adult pilot story"
+    assert captured_kwargs["lane"] == "adult_nsfw"
+    assert captured_kwargs["candidate_count"] == 2
+    assert "## Baseline" in stdout
+    assert "- backend tests: PASS - ok" in stdout
+    assert (
+        "- story planner smoke: PASS - lane=adult_nsfw policy=canon_adult_nsfw_v1 queued=8"
+        in stdout
+    )
+    assert log_path.read_text(encoding="utf-8") == original
