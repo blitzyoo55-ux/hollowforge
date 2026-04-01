@@ -185,3 +185,73 @@ def test_execute_check_reports_timeout_as_fail(tmp_path: Path) -> None:
 
     assert result.status == "FAIL"
     assert result.summary == "timeout after 180s"
+
+
+def test_execute_check_reports_zero_exit_as_pass(tmp_path: Path) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="backend tests",
+        command=["pytest"],
+        cwd=tmp_path,
+        timeout_sec=60,
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(
+            args=kwargs["args"],
+            returncode=0,
+            stdout="ok from stdout",
+            stderr="",
+        )
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "PASS"
+    assert result.summary == "ok from stdout"
+
+
+def test_execute_check_reports_non_zero_exit_as_fail(tmp_path: Path) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="frontend tests",
+        command=["npm", "test"],
+        cwd=tmp_path,
+        timeout_sec=60,
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(
+            args=kwargs["args"],
+            returncode=3,
+            stdout="",
+            stderr="boom",
+        )
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "FAIL"
+    assert result.summary == "exit 3"
+
+
+def test_execute_check_uses_parser_summary_on_pass(tmp_path: Path) -> None:
+    module = _load_module()
+    spec = module.CheckSpec(
+        name="parser check",
+        command=["tool"],
+        cwd=tmp_path,
+        timeout_sec=60,
+        parser=lambda stdout: f"parsed: {stdout.upper()}",
+    )
+
+    def fake_subprocess_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(
+            args=kwargs["args"],
+            returncode=0,
+            stdout="custom summary",
+            stderr="",
+        )
+
+    result = module._execute_command_check(spec, run_command=fake_subprocess_run)
+
+    assert result.status == "PASS"
+    assert result.summary == "parsed: CUSTOM SUMMARY"
