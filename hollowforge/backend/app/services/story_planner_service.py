@@ -317,6 +317,104 @@ def _merge_prompt_cast(
     return merged
 
 
+def _normalize_freeform_support_description(description: str | None) -> str:
+    if not description:
+        return ""
+    return re.sub(r"\s+", " ", description).strip(" .,!?:;-")
+
+
+def _is_sparse_freeform_support_description(description: str | None) -> bool:
+    normalized = _normalize_freeform_support_description(description)
+    if not normalized:
+        return True
+
+    tokens = [token for token in re.findall(r"[a-z0-9]+", normalized.lower()) if token]
+    meaningful_tokens = [
+        token
+        for token in tokens
+        if token
+        not in {
+            "a",
+            "an",
+            "and",
+            "adult",
+            "at",
+            "by",
+            "for",
+            "figure",
+            "in",
+            "is",
+            "of",
+            "on",
+            "person",
+            "presence",
+            "quiet",
+            "secondary",
+            "someone",
+            "support",
+            "the",
+            "to",
+            "with",
+        }
+    ]
+    return len(meaningful_tokens) < 2
+
+
+def _synthesize_freeform_support_metadata(
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
+) -> list[StoryPlannerResolvedCastEntry]:
+    lead = next((member for member in resolved_cast if member.role == "lead"), None)
+    lead_label = _format_story_planner_cast_label(lead)
+    synthesized_cast: list[StoryPlannerResolvedCastEntry] = []
+
+    for member in resolved_cast:
+        if member.role != "support" or member.source_type != "freeform":
+            synthesized_cast.append(member)
+            continue
+
+        description = _normalize_freeform_support_description(
+            member.freeform_description
+        )
+        sparse_description = _is_sparse_freeform_support_description(description)
+
+        if sparse_description:
+            canonical_anchor = "Adult secondary figure with a restrained, observant presence."
+            wardrobe_notes = (
+                "Use subdued adult wardrobe cues that keep the support figure secondary to the lead."
+            )
+            personality_notes = "Quiet, observant, and deferential to the lead's space."
+        else:
+            canonical_anchor = f"Adult secondary figure: {description}."
+            wardrobe_notes = (
+                f"Keep the look grounded in {description} and visually secondary to the lead."
+            )
+            personality_notes = (
+                f"{_sentence_case(description)} energy, with a restrained secondary presence."
+            )
+
+        if lead is not None:
+            anti_drift = (
+                f"Keep the support presence visually separate from {lead_label} by using a smaller, secondary silhouette, different styling, and no lead-like framing."
+            )
+        else:
+            anti_drift = (
+                "Keep the support presence visually separate from the lead by using a smaller, secondary silhouette and no lead-like framing."
+            )
+
+        synthesized_cast.append(
+            member.model_copy(
+                update={
+                    "canonical_anchor": canonical_anchor,
+                    "anti_drift": anti_drift,
+                    "wardrobe_notes": wardrobe_notes,
+                    "personality_notes": personality_notes,
+                }
+            )
+        )
+
+    return synthesized_cast
+
+
 def _recommend_anchor_shot(
     *,
     lane: str,
@@ -951,6 +1049,7 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         _resolve_cast_member(member, catalog.characters) for member in request.cast
     ]
     resolved_cast = _merge_prompt_cast(request.story_prompt, resolved_cast)
+    resolved_cast = _synthesize_freeform_support_metadata(resolved_cast)
     policy_pack = _select_policy_pack(request.lane, catalog.policy_packs)
     shots = _build_shots(
         request.story_prompt,

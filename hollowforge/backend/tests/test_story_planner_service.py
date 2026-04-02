@@ -245,6 +245,78 @@ def test_plan_story_episode_resolves_registry_cast_and_preserves_freeform_suppor
     assert support.freeform_description == "quiet messenger in a dark coat"
 
 
+def test_plan_story_episode_synthesizes_metadata_for_freeform_support() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo and a quiet messenger compare notes by the service door."
+            )
+        )
+    )
+
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+
+    assert support.freeform_description == "quiet messenger in a dark coat"
+    assert support.canonical_anchor
+    assert support.anti_drift
+    assert support.wardrobe_notes
+    assert support.personality_notes
+
+
+def test_plan_story_episode_synthesizes_support_anti_drift_to_separate_from_lead() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo and a quiet messenger compare notes by the service door."
+            )
+        )
+    )
+
+    lead = next(member for member in preview.resolved_cast if member.role == "lead")
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+
+    assert lead.source_type == "registry"
+    assert support.anti_drift
+    assert "separate" in support.anti_drift.lower()
+    assert lead.character_name.lower() in support.anti_drift.lower()
+
+
+def test_plan_story_episode_falls_back_to_minimal_support_identity_for_sparse_freeform_description() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Hana Seo meets a companion in the corridor after closing.",
+            lane="adult_nsfw",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="figure",
+                ),
+            ],
+        )
+    )
+
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+
+    assert support.freeform_description == "figure"
+    assert support.canonical_anchor
+    assert "adult" in support.canonical_anchor.lower()
+    assert support.anti_drift
+    assert support.wardrobe_notes
+    assert support.personality_notes
+
+
 def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_name() -> None:
     preview = plan_story_episode(
         StoryPlannerPlanRequest(
