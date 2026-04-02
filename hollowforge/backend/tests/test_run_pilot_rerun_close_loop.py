@@ -388,6 +388,17 @@ def test_runner_executes_ready_caption_approve_publish_in_order() -> None:
     assert "generation_id: gen-s2-c2" in stdout
     assert "ready_result:" in stdout
     assert "caption_result:" in stdout
+    assert (
+        "caption_result:\n"
+        "id: caption-222\n"
+        "generation_id: gen-s2-c2\n"
+        "approved: False\n"
+        "platform: pixiv\n"
+        "tone: teaser\n"
+        "channel: social_short\n"
+        "provider: openrouter\n"
+        "model: grok-vision"
+    ) in stdout
     assert "approval_result:" in stdout
     assert "publish_job_result:" in stdout
 
@@ -626,8 +637,15 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
             "platform": "pixiv",
             "tone": "teaser",
             "channel": "social_short",
+            "provider": "openrouter",
+            "model": "grok-vision",
         },
-        approval_result={"id": "caption-222", "approved": True},
+        approval_result={
+            "id": "caption-222",
+            "approved": True,
+            "provider": "openrouter",
+            "model": "grok-vision",
+        },
         publish_job_result={
             "id": "publish-job-222",
             "status": "draft",
@@ -644,7 +662,12 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         },
         selected_generation={"shot_no": 2, "candidate_no": 1, "generation_id": "gen-s2-c1"},
         ready_result={"publish_approved": 1, "curated_at": "2026-04-02T00:01:00Z"},
-        approval_result={"id": "caption-222", "approved": True},
+        approval_result={
+            "id": "caption-222",
+            "approved": True,
+            "provider": "openrouter",
+            "model": "grok-vision",
+        },
         publish_job_result={
             "id": "publish-job-222",
             "status": "draft",
@@ -667,7 +690,10 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         "- ready publish_approved: 1",
         "- ready curated_at: 2026-04-02T00:01:00Z",
         "- caption variant id: caption-222",
+        "- caption provider: openrouter",
+        "- caption model: grok-vision",
         "- approval approved: True",
+        "- approved caption id: caption-222",
         "- approved caption variant id: caption-222",
         "- draft publish job id: publish-job-222",
         "- draft publish status: draft",
@@ -687,7 +713,9 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         "",
         "## Notes",
         "- ready evidence: publish_approved=1 curated_at=2026-04-02T00:01:00Z",
+        "- caption evidence: provider=openrouter model=grok-vision",
         "- approval evidence: approved=True caption_variant_id=caption-222",
+        "- approved caption id: caption-222",
         "- publish evidence: status=draft caption_variant_id=caption-222",
         "- closed-loop outcome: ready, caption, approve, and draft publish completed without manual UI intervention.",
         "- readiness mode at execution: full",

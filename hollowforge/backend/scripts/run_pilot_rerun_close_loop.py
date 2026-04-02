@@ -139,7 +139,10 @@ def _render_rerun_log(
             f"- ready publish_approved: {ready_result.get('publish_approved')}",
             f"- ready curated_at: {ready_result.get('curated_at')}",
             f"- caption variant id: {caption_result.get('id')}",
+            f"- caption provider: {caption_result.get('provider')}",
+            f"- caption model: {caption_result.get('model')}",
             f"- approval approved: {approval_result.get('approved')}",
+            f"- approved caption id: {approval_result.get('id')}",
             f"- approved caption variant id: {approval_result.get('id')}",
             f"- draft publish job id: {publish_job_result.get('id')}",
             f"- draft publish status: {publish_job_result.get('status')}",
@@ -177,9 +180,14 @@ def _render_rerun_retro(
                 f"curated_at={ready_result.get('curated_at')}"
             ),
             (
+                f"- caption evidence: provider={approval_result.get('provider')} "
+                f"model={approval_result.get('model')}"
+            ),
+            (
                 f"- approval evidence: approved={approval_result.get('approved')} "
                 f"caption_variant_id={approval_result.get('id')}"
             ),
+            f"- approved caption id: {approval_result.get('id')}",
             (
                 f"- publish evidence: status={publish_job_result.get('status')} "
                 f"caption_variant_id={publish_job_result.get('caption_variant_id')}"
@@ -324,7 +332,7 @@ def main() -> int:
         _print_section(
             "caption_result",
             caption_result,
-            keys=["id", "generation_id", "approved", "platform", "tone", "channel"],
+            keys=["id", "generation_id", "approved", "platform", "tone", "channel", "provider", "model"],
         )
 
         approval_result = _request_json(
