@@ -96,7 +96,13 @@ def _resolve_select_shot(
 ) -> tuple[int, str]:
     if select_shot > 0:
         return select_shot, "operator_override"
-    recommended_anchor_shot_no = int(plan_result.get("recommended_anchor_shot_no") or 0)
+    recommended_anchor_raw = plan_result.get("recommended_anchor_shot_no")
+    try:
+        recommended_anchor_shot_no = int(recommended_anchor_raw or 0)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Plan provided invalid recommended_anchor_shot_no: {recommended_anchor_raw!r}"
+        ) from exc
     if recommended_anchor_shot_no < 1:
         raise RuntimeError("Plan did not provide a valid recommended_anchor_shot_no")
     return recommended_anchor_shot_no, "planner_recommendation"

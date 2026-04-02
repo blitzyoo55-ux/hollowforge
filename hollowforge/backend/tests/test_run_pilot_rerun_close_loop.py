@@ -391,6 +391,24 @@ def test_runner_defaults_to_planner_recommended_anchor_shot_when_no_override_is_
     assert "selection_source: planner_recommendation" in stdout
 
 
+def test_resolve_select_shot_rejects_malformed_recommendation_data() -> None:
+    module = _load_module()
+
+    try:
+        module._resolve_select_shot(
+            {
+                "recommended_anchor_shot_no": "not-a-number",
+                "recommended_anchor_reason": "malformed planner payload",
+            },
+            select_shot=0,
+        )
+    except RuntimeError as exc:
+        assert "recommended_anchor_shot_no" in str(exc)
+        assert "not-a-number" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError for malformed recommendation data")
+
+
 def test_runner_explicit_select_shot_override_wins_over_planner_recommendation() -> None:
     module = _load_module()
     calls: list[tuple[str, str, dict[str, object] | None]] = []
