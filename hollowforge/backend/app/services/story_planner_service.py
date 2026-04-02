@@ -338,7 +338,7 @@ def _recommend_anchor_shot(
         if has_lead and has_support:
             ranking = [2, 3, 4, 1]
             reason = "Adult NSFW plan with lead and support present favors the exchange shot first."
-        elif _has_reveal_detail_hint(story_prompt):
+        elif not has_support and _has_reveal_detail_hint(story_prompt):
             ranking = [3, 4, 2, 1]
             reason = "Adult NSFW plan with a reveal cue and no support cast favors the reveal shot first."
         else:

@@ -149,6 +149,25 @@ def test_plan_story_episode_recommends_shot_two_for_adult_auto_with_lead_and_sup
     assert "exchange" in preview.recommended_anchor_reason.lower()
 
 
+def test_plan_story_episode_recommends_shot_three_for_adult_auto_with_support_missing_and_reveal_detail() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Hana Seo pauses after finding a sealed note in the corridor.",
+            lane="adult_nsfw",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                )
+            ],
+        )
+    )
+
+    assert preview.recommended_anchor_shot_no == 3
+    assert "reveal" in preview.recommended_anchor_reason.lower()
+
+
 def test_plan_story_episode_recommends_shot_four_for_explicit_decision_beats() -> None:
     preview = plan_story_episode(
         _build_request(
