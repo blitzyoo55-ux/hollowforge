@@ -1,5 +1,8 @@
 # HollowForge Pilot Rerun Retro
 
+## Outcome
+- close-loop result: one fresh adult_nsfw rerun completed ready, caption generation, caption approval, and linked draft publish creation without manual UI intervention
+
 ## IDs
 - generation id: e26183ce-1cc1-46de-ba99-7dac1363c73b
 - caption variant id: 230bc1f9-9286-4c58-af45-5d426d743f95
@@ -17,3 +20,11 @@
 - closed-loop outcome: ready, caption, approve, and draft publish completed without manual UI intervention.
 - readiness mode at execution: full
 - Validate operator review of the drafted publish payload before external posting.
+
+## What Still Hurt
+- the rerun still depends on a live local backend, queue worker, and provider readiness being in place first, so the close-loop script is reproducible but not yet one-command infrastructure bootstrap
+- operator review of the draft payload is still a manual checkpoint before any external post, so the loop closes at draft creation rather than end-to-end publishing
+
+## Recommended Next Branch
+- next branch: character-lineage-foundation
+- why next: the fresh rerun proved the still-to-draft loop with caption approval, so the highest-value follow-up is to persist reusable character, episode, and storyboard lineage instead of repeating prompt-only runs
