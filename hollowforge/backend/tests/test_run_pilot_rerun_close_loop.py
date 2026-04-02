@@ -88,6 +88,8 @@ def _plan_result() -> dict[str, object]:
             "emotional_arc": "curious to teasing",
             "continuity_notes": ["Keep corridor framing consistent."],
         },
+        "recommended_anchor_shot_no": 3,
+        "recommended_anchor_reason": "Best balance of tension and corridor framing.",
         "shots": [
             {
                 "shot_no": 1,
@@ -239,6 +241,8 @@ def test_runner_stops_when_selected_generation_never_reaches_completed() -> None
             "run_pilot_rerun_close_loop.py",
             "--base-url",
             "http://127.0.0.1:8000",
+            "--select-shot",
+            "1",
         ],
         fake_request_json,
         sleep_fn=lambda seconds: sleeps.append(seconds),
@@ -252,6 +256,259 @@ def test_runner_stops_when_selected_generation_never_reaches_completed() -> None
     assert "generation_id: gen-s1-c1" in stdout
     assert all(not url.endswith("/ready") for _, url, _ in calls)
     assert sleeps == [2.0] * 150
+
+
+def test_runner_defaults_to_planner_recommended_anchor_shot_when_no_override_is_provided() -> None:
+    module = _load_module()
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        calls.append((method, url, payload))
+        if url.endswith("/api/v1/publishing/readiness"):
+            return _readiness_result()
+        if url.endswith("/api/v1/tools/story-planner/plan"):
+            return _plan_result()
+        if url.endswith("/api/v1/tools/story-planner/generate-anchors"):
+            return _queue_result()
+        if url.endswith("/api/v1/generations/gen-s3-c1/status"):
+            return {"id": "gen-s3-c1", "status": "completed", "generation_time_sec": 9.2}
+        if url.endswith("/api/v1/generations/gen-s3-c1"):
+            return {
+                "id": "gen-s3-c1",
+                "prompt": "prompt",
+                "negative_prompt": "negative",
+                "checkpoint": "wai",
+                "loras": [],
+                "seed": 42,
+                "steps": 28,
+                "cfg": 6.5,
+                "width": 832,
+                "height": 1216,
+                "sampler": "dpmpp_2m",
+                "scheduler": "karras",
+                "status": "completed",
+                "image_path": "images/gen-s3-c1.png",
+                "created_at": "2026-04-02T00:00:00Z",
+                "completed_at": "2026-04-02T00:00:09Z",
+            }
+        if url.endswith("/api/v1/generations/gen-s3-c1/ready"):
+            return {"id": "gen-s3-c1", "publish_approved": 1, "curated_at": "2026-04-02T00:01:00Z"}
+        if url.endswith("/api/v1/publishing/generations/gen-s3-c1/captions/generate"):
+            assert payload == {
+                "platform": "pixiv",
+                "tone": "teaser",
+                "channel": "social_short",
+                "approved": False,
+            }
+            return {
+                "id": "caption-331",
+                "generation_id": "gen-s3-c1",
+                "channel": "social_short",
+                "platform": "pixiv",
+                "provider": "openrouter",
+                "model": "grok-vision",
+                "prompt_version": "v1",
+                "tone": "teaser",
+                "story": "caption story",
+                "hashtags": "#bathhouse",
+                "approved": False,
+                "created_at": "2026-04-02T00:02:00Z",
+                "updated_at": "2026-04-02T00:02:00Z",
+            }
+        if url.endswith("/api/v1/publishing/captions/caption-331/approve"):
+            return {
+                "id": "caption-331",
+                "generation_id": "gen-s3-c1",
+                "channel": "social_short",
+                "platform": "pixiv",
+                "provider": "openrouter",
+                "model": "grok-vision",
+                "prompt_version": "v1",
+                "tone": "teaser",
+                "story": "caption story",
+                "hashtags": "#bathhouse",
+                "approved": True,
+                "created_at": "2026-04-02T00:02:00Z",
+                "updated_at": "2026-04-02T00:03:00Z",
+            }
+        if url.endswith("/api/v1/publishing/posts"):
+            assert payload == {
+                "generation_id": "gen-s3-c1",
+                "caption_variant_id": "caption-331",
+                "platform": "pixiv",
+                "status": "draft",
+            }
+            return {
+                "id": "publish-job-331",
+                "generation_id": "gen-s3-c1",
+                "caption_variant_id": "caption-331",
+                "platform": "pixiv",
+                "status": "draft",
+                "scheduled_at": None,
+                "published_at": None,
+                "external_post_id": None,
+                "external_post_url": None,
+                "notes": None,
+                "created_at": "2026-04-02T00:04:00Z",
+                "updated_at": "2026-04-02T00:04:00Z",
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+        ],
+        fake_request_json,
+        sleep_fn=lambda seconds: None,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    assert [
+        (method, url.rsplit("/api/v1/", 1)[-1])
+        for method, url, _ in calls
+    ] == [
+        ("GET", "publishing/readiness"),
+        ("POST", "tools/story-planner/plan"),
+        ("POST", "tools/story-planner/generate-anchors"),
+        ("GET", "generations/gen-s3-c1/status"),
+        ("GET", "generations/gen-s3-c1"),
+        ("POST", "generations/gen-s3-c1/ready"),
+        ("POST", "publishing/generations/gen-s3-c1/captions/generate"),
+        ("POST", "publishing/captions/caption-331/approve"),
+        ("POST", "publishing/posts"),
+    ]
+    assert "selected_generation:" in stdout
+    assert "shot_no: 3" in stdout
+    assert "candidate_no: 1" in stdout
+    assert "generation_id: gen-s3-c1" in stdout
+    assert "recommended_anchor:" in stdout
+    assert "recommended_anchor_shot_no: 3" in stdout
+    assert "recommended_anchor_reason: Best balance of tension and corridor framing." in stdout
+    assert "selection_source: planner_recommendation" in stdout
+
+
+def test_runner_explicit_select_shot_override_wins_over_planner_recommendation() -> None:
+    module = _load_module()
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        calls.append((method, url, payload))
+        if url.endswith("/api/v1/publishing/readiness"):
+            return _readiness_result()
+        if url.endswith("/api/v1/tools/story-planner/plan"):
+            return _plan_result()
+        if url.endswith("/api/v1/tools/story-planner/generate-anchors"):
+            return _queue_result()
+        if url.endswith("/api/v1/generations/gen-s2-c1/status"):
+            return {"id": "gen-s2-c1", "status": "completed", "generation_time_sec": 9.2}
+        if url.endswith("/api/v1/generations/gen-s2-c1"):
+            return {
+                "id": "gen-s2-c1",
+                "prompt": "prompt",
+                "negative_prompt": "negative",
+                "checkpoint": "wai",
+                "loras": [],
+                "seed": 42,
+                "steps": 28,
+                "cfg": 6.5,
+                "width": 832,
+                "height": 1216,
+                "sampler": "dpmpp_2m",
+                "scheduler": "karras",
+                "status": "completed",
+                "image_path": "images/gen-s2-c1.png",
+                "created_at": "2026-04-02T00:00:00Z",
+                "completed_at": "2026-04-02T00:00:09Z",
+            }
+        if url.endswith("/api/v1/generations/gen-s2-c1/ready"):
+            return {"id": "gen-s2-c1", "publish_approved": 1, "curated_at": "2026-04-02T00:01:00Z"}
+        if url.endswith("/api/v1/publishing/generations/gen-s2-c1/captions/generate"):
+            assert payload == {
+                "platform": "pixiv",
+                "tone": "teaser",
+                "channel": "social_short",
+                "approved": False,
+            }
+            return {
+                "id": "caption-221",
+                "generation_id": "gen-s2-c1",
+                "channel": "social_short",
+                "platform": "pixiv",
+                "provider": "openrouter",
+                "model": "grok-vision",
+                "prompt_version": "v1",
+                "tone": "teaser",
+                "story": "caption story",
+                "hashtags": "#bathhouse",
+                "approved": False,
+                "created_at": "2026-04-02T00:02:00Z",
+                "updated_at": "2026-04-02T00:02:00Z",
+            }
+        if url.endswith("/api/v1/publishing/captions/caption-221/approve"):
+            return {
+                "id": "caption-221",
+                "generation_id": "gen-s2-c1",
+                "channel": "social_short",
+                "platform": "pixiv",
+                "provider": "openrouter",
+                "model": "grok-vision",
+                "prompt_version": "v1",
+                "tone": "teaser",
+                "story": "caption story",
+                "hashtags": "#bathhouse",
+                "approved": True,
+                "created_at": "2026-04-02T00:02:00Z",
+                "updated_at": "2026-04-02T00:03:00Z",
+            }
+        if url.endswith("/api/v1/publishing/posts"):
+            assert payload == {
+                "generation_id": "gen-s2-c1",
+                "caption_variant_id": "caption-221",
+                "platform": "pixiv",
+                "status": "draft",
+            }
+            return {
+                "id": "publish-job-221",
+                "generation_id": "gen-s2-c1",
+                "caption_variant_id": "caption-221",
+                "platform": "pixiv",
+                "status": "draft",
+                "scheduled_at": None,
+                "published_at": None,
+                "external_post_id": None,
+                "external_post_url": None,
+                "notes": None,
+                "created_at": "2026-04-02T00:04:00Z",
+                "updated_at": "2026-04-02T00:04:00Z",
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--select-shot",
+            "2",
+            "--select-candidate",
+            "1",
+        ],
+        fake_request_json,
+        sleep_fn=lambda seconds: None,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    assert "shot_no: 2" in stdout
+    assert "candidate_no: 1" in stdout
+    assert "generation_id: gen-s2-c1" in stdout
+    assert "recommended_anchor_shot_no: 3" in stdout
+    assert "selection_source: operator_override" in stdout
 
 
 def test_runner_executes_ready_caption_approve_publish_in_order() -> None:
@@ -440,7 +697,13 @@ def test_runner_fails_when_ready_postcondition_does_not_hold() -> None:
 
     exit_code, stdout, stderr = _run_main(
         module,
-        ["run_pilot_rerun_close_loop.py", "--base-url", "http://127.0.0.1:8000"],
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--select-shot",
+            "1",
+        ],
         fake_request_json,
         sleep_fn=lambda seconds: None,
     )
@@ -518,7 +781,13 @@ def test_runner_fails_when_approval_postcondition_does_not_hold() -> None:
 
     exit_code, stdout, stderr = _run_main(
         module,
-        ["run_pilot_rerun_close_loop.py", "--base-url", "http://127.0.0.1:8000"],
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--select-shot",
+            "1",
+        ],
         fake_request_json,
         sleep_fn=lambda seconds: None,
     )
@@ -606,7 +875,13 @@ def test_runner_fails_when_draft_publish_is_not_linked_to_approved_caption_varia
 
     exit_code, stdout, stderr = _run_main(
         module,
-        ["run_pilot_rerun_close_loop.py", "--base-url", "http://127.0.0.1:8000"],
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--select-shot",
+            "1",
+        ],
         fake_request_json,
         sleep_fn=lambda seconds: None,
     )

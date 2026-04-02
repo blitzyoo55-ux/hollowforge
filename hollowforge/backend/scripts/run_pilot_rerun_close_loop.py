@@ -89,6 +89,19 @@ def _select_generation_id(
     return generation_id
 
 
+def _resolve_select_shot(
+    plan_result: dict[str, Any],
+    *,
+    select_shot: int,
+) -> tuple[int, str]:
+    if select_shot > 0:
+        return select_shot, "operator_override"
+    recommended_anchor_shot_no = int(plan_result.get("recommended_anchor_shot_no") or 0)
+    if recommended_anchor_shot_no < 1:
+        raise RuntimeError("Plan did not provide a valid recommended_anchor_shot_no")
+    return recommended_anchor_shot_no, "planner_recommendation"
+
+
 def _print_section(label: str, payload: dict[str, Any], *, keys: list[str] | None = None) -> None:
     print(f"{label}:")
     selected_keys = keys or list(payload.keys())
@@ -219,7 +232,7 @@ def main() -> int:
     parser.add_argument("--candidate-count", type=int, default=2)
     parser.add_argument("--lead-character-id", default="hana_seo")
     parser.add_argument("--support-description", default=DEFAULT_SUPPORT_DESCRIPTION)
-    parser.add_argument("--select-shot", type=int, default=1)
+    parser.add_argument("--select-shot", type=int, default=0)
     parser.add_argument("--select-candidate", type=int, default=1)
     parser.add_argument("--platform", default="pixiv")
     parser.add_argument("--tone", default="teaser")
@@ -268,6 +281,15 @@ def main() -> int:
             plan_result,
             keys=["lane", "policy_pack_id", "story_prompt"],
         )
+        recommended_anchor = {
+            "recommended_anchor_shot_no": plan_result.get("recommended_anchor_shot_no"),
+            "recommended_anchor_reason": plan_result.get("recommended_anchor_reason"),
+        }
+        _print_section(
+            "recommended_anchor",
+            recommended_anchor,
+            keys=["recommended_anchor_shot_no", "recommended_anchor_reason"],
+        )
 
         queue_result = _request_json(
             "POST",
@@ -283,20 +305,25 @@ def main() -> int:
             keys=["lane", "requested_shot_count", "queued_generation_count"],
         )
 
+        selected_shot, selection_source = _resolve_select_shot(
+            plan_result,
+            select_shot=args.select_shot,
+        )
         generation_id = _select_generation_id(
             queue_result,
-            select_shot=args.select_shot,
+            select_shot=selected_shot,
             select_candidate=args.select_candidate,
         )
         selected_generation = {
-            "shot_no": args.select_shot,
+            "shot_no": selected_shot,
             "candidate_no": args.select_candidate,
             "generation_id": generation_id,
+            "selection_source": selection_source,
         }
         _print_section(
             "selected_generation",
             selected_generation,
-            keys=["shot_no", "candidate_no", "generation_id"],
+            keys=["shot_no", "candidate_no", "generation_id", "selection_source"],
         )
 
         _wait_for_generation_completion(base_url=base_url, generation_id=generation_id)
