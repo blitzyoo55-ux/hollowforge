@@ -438,6 +438,50 @@ test('plans with optional guidance controls and freeform support', async () => {
   expect(screen.getByText(/Shot 3 keeps the reveal readable while preserving location continuity\./i)).toBeInTheDocument()
 })
 
+test('enabling registry mode clears freeform support and submits registry cast', async () => {
+  renderMode()
+
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
+  fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
+  fireEvent.change(screen.getByLabelText(/Support Lock Mode/i), { target: { value: 'freeform' } })
+  fireEvent.change(screen.getByLabelText(/Support Freeform Description/i), {
+    target: { value: '  a quiet messenger  ' },
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
+
+  expect(screen.getByLabelText(/Support Lock Mode/i)).toHaveValue('registry')
+  expect(screen.queryByLabelText(/Support Freeform Description/i)).not.toBeInTheDocument()
+  expect(screen.getByText(/Registry Cast/i).parentElement).toHaveTextContent('0/2')
+
+  fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
+  fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'mina_park' } })
+  expect(screen.getByText(/Registry Cast/i).parentElement).toHaveTextContent('2/2')
+
+  fireEvent.click(screen.getByRole('button', { name: /Plan Episode/i }))
+
+  await waitFor(() => {
+    expect(planStoryEpisode).toHaveBeenCalledWith({
+      story_prompt: 'A tense bathhouse rendezvous.',
+      lane: 'unrestricted',
+      cast: [
+        {
+          role: 'lead',
+          source_type: 'registry',
+          character_id: 'hana_seo',
+        },
+        {
+          role: 'support',
+          source_type: 'registry',
+          character_id: 'mina_park',
+        },
+      ],
+      location_id: null,
+      preferred_anchor_beat: 'auto',
+    })
+  })
+})
+
 test('renders plan review cards after planner preview succeeds', async () => {
   renderMode()
 

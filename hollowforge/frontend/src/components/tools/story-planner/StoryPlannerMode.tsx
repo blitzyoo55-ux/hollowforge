@@ -103,6 +103,34 @@ function buildPlanRequest({
   }
 }
 
+function getSubmittedCastCount({
+  useRegistryCharacters,
+  leadCharacterId,
+  supportLockMode,
+  supportCharacterId,
+  supportFreeformDescription,
+}: {
+  useRegistryCharacters: boolean
+  leadCharacterId: string
+  supportLockMode: 'unlocked' | 'registry' | 'freeform'
+  supportCharacterId: string
+  supportFreeformDescription: string
+}) {
+  let count = 0
+
+  if (useRegistryCharacters && leadCharacterId.trim()) {
+    count += 1
+  }
+  if (supportLockMode === 'registry' && supportCharacterId.trim()) {
+    count += 1
+  }
+  if (supportLockMode === 'freeform' && supportFreeformDescription.trim()) {
+    count += 1
+  }
+
+  return count
+}
+
 function Metric({
   label,
   value,
@@ -283,8 +311,23 @@ export default function StoryPlannerMode() {
     { label: 'Policy Packs', value: `${catalog?.policy_packs.length ?? 0}`, accent: 'default' as const },
     {
       label: 'Registry Cast',
-      value: `${(useRegistryCharacters && leadCharacterId.trim() ? 1 : 0) + (supportLockMode === 'registry' && supportCharacterId.trim() ? 1 : 0)}/2`,
-      accent: useRegistryCharacters || supportLockMode === 'registry' ? 'good' : 'default',
+      value: `${getSubmittedCastCount({
+        useRegistryCharacters,
+        leadCharacterId,
+        supportLockMode,
+        supportCharacterId,
+        supportFreeformDescription,
+      })}/2`,
+      accent:
+        getSubmittedCastCount({
+          useRegistryCharacters,
+          leadCharacterId,
+          supportLockMode,
+          supportCharacterId,
+          supportFreeformDescription,
+        }) > 0
+          ? 'good'
+          : 'default',
     },
   ] as const
 
@@ -359,7 +402,7 @@ export default function StoryPlannerMode() {
               clearPlannedResults()
               setUseRegistryCharacters(value)
               setSupportLockMode((current) => {
-                if (value && current === 'unlocked') {
+                if (value) {
                   return 'registry'
                 }
                 if (!value && current === 'registry') {
@@ -367,6 +410,11 @@ export default function StoryPlannerMode() {
                 }
                 return current
               })
+              if (value) {
+                setSupportFreeformDescription('')
+              } else {
+                setSupportCharacterId('')
+              }
             }}
             onLeadCharacterIdChange={(value) => {
               clearPlannedResults()
