@@ -17,10 +17,14 @@ def _build_request(
     *,
     story_prompt: str,
     lane: str = "adult_nsfw",
+    location_id: str | None = None,
+    preferred_anchor_beat: str = "auto",
 ) -> StoryPlannerPlanRequest:
     return StoryPlannerPlanRequest(
         story_prompt=story_prompt,
         lane=lane,
+        location_id=location_id,
+        preferred_anchor_beat=preferred_anchor_beat,
         cast=[
             StoryPlannerCastInput(
                 role="lead",
@@ -97,6 +101,9 @@ def test_plan_story_episode_builds_episode_brief_and_four_shot_plan() -> None:
         == "minors, age ambiguity, non-consensual framing"
     )
     assert preview.anchor_render.preserve_blank_negative_prompt is False
+    assert preview.recommended_anchor_shot_no == 2
+    assert preview.recommended_anchor_reason
+    assert len(preview.recommended_anchor_reason) <= 240
     assert preview.approval_token
     assert len(preview.approval_token) == 64
     assert preview.resolved_cast[0].canonical_anchor
@@ -112,6 +119,66 @@ def test_plan_story_episode_builds_episode_brief_and_four_shot_plan() -> None:
     assert all(shot.action for shot in preview.shots)
     assert all(shot.emotion for shot in preview.shots)
     assert all(shot.continuity_note for shot in preview.shots)
+
+
+def test_plan_story_episode_locks_location_by_location_id() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger after closing."
+            ),
+            location_id="moonlit_bathhouse",
+        )
+    )
+
+    assert preview.location.id == "moonlit_bathhouse"
+    assert preview.location.match_note == "Locked to catalog location: Moonlit Bathhouse."
+
+
+def test_plan_story_episode_recommends_shot_two_for_adult_auto_with_lead_and_support() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger in the "
+                "Moonlit Bathhouse corridor after closing."
+            ),
+        )
+    )
+
+    assert preview.recommended_anchor_shot_no == 2
+    assert "exchange" in preview.recommended_anchor_reason.lower()
+
+
+def test_plan_story_episode_recommends_shot_four_for_explicit_decision_beats() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt="Hana Seo studies the message before deciding whether to go in.",
+            preferred_anchor_beat="decision",
+        )
+    )
+
+    assert preview.recommended_anchor_shot_no == 4
+    assert "decision" in preview.recommended_anchor_reason.lower()
+
+
+def test_plan_story_episode_builds_lane_aware_adult_shot_two_with_exchange_and_gaze_signal() -> None:
+    preview = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger in the "
+                "Moonlit Bathhouse corridor after closing."
+            ),
+            location_id="north_service_corridor",
+        )
+    )
+
+    shot_two = preview.shots[1]
+    assert shot_two.shot_no == 2
+    assert "exchange" in shot_two.action.lower()
+    assert "gaze" in shot_two.action.lower()
+    assert "relationship" in shot_two.action.lower()
+    assert preview.location.id == "north_service_corridor"
+    assert preview.location.match_note == "Locked to catalog location: North Service Corridor."
 
 
 def test_plan_story_episode_resolves_registry_cast_and_preserves_freeform_support() -> None:

@@ -25,6 +25,7 @@ from app.models import (
     StoryPlannerLocationCatalogEntry,
     StoryPlannerPlanRequest,
     StoryPlannerPlanResponse,
+    StoryPlannerPreferredAnchorBeat,
     StoryPlannerPolicyPackCatalogEntry,
     StoryPlannerResolvedCastEntry,
     StoryPlannerResolvedLocationEntry,
@@ -166,6 +167,27 @@ def _resolve_location(
     )
 
 
+def _resolve_story_planner_location(
+    *,
+    story_prompt: str,
+    location_id: str | None,
+    locations: list[StoryPlannerLocationCatalogEntry],
+) -> tuple[StoryPlannerLocationCatalogEntry, str]:
+    if location_id is not None:
+        locked_location = next(
+            (location for location in locations if location.id == location_id),
+            None,
+        )
+        if locked_location is None:
+            raise ValueError(f"location_id '{location_id}' was not found in the catalog.")
+        return (
+            locked_location,
+            f"Locked to catalog location: {locked_location.name}.",
+        )
+
+    return _resolve_location(story_prompt, locations)
+
+
 def _normalize_story_prompt(prompt: str) -> str:
     normalized = re.sub(r"\s+", " ", prompt).strip()
     return normalized.rstrip(" .,!?:;")
@@ -229,6 +251,11 @@ def _extract_reveal_detail(prompt: str) -> str:
     return normalized
 
 
+def _has_reveal_detail_hint(prompt: str) -> bool:
+    lowered = f" {_normalize_story_prompt(prompt).lower()} "
+    return any(marker in lowered for marker in _REVEAL_DETAIL_MARKERS)
+
+
 def _infer_prompt_cast(
     prompt: str,
 ) -> list[StoryPlannerResolvedCastEntry]:
@@ -282,6 +309,50 @@ def _merge_prompt_cast(
     role_order = {"lead": 0, "support": 1}
     merged.sort(key=lambda member: role_order.get(member.role, 99))
     return merged
+
+
+def _recommend_anchor_shot(
+    *,
+    lane: str,
+    preferred_anchor_beat: StoryPlannerPreferredAnchorBeat,
+    story_prompt: str,
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
+    shots: list[StoryPlannerShotCard],
+) -> tuple[int, str]:
+    valid_shot_numbers = {shot.shot_no for shot in shots}
+
+    if preferred_anchor_beat != "auto":
+        preferred_shot_no = {
+            "exchange": 2,
+            "reveal": 3,
+            "decision": 4,
+        }[preferred_anchor_beat]
+        reason = f"Preferred anchor beat '{preferred_anchor_beat}' maps to shot {preferred_shot_no}."
+        if preferred_shot_no in valid_shot_numbers:
+            return preferred_shot_no, reason
+
+    has_lead = any(member.role == "lead" for member in resolved_cast)
+    has_support = any(member.role == "support" for member in resolved_cast)
+
+    if lane == "adult_nsfw":
+        if has_lead and has_support:
+            ranking = [2, 3, 4, 1]
+            reason = "Adult NSFW plan with lead and support present favors the exchange shot first."
+        elif _has_reveal_detail_hint(story_prompt):
+            ranking = [3, 4, 2, 1]
+            reason = "Adult NSFW plan with a reveal cue and no support cast favors the reveal shot first."
+        else:
+            ranking = [4, 3, 2, 1]
+            reason = "Adult NSFW plan falls back to the decision shot first."
+    else:
+        ranking = [1, 2, 3, 4]
+        reason = "Safe lanes keep the establishing shot first."
+
+    for shot_no in ranking:
+        if shot_no in valid_shot_numbers:
+            return shot_no, reason
+
+    return shots[0].shot_no, reason
 
 
 def _story_planner_approval_secret_path() -> Path:
@@ -712,11 +783,12 @@ def _build_shots(
     story_prompt: str,
     resolved_cast: list[StoryPlannerResolvedCastEntry],
     location: StoryPlannerResolvedLocationEntry,
+    lane: str,
 ) -> list[StoryPlannerShotCard]:
     lead_label, support_label = _format_cast_labels(resolved_cast)
     story_focus = _normalize_story_prompt(story_prompt)
     reveal_detail = _extract_reveal_detail(story_prompt)
-    return [
+    shots = [
         StoryPlannerShotCard(
             shot_no=1,
             beat="Establish the scene",
@@ -754,10 +826,51 @@ def _build_shots(
         ),
     ]
 
+    if lane != "adult_nsfw":
+        return shots
+
+    shots[1] = StoryPlannerShotCard(
+        shot_no=2,
+        beat="Introduce the exchange",
+        camera="Medium tracking shot at shoulder height, close enough to read the exchange.",
+        action=(
+            f"{lead_label} and {support_label} exchange a quiet gaze in the private space, "
+            f"making the relationship signal readable while the conversation circles {reveal_detail}."
+        ),
+        emotion="Quietly charged attention",
+        continuity_note="Keep their spacing, gaze line, and body language readable inside the same room.",
+    )
+    shots[2] = StoryPlannerShotCard(
+        shot_no=3,
+        beat="Reveal the key detail",
+        camera="Over-the-shoulder close-up with intimate framing.",
+        action=(
+            f"{lead_label}'s posture and hands reveal the tension around {reveal_detail} while "
+            f"{support_label} stays close in the private space."
+        ),
+        emotion="Controlled tension",
+        continuity_note="Preserve expressive body language and the same location anchor.",
+    )
+    shots[3] = StoryPlannerShotCard(
+        shot_no=4,
+        beat="Close on a decision",
+        camera="Tight two-shot with shallow depth of field.",
+        action=(
+            f"{lead_label} makes the deciding move after {reveal_detail}, using a small, deliberate gesture."
+        ),
+        emotion="Controlled resolve",
+        continuity_note="End on the same setting anchor and preserve the private-space framing into the next episode.",
+    )
+    return shots
+
 
 def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResponse:
     catalog = load_story_planner_catalog()
-    location, match_note = _resolve_location(request.story_prompt, catalog.locations)
+    location, match_note = _resolve_story_planner_location(
+        story_prompt=request.story_prompt,
+        location_id=request.location_id,
+        locations=catalog.locations,
+    )
     resolved_location = StoryPlannerResolvedLocationEntry(
         id=location.id,
         name=location.name,
@@ -771,7 +884,19 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
     ]
     resolved_cast = _merge_prompt_cast(request.story_prompt, resolved_cast)
     policy_pack = _select_policy_pack(request.lane, catalog.policy_packs)
-    shots = _build_shots(request.story_prompt, resolved_cast, resolved_location)
+    shots = _build_shots(
+        request.story_prompt,
+        resolved_cast,
+        resolved_location,
+        request.lane,
+    )
+    recommended_anchor_shot_no, recommended_anchor_reason = _recommend_anchor_shot(
+        lane=request.lane,
+        preferred_anchor_beat=request.preferred_anchor_beat,
+        story_prompt=request.story_prompt,
+        resolved_cast=resolved_cast,
+        shots=shots,
+    )
     anchor_render = _build_story_planner_anchor_render_snapshot(
         lane=request.lane,
         policy_pack=policy_pack,
@@ -782,6 +907,8 @@ def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResp
         "story_prompt": request.story_prompt,
         "lane": request.lane,
         "policy_pack_id": policy_pack.id,
+        "recommended_anchor_shot_no": recommended_anchor_shot_no,
+        "recommended_anchor_reason": recommended_anchor_reason,
         "anchor_render": anchor_render.model_dump(mode="json"),
         "resolved_cast": [member.model_dump(mode="json") for member in resolved_cast],
         "location": resolved_location.model_dump(mode="json"),

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import random
+from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.services.workflow_registry import infer_workflow_lane
 
@@ -39,6 +40,7 @@ PromptFactoryCheckpointPreferenceMode = Literal[
 ]
 SequenceContentMode = Literal["all_ages", "adult_nsfw"]
 StoryPlannerLane = Literal["unrestricted", "all_ages", "adult_nsfw"]
+StoryPlannerPreferredAnchorBeat = Literal["auto", "exchange", "reveal", "decision"]
 
 
 # ---------------------------------------------------------------------------
@@ -523,12 +525,30 @@ class StoryPlannerCastInput(BaseModel):
         return self
 
 
+@lru_cache(maxsize=1)
+def _story_planner_location_ids() -> set[str]:
+    from app.services.story_planner_catalog import load_story_planner_catalog
+
+    return {location.id for location in load_story_planner_catalog().locations}
+
+
 class StoryPlannerPlanRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     story_prompt: str = Field(min_length=1, max_length=2000)
     lane: StoryPlannerLane
+    location_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    preferred_anchor_beat: StoryPlannerPreferredAnchorBeat = "auto"
     cast: List[StoryPlannerCastInput] = Field(default_factory=list, max_length=2)
+
+    @field_validator("location_id")
+    @classmethod
+    def validate_location_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        if value not in _story_planner_location_ids():
+            raise ValueError(f"location_id '{value}' is not in the catalog")
+        return value
 
     @model_validator(mode="after")
     def validate_unique_cast_roles(self) -> "StoryPlannerPlanRequest":
@@ -625,6 +645,8 @@ class StoryPlannerPlanResponse(BaseModel):
     story_prompt: str = Field(min_length=1, max_length=2000)
     lane: StoryPlannerLane
     policy_pack_id: str = Field(min_length=1, max_length=120)
+    recommended_anchor_shot_no: int = Field(ge=1, le=4)
+    recommended_anchor_reason: str = Field(min_length=1, max_length=240)
     approval_token: str = Field(min_length=64, max_length=64)
     anchor_render: StoryPlannerAnchorRenderSnapshot
     resolved_cast: List[StoryPlannerResolvedCastEntry] = Field(default_factory=list)

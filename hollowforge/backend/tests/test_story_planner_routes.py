@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest
@@ -101,6 +103,9 @@ async def test_story_planner_plan_route_returns_four_shot_preview(path: str) -> 
     )
     assert body["episode_brief"]["premise"]
     assert len(body["shots"]) == 4
+    assert body["recommended_anchor_shot_no"] == 2
+    assert body["recommended_anchor_reason"]
+    assert len(body["recommended_anchor_reason"]) <= 240
 
 
 @pytest.mark.parametrize(
@@ -141,6 +146,50 @@ async def test_story_planner_plan_route_preserves_unresolved_registry_semantics(
     assert body["resolved_cast"][0]["character_id"] == "unknown_consultant"
     assert body["resolved_cast"][0]["character_name"] is None
     assert "not found" in body["resolved_cast"][0]["resolution_note"].lower()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/tools/story-planner/plan",
+        "/api/tools/story-planner/plan",
+    ],
+)
+async def test_story_planner_plan_route_rejects_invalid_location_lock_with_422(
+    path: str,
+) -> None:
+    app = _build_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            path,
+            json={
+                "story_prompt": (
+                    "Hana Seo compares notes with a quiet messenger in the "
+                    "Moonlit Bathhouse corridor after closing."
+                ),
+                "lane": "adult_nsfw",
+                "location_id": "not_a_real_location",
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": "hana_seo",
+                    },
+                    {
+                        "role": "support",
+                        "source_type": "freeform",
+                        "freeform_description": "quiet messenger in a dark coat",
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 422
+    assert "location_id" in json.dumps(response.json()["detail"])
 
 
 @pytest.mark.parametrize(
