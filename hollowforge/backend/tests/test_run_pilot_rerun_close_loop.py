@@ -391,6 +391,35 @@ def test_runner_defaults_to_planner_recommended_anchor_shot_when_no_override_is_
     assert "selection_source: planner_recommendation" in stdout
 
 
+def test_runner_rejects_explicit_non_positive_select_shot_override() -> None:
+    module = _load_module()
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        if url.endswith("/api/v1/publishing/readiness"):
+            return _readiness_result()
+        if url.endswith("/api/v1/tools/story-planner/plan"):
+            return _plan_result()
+        if url.endswith("/api/v1/tools/story-planner/generate-anchors"):
+            return _queue_result()
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "run_pilot_rerun_close_loop.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--select-shot",
+            "-1",
+        ],
+        fake_request_json,
+        sleep_fn=lambda seconds: None,
+    )
+
+    assert exit_code == 1
+    assert "--select-shot must be a positive integer; got -1" in stdout + stderr
+
+
 def test_resolve_select_shot_rejects_malformed_recommendation_data() -> None:
     module = _load_module()
 
