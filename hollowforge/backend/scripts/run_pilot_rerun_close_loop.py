@@ -1,0 +1,325 @@
+"""Run a script-reproducible adult NSFW pilot rerun through draft publish."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+DEFAULT_STORY_PROMPT = (
+    "Hana Seo slips through the Moonlit Bathhouse corridor after closing, "
+    "trading a charged look with a quiet attendant in a narrow, steam-bright passage."
+)
+DEFAULT_SUPPORT_DESCRIPTION = "quiet bathhouse attendant in a dark robe with damp hair"
+
+
+def _request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = Request(url, data=data, headers=headers, method=method.upper())
+    with urlopen(request, timeout=30) as response:
+        body = response.read().decode("utf-8")
+    parsed = json.loads(body)
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Expected JSON object from {url}")
+    return parsed
+
+
+def _wait_for_generation_completion(
+    *,
+    base_url: str,
+    generation_id: str,
+    poll_interval_sec: float = 2.0,
+    timeout_sec: float = 300.0,
+) -> dict[str, Any]:
+    status_url = f"{base_url}/api/v1/generations/{generation_id}/status"
+    elapsed = 0.0
+    latest_status: dict[str, Any] | None = None
+    while elapsed < timeout_sec:
+        latest_status = _request_json("GET", status_url)
+        if str(latest_status.get("status")) == "completed":
+            return latest_status
+        time.sleep(poll_interval_sec)
+        elapsed += poll_interval_sec
+    detail = latest_status.get("status") if latest_status else "unknown"
+    raise RuntimeError(
+        f"Generation {generation_id} never reached completed within {int(timeout_sec)}s "
+        f"(last_status={detail})"
+    )
+
+
+def _select_generation_id(
+    queue_result: dict[str, Any],
+    *,
+    select_shot: int,
+    select_candidate: int,
+) -> str:
+    queued_shots = queue_result.get("queued_shots") or []
+    selected_shot = next(
+        (shot for shot in queued_shots if int(shot.get("shot_no") or 0) == select_shot),
+        None,
+    )
+    if selected_shot is None:
+        raise RuntimeError(f"Shot {select_shot} was not queued")
+    generation_ids = selected_shot.get("generation_ids") or []
+    if select_candidate < 1 or select_candidate > len(generation_ids):
+        raise RuntimeError(
+            f"Candidate {select_candidate} is out of range for shot {select_shot}"
+        )
+    generation_id = generation_ids[select_candidate - 1]
+    if not isinstance(generation_id, str) or not generation_id:
+        raise RuntimeError(
+            f"Shot {select_shot} candidate {select_candidate} did not return a generation id"
+        )
+    return generation_id
+
+
+def _print_section(label: str, payload: dict[str, Any], *, keys: list[str] | None = None) -> None:
+    print(f"{label}:")
+    selected_keys = keys or list(payload.keys())
+    for key in selected_keys:
+        print(f"{key}: {payload.get(key)}")
+
+
+def _render_rerun_log(
+    *,
+    readiness_result: dict[str, Any],
+    plan_result: dict[str, Any],
+    queue_result: dict[str, Any],
+    selected_generation: dict[str, Any],
+    ready_result: dict[str, Any],
+    caption_result: dict[str, Any],
+    approval_result: dict[str, Any],
+    publish_job_result: dict[str, Any],
+) -> str:
+    _ = ready_result
+    return "\n".join(
+        [
+            "# HollowForge Pilot Rerun Close Loop",
+            "",
+            "## Close Loop Summary",
+            f"- readiness mode: {readiness_result.get('degraded_mode')}",
+            f"- plan lane: {plan_result.get('lane')}",
+            f"- queued generations: {queue_result.get('queued_generation_count')}",
+            f"- selected shot: {selected_generation.get('shot_no')}",
+            f"- selected candidate: {selected_generation.get('candidate_no')}",
+            f"- selected generation id: {selected_generation.get('generation_id')}",
+            f"- caption id: {caption_result.get('id')}",
+            f"- approved caption id: {approval_result.get('id')}",
+            f"- draft publish job id: {publish_job_result.get('id')}",
+        ]
+    )
+
+
+def _render_rerun_retro(
+    *,
+    selected_generation: dict[str, Any],
+    caption_result: dict[str, Any],
+    publish_job_result: dict[str, Any],
+) -> str:
+    return "\n".join(
+        [
+            "# HollowForge Pilot Rerun Retro",
+            "",
+            "## IDs",
+            f"- generation id: {selected_generation.get('generation_id')}",
+            f"- caption id: {caption_result.get('id')}",
+            f"- publish job id: {publish_job_result.get('id')}",
+            "",
+            "## Notes",
+            "- Validate operator review of the drafted publish payload before external posting.",
+        ]
+    )
+
+
+def _write_optional_output(path_value: str | None, rendered: str) -> None:
+    if not path_value:
+        return
+    path = Path(path_value)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rendered + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument("--ui-base-url", default="http://127.0.0.1:5173")
+    parser.add_argument("--story-prompt", default=DEFAULT_STORY_PROMPT)
+    parser.add_argument("--lane", default="adult_nsfw")
+    parser.add_argument("--candidate-count", type=int, default=2)
+    parser.add_argument("--lead-character-id", default="hana_seo")
+    parser.add_argument("--support-description", default=DEFAULT_SUPPORT_DESCRIPTION)
+    parser.add_argument("--select-shot", type=int, default=1)
+    parser.add_argument("--select-candidate", type=int, default=1)
+    parser.add_argument("--platform", default="pixiv")
+    parser.add_argument("--tone", default="teaser")
+    parser.add_argument("--channel", default="social_short")
+    parser.add_argument("--log-path")
+    parser.add_argument("--retro-path")
+    args = parser.parse_args()
+
+    try:
+        base_url = args.base_url.rstrip("/")
+        _ = args.ui_base_url.rstrip("/")
+
+        readiness_result = _request_json("GET", f"{base_url}/api/v1/publishing/readiness")
+        _print_section(
+            "readiness_result",
+            readiness_result,
+            keys=["degraded_mode", "provider", "model"],
+        )
+        if str(readiness_result.get("degraded_mode")) != "full":
+            raise RuntimeError(
+                f"Publishing readiness is not full: {readiness_result.get('degraded_mode')}"
+            )
+
+        plan_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/tools/story-planner/plan",
+            {
+                "story_prompt": args.story_prompt,
+                "lane": args.lane,
+                "cast": [
+                    {
+                        "role": "lead",
+                        "source_type": "registry",
+                        "character_id": args.lead_character_id,
+                    },
+                    {
+                        "role": "support",
+                        "source_type": "freeform",
+                        "freeform_description": args.support_description,
+                    },
+                ],
+            },
+        )
+        _print_section(
+            "plan_result",
+            plan_result,
+            keys=["lane", "policy_pack_id", "story_prompt"],
+        )
+
+        queue_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/tools/story-planner/generate-anchors",
+            {
+                "approved_plan": plan_result,
+                "candidate_count": args.candidate_count,
+            },
+        )
+        _print_section(
+            "queue_result",
+            queue_result,
+            keys=["lane", "requested_shot_count", "queued_generation_count"],
+        )
+
+        generation_id = _select_generation_id(
+            queue_result,
+            select_shot=args.select_shot,
+            select_candidate=args.select_candidate,
+        )
+        _wait_for_generation_completion(base_url=base_url, generation_id=generation_id)
+
+        generation_result = _request_json("GET", f"{base_url}/api/v1/generations/{generation_id}")
+        image_path = generation_result.get("image_path")
+        if not isinstance(image_path, str) or not image_path:
+            raise RuntimeError(f"Generation {generation_id} has no source image path")
+
+        selected_generation = {
+            "shot_no": args.select_shot,
+            "candidate_no": args.select_candidate,
+            "generation_id": generation_id,
+            "image_path": image_path,
+        }
+        _print_section(
+            "selected_generation",
+            selected_generation,
+            keys=["shot_no", "candidate_no", "generation_id", "image_path"],
+        )
+
+        ready_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/generations/{generation_id}/ready",
+        )
+        _print_section(
+            "ready_result",
+            ready_result,
+            keys=["id", "publish_approved", "curated_at"],
+        )
+
+        caption_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/publishing/generations/{generation_id}/captions/generate",
+            {
+                "platform": args.platform,
+                "tone": args.tone,
+                "channel": args.channel,
+                "approved": False,
+            },
+        )
+        _print_section(
+            "caption_result",
+            caption_result,
+            keys=["id", "generation_id", "approved", "platform", "tone", "channel"],
+        )
+
+        approval_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/publishing/captions/{caption_result['id']}/approve",
+        )
+        _print_section(
+            "approval_result",
+            approval_result,
+            keys=["id", "generation_id", "approved", "platform", "tone", "channel"],
+        )
+
+        publish_job_result = _request_json(
+            "POST",
+            f"{base_url}/api/v1/publishing/posts",
+            {
+                "generation_id": generation_id,
+                "caption_variant_id": approval_result["id"],
+                "platform": args.platform,
+                "status": "draft",
+            },
+        )
+        _print_section(
+            "publish_job_result",
+            publish_job_result,
+            keys=["id", "generation_id", "caption_variant_id", "platform", "status"],
+        )
+
+        rerun_log = _render_rerun_log(
+            readiness_result=readiness_result,
+            plan_result=plan_result,
+            queue_result=queue_result,
+            selected_generation=selected_generation,
+            ready_result=ready_result,
+            caption_result=caption_result,
+            approval_result=approval_result,
+            publish_job_result=publish_job_result,
+        )
+        rerun_retro = _render_rerun_retro(
+            selected_generation=selected_generation,
+            caption_result=approval_result,
+            publish_job_result=publish_job_result,
+        )
+        _write_optional_output(args.log_path, rerun_log)
+        _write_optional_output(args.retro_path, rerun_retro)
+        return 0
+    except (HTTPError, URLError, RuntimeError, ValueError, json.JSONDecodeError, KeyError) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
