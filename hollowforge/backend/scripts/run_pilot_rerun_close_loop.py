@@ -90,6 +90,15 @@ def _print_section(label: str, payload: dict[str, Any], *, keys: list[str] | Non
         print(f"{key}: {payload.get(key)}")
 
 
+def _queued_generation_ids(queue_result: dict[str, Any]) -> list[str]:
+    queued_ids: list[str] = []
+    for shot in queue_result.get("queued_shots") or []:
+        for generation_id in shot.get("generation_ids") or []:
+            if isinstance(generation_id, str) and generation_id:
+                queued_ids.append(generation_id)
+    return queued_ids
+
+
 def _render_rerun_log(
     *,
     readiness_result: dict[str, Any],
@@ -102,6 +111,13 @@ def _render_rerun_log(
     publish_job_result: dict[str, Any],
 ) -> str:
     _ = ready_result
+    queued_generation_ids = ", ".join(_queued_generation_ids(queue_result))
+    fixture_summary = (
+        f"shot {selected_generation.get('shot_no')} candidate {selected_generation.get('candidate_no')} "
+        f"selected for lane {plan_result.get('lane')} on "
+        f"{caption_result.get('platform')}/{caption_result.get('channel')} "
+        f"{caption_result.get('tone')} {publish_job_result.get('status')} flow"
+    )
     return "\n".join(
         [
             "# HollowForge Pilot Rerun Close Loop",
@@ -109,23 +125,29 @@ def _render_rerun_log(
             "## Close Loop Summary",
             f"- readiness mode: {readiness_result.get('degraded_mode')}",
             f"- plan lane: {plan_result.get('lane')}",
+            f"- fixture summary: {fixture_summary}",
             f"- queued generations: {queue_result.get('queued_generation_count')}",
+            f"- queued generation ids: {queued_generation_ids}",
             f"- selected shot: {selected_generation.get('shot_no')}",
             f"- selected candidate: {selected_generation.get('candidate_no')}",
             f"- selected generation id: {selected_generation.get('generation_id')}",
             f"- caption id: {caption_result.get('id')}",
             f"- approved caption id: {approval_result.get('id')}",
             f"- draft publish job id: {publish_job_result.get('id')}",
+            "- outcome: closed-loop draft publish created with no manual UI intervention",
         ]
     )
 
 
 def _render_rerun_retro(
     *,
+    readiness_result: dict[str, Any],
+    queue_result: dict[str, Any],
     selected_generation: dict[str, Any],
     caption_result: dict[str, Any],
     publish_job_result: dict[str, Any],
 ) -> str:
+    queued_generation_ids = ", ".join(_queued_generation_ids(queue_result))
     return "\n".join(
         [
             "# HollowForge Pilot Rerun Retro",
@@ -135,7 +157,15 @@ def _render_rerun_retro(
             f"- caption id: {caption_result.get('id')}",
             f"- publish job id: {publish_job_result.get('id')}",
             "",
+            "## Queue",
+            f"- queued generation ids: {queued_generation_ids}",
+            "",
             "## Notes",
+            (
+                "- closed-loop outcome: ready, caption, approve, and draft publish "
+                "completed without manual UI intervention."
+            ),
+            f"- readiness mode at execution: {readiness_result.get('degraded_mode')}",
             "- Validate operator review of the drafted publish payload before external posting.",
         ]
     )
@@ -227,24 +257,24 @@ def main() -> int:
             select_shot=args.select_shot,
             select_candidate=args.select_candidate,
         )
+        selected_generation = {
+            "shot_no": args.select_shot,
+            "candidate_no": args.select_candidate,
+            "generation_id": generation_id,
+        }
+        _print_section(
+            "selected_generation",
+            selected_generation,
+            keys=["shot_no", "candidate_no", "generation_id"],
+        )
+
         _wait_for_generation_completion(base_url=base_url, generation_id=generation_id)
 
         generation_result = _request_json("GET", f"{base_url}/api/v1/generations/{generation_id}")
         image_path = generation_result.get("image_path")
         if not isinstance(image_path, str) or not image_path:
             raise RuntimeError(f"Generation {generation_id} has no source image path")
-
-        selected_generation = {
-            "shot_no": args.select_shot,
-            "candidate_no": args.select_candidate,
-            "generation_id": generation_id,
-            "image_path": image_path,
-        }
-        _print_section(
-            "selected_generation",
-            selected_generation,
-            keys=["shot_no", "candidate_no", "generation_id", "image_path"],
-        )
+        selected_generation["image_path"] = image_path
 
         ready_result = _request_json(
             "POST",
@@ -309,6 +339,8 @@ def main() -> int:
             publish_job_result=publish_job_result,
         )
         rerun_retro = _render_rerun_retro(
+            readiness_result=readiness_result,
+            queue_result=queue_result,
             selected_generation=selected_generation,
             caption_result=approval_result,
             publish_job_result=publish_job_result,

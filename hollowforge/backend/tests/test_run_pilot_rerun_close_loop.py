@@ -193,6 +193,10 @@ def test_runner_stops_when_selected_generation_never_reaches_completed() -> None
 
     assert exit_code == 1
     assert "never reached completed" in stdout + stderr
+    assert "selected_generation:" in stdout
+    assert "shot_no: 1" in stdout
+    assert "candidate_no: 1" in stdout
+    assert "generation_id: gen-s1-c1" in stdout
     assert all(not url.endswith("/ready") for _, url, _ in calls)
     assert sleeps == [2.0] * 150
 
@@ -359,11 +363,24 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         },
         selected_generation={"shot_no": 2, "candidate_no": 1, "generation_id": "gen-s2-c1"},
         ready_result={"publish_approved": 1, "curated_at": "2026-04-02T00:01:00Z"},
-        caption_result={"id": "caption-222", "approved": False},
+        caption_result={
+            "id": "caption-222",
+            "approved": False,
+            "platform": "pixiv",
+            "tone": "teaser",
+            "channel": "social_short",
+        },
         approval_result={"id": "caption-222", "approved": True},
         publish_job_result={"id": "publish-job-222", "status": "draft"},
     )
     rendered_retro = module._render_rerun_retro(
+        readiness_result={"degraded_mode": "full"},
+        queue_result={
+            "queued_shots": [
+                {"shot_no": 1, "generation_ids": ["gen-s1-c1", "gen-s1-c2"]},
+                {"shot_no": 2, "generation_ids": ["gen-s2-c1", "gen-s2-c2"]},
+            ],
+        },
         selected_generation={"shot_no": 2, "candidate_no": 1, "generation_id": "gen-s2-c1"},
         caption_result={"id": "caption-222"},
         publish_job_result={"id": "publish-job-222"},
@@ -375,13 +392,16 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         "## Close Loop Summary",
         "- readiness mode: full",
         "- plan lane: adult_nsfw",
+        "- fixture summary: shot 2 candidate 1 selected for lane adult_nsfw on pixiv/social_short teaser draft flow",
         "- queued generations: 8",
+        "- queued generation ids: gen-s1-c1, gen-s1-c2, gen-s2-c1, gen-s2-c2",
         "- selected shot: 2",
         "- selected candidate: 1",
         "- selected generation id: gen-s2-c1",
         "- caption id: caption-222",
         "- approved caption id: caption-222",
         "- draft publish job id: publish-job-222",
+        "- outcome: closed-loop draft publish created with no manual UI intervention",
     ]
     assert rendered_retro.splitlines() == [
         "# HollowForge Pilot Rerun Retro",
@@ -391,6 +411,11 @@ def test_render_rerun_log_and_retro_include_selected_ids() -> None:
         "- caption id: caption-222",
         "- publish job id: publish-job-222",
         "",
+        "## Queue",
+        "- queued generation ids: gen-s1-c1, gen-s1-c2, gen-s2-c1, gen-s2-c2",
+        "",
         "## Notes",
+        "- closed-loop outcome: ready, caption, approve, and draft publish completed without manual UI intervention.",
+        "- readiness mode at execution: full",
         "- Validate operator review of the drafted publish payload before external posting.",
     ]
