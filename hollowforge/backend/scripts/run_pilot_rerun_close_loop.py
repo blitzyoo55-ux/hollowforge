@@ -92,13 +92,12 @@ def _select_generation_id(
 def _resolve_select_shot(
     plan_result: dict[str, Any],
     *,
-    select_shot: int,
-    explicit_override: bool = False,
+    select_shot: int | None,
 ) -> tuple[int, str]:
-    if select_shot > 0:
+    if select_shot is not None:
+        if select_shot < 1:
+            raise RuntimeError(f"--select-shot must be a positive integer; got {select_shot}")
         return select_shot, "operator_override"
-    if explicit_override:
-        raise RuntimeError(f"--select-shot must be a positive integer; got {select_shot}")
     recommended_anchor_raw = plan_result.get("recommended_anchor_shot_no")
     try:
         recommended_anchor_shot_no = int(recommended_anchor_raw or 0)
@@ -241,7 +240,7 @@ def main() -> int:
     parser.add_argument("--candidate-count", type=int, default=2)
     parser.add_argument("--lead-character-id", default="hana_seo")
     parser.add_argument("--support-description", default=DEFAULT_SUPPORT_DESCRIPTION)
-    parser.add_argument("--select-shot", type=int, default=0)
+    parser.add_argument("--select-shot", type=int, default=None)
     parser.add_argument("--select-candidate", type=int, default=1)
     parser.add_argument("--platform", default="pixiv")
     parser.add_argument("--tone", default="teaser")
@@ -314,11 +313,9 @@ def main() -> int:
             keys=["lane", "requested_shot_count", "queued_generation_count"],
         )
 
-        explicit_select_shot = "--select-shot" in sys.argv[1:]
         selected_shot, selection_source = _resolve_select_shot(
             plan_result,
             select_shot=args.select_shot,
-            explicit_override=explicit_select_shot,
         )
         generation_id = _select_generation_id(
             queue_result,

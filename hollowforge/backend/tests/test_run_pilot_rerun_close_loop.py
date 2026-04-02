@@ -6,6 +6,8 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+import pytest
+
 
 def _load_module():
     module_path = Path(__file__).resolve().parents[1] / "scripts" / "run_pilot_rerun_close_loop.py"
@@ -391,7 +393,14 @@ def test_runner_defaults_to_planner_recommended_anchor_shot_when_no_override_is_
     assert "selection_source: planner_recommendation" in stdout
 
 
-def test_runner_rejects_explicit_non_positive_select_shot_override() -> None:
+@pytest.mark.parametrize(
+    "select_shot_argv",
+    [
+        ["--select-shot", "-1"],
+        ["--select-shot=-1"],
+    ],
+)
+def test_runner_rejects_explicit_non_positive_select_shot_override(select_shot_argv: list[str]) -> None:
     module = _load_module()
 
     def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
@@ -409,8 +418,7 @@ def test_runner_rejects_explicit_non_positive_select_shot_override() -> None:
             "run_pilot_rerun_close_loop.py",
             "--base-url",
             "http://127.0.0.1:8000",
-            "--select-shot",
-            "-1",
+            *select_shot_argv,
         ],
         fake_request_json,
         sleep_fn=lambda seconds: None,
@@ -429,7 +437,7 @@ def test_resolve_select_shot_rejects_malformed_recommendation_data() -> None:
                 "recommended_anchor_shot_no": "not-a-number",
                 "recommended_anchor_reason": "malformed planner payload",
             },
-            select_shot=0,
+            select_shot=None,
         )
     except RuntimeError as exc:
         assert "recommended_anchor_shot_no" in str(exc)
@@ -438,7 +446,8 @@ def test_resolve_select_shot_rejects_malformed_recommendation_data() -> None:
         raise AssertionError("expected RuntimeError for malformed recommendation data")
 
 
-def test_runner_explicit_select_shot_override_wins_over_planner_recommendation() -> None:
+@pytest.mark.parametrize("select_shot_args", [["--select-shot", "2"], ["--select-shot=2"]])
+def test_runner_explicit_select_shot_override_wins_over_planner_recommendation(select_shot_args: list[str]) -> None:
     module = _load_module()
     calls: list[tuple[str, str, dict[str, object] | None]] = []
 
@@ -540,8 +549,7 @@ def test_runner_explicit_select_shot_override_wins_over_planner_recommendation()
             "run_pilot_rerun_close_loop.py",
             "--base-url",
             "http://127.0.0.1:8000",
-            "--select-shot",
-            "2",
+            *select_shot_args,
             "--select-candidate",
             "1",
         ],
