@@ -121,6 +121,21 @@ _REVEAL_DETAIL_MARKERS = (
     " because ",
     " as ",
 )
+_NON_ADULT_SUPPORT_WORDS_TO_STRIP = (
+    "adult",
+    "bare",
+    "erotic",
+    "lingerie",
+    "provocative",
+    "risque",
+    "risqué",
+    "seductive",
+    "sexy",
+    "sensual",
+    "silk-clad",
+    "suggestive",
+    "revealing",
+)
 
 
 class StoryPlannerValidationError(ValueError):
@@ -360,6 +375,18 @@ def _is_sparse_freeform_support_description(description: str | None) -> bool:
     return len(meaningful_tokens) < 2
 
 
+def _normalize_non_adult_freeform_support_description(description: str) -> str:
+    sanitized = description
+    for term in _NON_ADULT_SUPPORT_WORDS_TO_STRIP:
+        sanitized = re.sub(rf"(?i)\b{re.escape(term)}\b", "", sanitized)
+    sanitized = re.sub(r"\s*,\s*", ", ", sanitized)
+    sanitized = re.sub(r"\s{2,}", " ", sanitized)
+    sanitized = re.sub(r",\s*,", ", ", sanitized)
+    sanitized = re.sub(r"\s+,", ",", sanitized)
+    sanitized = re.sub(r"\s+\.", ".", sanitized)
+    return sanitized.strip(" ,.;:!-")
+
+
 def _build_freeform_support_synthesis(
     *,
     lane: str,
@@ -370,9 +397,15 @@ def _build_freeform_support_synthesis(
     if lane == "adult_nsfw":
         identity_prefix = "Adult secondary figure"
         wardrobe_prefix = "Use subdued adult wardrobe cues"
+        display_description = description
     else:
         identity_prefix = "Supporting figure"
         wardrobe_prefix = "Use subdued wardrobe cues"
+        display_description = _normalize_non_adult_freeform_support_description(
+            description
+        )
+        if not display_description:
+            sparse_description = True
 
     if sparse_description:
         canonical_anchor = f"{identity_prefix} with a restrained, observant presence."
@@ -381,12 +414,12 @@ def _build_freeform_support_synthesis(
         )
         personality_notes = "Quiet, observant, and deferential to the lead's space."
     else:
-        canonical_anchor = f"{identity_prefix}: {description}."
+        canonical_anchor = f"{identity_prefix}: {display_description}."
         wardrobe_notes = (
-            f"Keep the look grounded in {description} and visually secondary to the lead."
+            f"Keep the look grounded in {display_description} and visually secondary to the lead."
         )
         personality_notes = (
-            f"{_sentence_case(description)} energy, with a restrained secondary presence."
+            f"{_sentence_case(display_description)} energy, with a restrained secondary presence."
         )
     if lead_label:
         anti_drift = (

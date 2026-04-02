@@ -385,6 +385,54 @@ def test_plan_story_episode_uses_neutral_support_copy_in_non_adult_lane() -> Non
     assert "adult" not in combined_notes
 
 
+def test_plan_story_episode_strips_adult_specific_words_from_rich_non_adult_support_copy() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Hana Seo meets a warm, elegant, silk-clad companion in the corridor after closing.",
+            lane="all_ages",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="warm, elegant, silk-clad companion",
+                ),
+            ],
+        )
+    )
+
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+    combined_notes = " ".join(
+        note
+        for note in (
+            support.canonical_anchor,
+            support.anti_drift,
+            support.wardrobe_notes,
+            support.personality_notes,
+        )
+        if note
+    ).lower()
+
+    assert support.freeform_description == "warm, elegant, silk-clad companion"
+    assert support.canonical_anchor == "Supporting figure: warm, elegant, companion."
+    assert (
+        support.wardrobe_notes
+        == "Keep the look grounded in warm, elegant, companion and visually secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Warm, elegant, companion energy, with a restrained secondary presence."
+    )
+    assert "adult" not in combined_notes
+    assert "silk-clad" not in combined_notes
+
+
 def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_name() -> None:
     preview = plan_story_episode(
         StoryPlannerPlanRequest(
@@ -430,6 +478,18 @@ def test_plan_story_episode_derives_prompt_only_cast_from_story_prompt() -> None
     assert support.source_type == "freeform"
     assert support.freeform_description is not None
     assert "messenger" in support.freeform_description.lower()
+    assert (
+        support.canonical_anchor
+        == "Adult secondary figure with a restrained, observant presence."
+    )
+    assert (
+        support.wardrobe_notes
+        == "Use subdued adult wardrobe cues that keep the support figure secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Quiet, observant, and deferential to the lead's space."
+    )
 
 
 def test_plan_story_episode_uses_story_prompt_details_in_brief_and_shots() -> None:
