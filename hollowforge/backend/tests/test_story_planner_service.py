@@ -135,6 +135,18 @@ def test_plan_story_episode_locks_location_by_location_id() -> None:
     assert preview.location.match_note == "Locked to catalog location: Moonlit Bathhouse."
 
 
+def test_plan_story_episode_rejects_invalid_location_lock() -> None:
+    with pytest.raises(ValueError, match="location_id"):
+        plan_story_episode(
+            _build_request(
+                story_prompt=(
+                    "Hana Seo compares notes with a quiet messenger after closing."
+                ),
+                location_id="not_a_real_location",
+            )
+        )
+
+
 def test_plan_story_episode_recommends_shot_two_for_adult_auto_with_lead_and_support() -> None:
     preview = plan_story_episode(
         _build_request(

@@ -86,7 +86,13 @@ async def story_planner_catalog() -> StoryPlannerCatalog:
 async def story_planner_plan(
     payload: StoryPlannerPlanRequest,
 ) -> StoryPlannerPlanResponse:
-    return plan_story_episode(payload)
+    try:
+        return plan_story_episode(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(

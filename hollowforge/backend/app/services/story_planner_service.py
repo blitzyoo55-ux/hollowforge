@@ -788,7 +788,51 @@ def _build_shots(
     lead_label, support_label = _format_cast_labels(resolved_cast)
     story_focus = _normalize_story_prompt(story_prompt)
     reveal_detail = _extract_reveal_detail(story_prompt)
-    shots = [
+    if lane == "adult_nsfw":
+        return [
+            StoryPlannerShotCard(
+                shot_no=1,
+                beat="Establish the scene",
+                camera=f"Wide establishing shot inside {location.name}.",
+                action=_sentence_case(story_focus),
+                emotion="Measured alertness",
+                continuity_note=f"Hold {location.name}'s visual rules and keep the lead silhouette consistent.",
+            ),
+            StoryPlannerShotCard(
+                shot_no=2,
+                beat="Introduce the exchange",
+                camera="Medium tracking shot at shoulder height, close enough to read the exchange.",
+                action=(
+                    f"{lead_label} and {support_label} exchange a quiet gaze in the private space, "
+                    f"making the relationship signal readable while the conversation circles {reveal_detail}."
+                ),
+                emotion="Quietly charged attention",
+                continuity_note="Keep their spacing, gaze line, and body language readable inside the same room.",
+            ),
+            StoryPlannerShotCard(
+                shot_no=3,
+                beat="Reveal the key detail",
+                camera="Over-the-shoulder close-up with intimate framing.",
+                action=(
+                    f"{lead_label}'s posture and hands reveal the tension around {reveal_detail} while "
+                    f"{support_label} stays close in the private space."
+                ),
+                emotion="Controlled tension",
+                continuity_note="Preserve expressive body language and the same location anchor.",
+            ),
+            StoryPlannerShotCard(
+                shot_no=4,
+                beat="Close on a decision",
+                camera="Tight two-shot with shallow depth of field.",
+                action=(
+                    f"{lead_label} makes the deciding move after {reveal_detail}, using a small, deliberate gesture."
+                ),
+                emotion="Controlled resolve",
+                continuity_note="End on the same setting anchor and preserve the private-space framing into the next episode.",
+            ),
+        ]
+
+    return [
         StoryPlannerShotCard(
             shot_no=1,
             beat="Establish the scene",
@@ -825,43 +869,6 @@ def _build_shots(
             continuity_note="End on the same setting anchor to preserve continuity into the next episode.",
         ),
     ]
-
-    if lane != "adult_nsfw":
-        return shots
-
-    shots[1] = StoryPlannerShotCard(
-        shot_no=2,
-        beat="Introduce the exchange",
-        camera="Medium tracking shot at shoulder height, close enough to read the exchange.",
-        action=(
-            f"{lead_label} and {support_label} exchange a quiet gaze in the private space, "
-            f"making the relationship signal readable while the conversation circles {reveal_detail}."
-        ),
-        emotion="Quietly charged attention",
-        continuity_note="Keep their spacing, gaze line, and body language readable inside the same room.",
-    )
-    shots[2] = StoryPlannerShotCard(
-        shot_no=3,
-        beat="Reveal the key detail",
-        camera="Over-the-shoulder close-up with intimate framing.",
-        action=(
-            f"{lead_label}'s posture and hands reveal the tension around {reveal_detail} while "
-            f"{support_label} stays close in the private space."
-        ),
-        emotion="Controlled tension",
-        continuity_note="Preserve expressive body language and the same location anchor.",
-    )
-    shots[3] = StoryPlannerShotCard(
-        shot_no=4,
-        beat="Close on a decision",
-        camera="Tight two-shot with shallow depth of field.",
-        action=(
-            f"{lead_label} makes the deciding move after {reveal_detail}, using a small, deliberate gesture."
-        ),
-        emotion="Controlled resolve",
-        continuity_note="End on the same setting anchor and preserve the private-space framing into the next episode.",
-    )
-    return shots
 
 
 def plan_story_episode(request: StoryPlannerPlanRequest) -> StoryPlannerPlanResponse:
