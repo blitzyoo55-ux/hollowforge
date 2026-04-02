@@ -150,12 +150,13 @@ def main() -> int:
                 "character_id": args.lead_character_id,
             }
         ]
-        if args.support_description is not None:
+        support_description = (args.support_description or "").strip()
+        if support_description:
             cast.append(
                 {
                     "role": "support",
                     "source_type": "freeform",
-                    "freeform_description": args.support_description,
+                    "freeform_description": support_description,
                 }
             )
 

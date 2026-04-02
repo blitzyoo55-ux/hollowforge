@@ -66,6 +66,33 @@ def _queue_result() -> dict[str, object]:
     }
 
 
+def _queue_result_without_recommended_shot() -> dict[str, object]:
+    return {
+        "lane": "adult_nsfw",
+        "requested_shot_count": 4,
+        "queued_generation_count": 6,
+        "queued_shots": [
+            {"shot_no": 1, "generation_ids": ["gen-s1-c1", "gen-s1-c2"]},
+            {"shot_no": 2, "generation_ids": ["gen-s2-c1", "gen-s2-c2"]},
+            {"shot_no": 4, "generation_ids": ["gen-s4-c1", "gen-s4-c2"]},
+        ],
+    }
+
+
+def _queue_result_with_empty_generation_ids() -> dict[str, object]:
+    return {
+        "lane": "adult_nsfw",
+        "requested_shot_count": 4,
+        "queued_generation_count": 6,
+        "queued_shots": [
+            {"shot_no": 1, "generation_ids": ["gen-s1-c1", "gen-s1-c2"]},
+            {"shot_no": 2, "generation_ids": ["gen-s2-c1", "gen-s2-c2"]},
+            {"shot_no": 3, "generation_ids": []},
+            {"shot_no": 4, "generation_ids": ["gen-s4-c1", "gen-s4-c2"]},
+        ],
+    }
+
+
 def test_omitted_support_description_only_sends_lead_cast() -> None:
     module = _load_module()
     calls: list[tuple[str, str, dict[str, object] | None]] = []
@@ -122,6 +149,62 @@ def test_omitted_support_description_only_sends_lead_cast() -> None:
     assert "planner_recommendation:" in stdout
     assert "recommended_anchor_shot_no: 2" in stdout
     assert "recommended_shot_generations:" in stdout
+
+
+def test_blank_support_description_is_treated_like_omitted_support_description() -> None:
+    module = _load_module()
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        if url.endswith("/api/v1/tools/story-planner/catalog"):
+            return _catalog_result()
+        if url.endswith("/api/v1/tools/story-planner/plan"):
+            assert payload is not None
+            captured_payloads.append(payload)
+            return _plan_result(
+                recommended_anchor_shot_no=2,
+                recommended_anchor_reason="Lead/support exchange reads strongest at shot 2.",
+            )
+        if url.endswith("/api/v1/tools/story-planner/generate-anchors"):
+            return _queue_result()
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "launch_story_planner_smoke.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--story-prompt",
+            "Hana Seo compares notes with a quiet messenger.",
+            "--lane",
+            "adult_nsfw",
+            "--candidate-count",
+            "2",
+            "--lead-character-id",
+            "hana_seo",
+            "--support-description",
+            "",
+        ],
+        fake_request_json,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    assert captured_payloads == [
+        {
+            "story_prompt": "Hana Seo compares notes with a quiet messenger.",
+            "lane": "adult_nsfw",
+            "cast": [
+                {
+                    "role": "lead",
+                    "source_type": "registry",
+                    "character_id": "hana_seo",
+                }
+            ],
+        }
+    ]
+    assert "recommended_anchor_shot_no: 2" in stdout
 
 
 def test_explicit_support_description_passes_through_exactly() -> None:
@@ -286,3 +369,56 @@ def test_invalid_or_missing_recommendation_fails_loudly(
     assert "planner_recommendation:" not in stdout
     assert expected_error in stderr
     assert [method for method, _, _ in calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize(
+    "queue_result_factory, expected_error",
+    [
+        (_queue_result_without_recommended_shot, "queued shots for the recommended anchor shot"),
+        (_queue_result_with_empty_generation_ids, "generation_ids for the recommended anchor shot"),
+    ],
+)
+def test_queue_side_validation_failures_are_reported_loudly(
+    queue_result_factory,
+    expected_error: str,
+) -> None:
+    module = _load_module()
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        calls.append((method, url, payload))
+        if url.endswith("/api/v1/tools/story-planner/catalog"):
+            return _catalog_result()
+        if url.endswith("/api/v1/tools/story-planner/plan"):
+            return _plan_result(
+                recommended_anchor_shot_no=3,
+                recommended_anchor_reason="Shot 3 best fits the reveal beat.",
+            )
+        if url.endswith("/api/v1/tools/story-planner/generate-anchors"):
+            return queue_result_factory()
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    exit_code, stdout, stderr = _run_main(
+        module,
+        [
+            "launch_story_planner_smoke.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--story-prompt",
+            "Hana Seo compares notes with a quiet messenger.",
+            "--lane",
+            "adult_nsfw",
+            "--candidate-count",
+            "2",
+            "--lead-character-id",
+            "hana_seo",
+        ],
+        fake_request_json,
+    )
+
+    assert exit_code == 1
+    assert "plan_result:" in stdout
+    assert "planner_recommendation:" not in stdout
+    assert "queue_result:" not in stdout
+    assert expected_error in stderr
+    assert [method for method, _, _ in calls] == ["GET", "POST", "POST"]
