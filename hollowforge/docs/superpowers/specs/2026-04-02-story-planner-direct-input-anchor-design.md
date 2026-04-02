@@ -206,6 +206,29 @@ operator-facing controls:
 
 These controls are optional. The happy path must still work from the prompt alone.
 
+### Guidance State Mapping
+
+The new guidance controls do not add new lead/support fields to the backend contract.
+They compile into the existing `cast` array.
+
+Allowed mappings:
+
+- prompt-only
+  - `cast=[]`
+- lead locked to registry, support unlocked
+  - `cast=[{role=lead, source_type=registry, character_id=...}]`
+- lead locked to registry, support locked to registry
+  - `cast=[lead-registry entry, support-registry entry]`
+- lead locked to registry, support locked to freeform
+  - `cast=[lead-registry entry, support-freeform entry]`
+- lead unlocked, support locked to registry
+  - `cast=[{role=support, source_type=registry, character_id=...}]`
+- lead unlocked, support locked to freeform
+  - `cast=[{role=support, source_type=freeform, freeform_description=...}]`
+
+“Unlocked” means the role is omitted from `cast` and the planner resolves it from the
+natural-language prompt when possible.
+
 ## Direct Input Path Recommendation
 
 Users should not have to go through an assistant to use this flow. The recommended
@@ -234,6 +257,22 @@ Existing fields stay unchanged:
 - `cast`
 
 All existing clients that omit the new fields must keep working.
+
+### Location Lock Semantics
+
+`location_id` is an optional hard lock.
+
+- if omitted or null, location is resolved from the prompt using the current inference
+  path
+- if present and valid, it overrides prompt-based location inference completely
+- if present and invalid, the plan route should fail with `422` rather than silently
+  falling back
+
+`match_note` behavior:
+
+- inferred location: keep the current inference-oriented note
+- locked location: return a note in the form
+  `Locked to catalog location: <location name>.`
 
 ### Response
 
@@ -287,17 +326,22 @@ The planner should compute a recommended anchor shot after the four-shot deck is
 
 If `preferred_anchor_beat` is explicit:
 
-- `exchange` maps to the shot that best represents the relational beat
-- `reveal` maps to the detail-reveal shot
-- `decision` maps to the commitment/closing shot
+- `exchange` maps to `shot 2`
+- `reveal` maps to `shot 3`
+- `decision` maps to `shot 4`
 
 If `preferred_anchor_beat=auto`:
 
-- for `adult_nsfw`, prefer a later shot by default
-- prefer the shot whose framing best preserves both:
-  - scene readability
-  - relational signal
-- fall back to `shot 1` only if the later shots are missing or invalid
+- for `adult_nsfw`:
+  - if both lead and support are present, rank shots as `2 > 3 > 4 > 1`
+  - if support is missing but a distinct reveal detail is present, rank shots as
+    `3 > 4 > 2 > 1`
+  - otherwise rank shots as `4 > 3 > 2 > 1`
+- for `all_ages` and `unrestricted`, rank shots as `1 > 2 > 3 > 4`
+- choose the first available shot in the ranking order
+- if the ranked target is missing or invalid, continue to the next ranked shot
+- if no shot is available, fail plan construction instead of silently emitting an
+  empty recommendation
 
 The planner should also return a one-line reason, for example:
 
@@ -314,6 +358,10 @@ anchor.
 - otherwise, use `recommended_anchor_shot_no`
 
 This keeps manual control intact while improving the default path.
+
+This branch applies that defaulting behavior in the rerun CLI. In the web UI, this
+branch only surfaces the recommendation and reason in the plan review and anchor result
+surfaces; it does not introduce a new post-queue selected-shot state in this branch.
 
 ## Thin Anchor Prompt Compiler
 
@@ -372,7 +420,8 @@ Modify the existing `Story Planner` input panel to add:
 
 - optional location lock selector
 - optional preferred anchor beat selector
-- existing registry lead/support controls remain
+- existing registry lead/support controls remain, but support gains an explicit freeform
+  lock path instead of being registry-or-nothing
 
 No second authoring mode is introduced.
 
@@ -383,7 +432,8 @@ The plan review UI should surface:
 - `recommended_anchor_shot_no`
 - `recommended_anchor_reason`
 
-So the operator understands what the planner wants to use and why.
+So the operator understands what the planner wants to use and why. This is advisory UI
+only for this branch, not a new shot-picking workflow after queueing.
 
 ### Direct Input Guidance
 
@@ -437,7 +487,7 @@ Add or update targeted tests for:
 - plan payload including `location_id` and `preferred_anchor_beat`
 - freeform-only submission still working
 - planner recommendation rendering in review UI
-- default selected shot following planner recommendation
+- rerun CLI default selected shot following planner recommendation
 
 ### Live Verification
 
