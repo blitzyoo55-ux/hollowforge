@@ -848,6 +848,8 @@ export interface StoryPlannerCatalog {
   policy_packs: StoryPlannerPolicyPackCatalogEntry[]
 }
 
+export type StoryPlannerPreferredAnchorBeat = 'auto' | 'exchange' | 'reveal' | 'decision'
+
 export interface StoryPlannerCastInput {
   role: 'lead' | 'support'
   source_type: 'registry' | 'freeform'
@@ -859,6 +861,8 @@ export interface StoryPlannerPlanRequest {
   story_prompt: string
   lane: StoryPlannerLane
   cast: StoryPlannerCastInput[]
+  location_id?: string | null
+  preferred_anchor_beat?: StoryPlannerPreferredAnchorBeat
 }
 
 export interface StoryPlannerResolvedCastEntry {
@@ -911,6 +915,8 @@ export interface StoryPlannerPlanResponse {
   policy_pack_id: string
   approval_token: string
   anchor_render: StoryPlannerAnchorRenderSnapshot
+  recommended_anchor_shot_no: number
+  recommended_anchor_reason: string
   resolved_cast: StoryPlannerResolvedCastEntry[]
   location: StoryPlannerResolvedLocationEntry
   episode_brief: StoryPlannerEpisodeBrief

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 import type {
   StoryPlannerAnchorQueueResponse,
+  StoryPlannerPlanResponse,
 } from '../../../api/client'
 
 function StoryPlannerSection({
@@ -27,12 +28,23 @@ function StoryPlannerSection({
 
 export interface StoryPlannerAnchorResultsProps {
   result: StoryPlannerAnchorQueueResponse
+  plan: StoryPlannerPlanResponse
 }
 
-export default function StoryPlannerAnchorResults({ result }: StoryPlannerAnchorResultsProps) {
+export default function StoryPlannerAnchorResults({ result, plan }: StoryPlannerAnchorResultsProps) {
   return (
-    <StoryPlannerSection title="Queued Anchor Results">
+    <StoryPlannerSection title="Planner Recommendation">
       <div className="space-y-5">
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,0.45fr)_minmax(0,1fr)]">
+            <Metric label="Recommended Anchor Shot" value={`Shot ${plan.recommended_anchor_shot_no}`} accent="good" />
+            <div className="rounded-2xl border border-gray-800 bg-gray-950/80 p-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Recommendation Reason</p>
+              <p className="mt-3 text-sm leading-6 text-gray-200">{plan.recommended_anchor_reason}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-3">
           <Metric label="Requested Shots" value={`${result.requested_shot_count}`} />
           <Metric label="Queued Generations" value={`${result.queued_generation_count}`} accent="good" />

@@ -11,6 +11,7 @@ import {
   type StoryPlannerLane,
   type StoryPlannerPlanRequest,
   type StoryPlannerPlanResponse,
+  type StoryPlannerPreferredAnchorBeat,
 } from '../../../api/client'
 import { notify } from '../../../lib/toast'
 import StoryPlannerAnchorResults from './StoryPlannerAnchorResults'
@@ -48,28 +49,48 @@ function buildPlanRequest({
   useRegistryCharacters,
   leadCharacterId,
   supportCharacterId,
+  supportLockMode,
+  supportFreeformDescription,
+  locationId,
+  preferredAnchorBeat,
 }: {
   storyPrompt: string
   lane: StoryPlannerLane
   useRegistryCharacters: boolean
   leadCharacterId: string
   supportCharacterId: string
+  supportLockMode: 'unlocked' | 'registry' | 'freeform'
+  supportFreeformDescription: string
+  locationId: string
+  preferredAnchorBeat: StoryPlannerPreferredAnchorBeat
 }) {
   const cast: StoryPlannerPlanRequest['cast'] = []
 
-  if (useRegistryCharacters && leadCharacterId) {
+  const trimmedLeadCharacterId = leadCharacterId.trim()
+  const trimmedSupportCharacterId = supportCharacterId.trim()
+  const trimmedSupportFreeformDescription = supportFreeformDescription.trim()
+
+  if (useRegistryCharacters && trimmedLeadCharacterId) {
     cast.push({
       role: 'lead' as const,
       source_type: 'registry' as const,
-      character_id: leadCharacterId,
+      character_id: trimmedLeadCharacterId,
     })
   }
 
-  if (useRegistryCharacters && supportCharacterId) {
+  if (supportLockMode === 'registry' && trimmedSupportCharacterId) {
     cast.push({
       role: 'support' as const,
       source_type: 'registry' as const,
-      character_id: supportCharacterId,
+      character_id: trimmedSupportCharacterId,
+    })
+  }
+
+  if (supportLockMode === 'freeform' && trimmedSupportFreeformDescription) {
+    cast.push({
+      role: 'support' as const,
+      source_type: 'freeform' as const,
+      freeform_description: trimmedSupportFreeformDescription,
     })
   }
 
@@ -77,6 +98,8 @@ function buildPlanRequest({
     story_prompt: storyPrompt.trim(),
     lane,
     cast,
+    location_id: locationId.trim() || null,
+    preferred_anchor_beat: preferredAnchorBeat,
   }
 }
 
@@ -124,6 +147,10 @@ export default function StoryPlannerMode() {
   const [useRegistryCharacters, setUseRegistryCharacters] = useState(false)
   const [leadCharacterId, setLeadCharacterId] = useState('')
   const [supportCharacterId, setSupportCharacterId] = useState('')
+  const [locationId, setLocationId] = useState('')
+  const [preferredAnchorBeat, setPreferredAnchorBeat] = useState<StoryPlannerPreferredAnchorBeat>('auto')
+  const [supportLockMode, setSupportLockMode] = useState<'unlocked' | 'registry' | 'freeform'>('unlocked')
+  const [supportFreeformDescription, setSupportFreeformDescription] = useState('')
   const [plannedEpisode, setPlannedEpisode] = useState<StoryPlannerPlanResponse | null>(null)
   const [queuedResult, setQueuedResult] = useState<StoryPlannerAnchorQueueResponse | null>(null)
   const draftVersionRef = useRef(0)
@@ -147,6 +174,10 @@ export default function StoryPlannerMode() {
   const supportCharacter = useMemo(
     () => catalog?.characters.find((character) => character.id === supportCharacterId) ?? null,
     [catalog, supportCharacterId],
+  )
+  const location = useMemo(
+    () => catalog?.locations.find((entry) => entry.id === locationId) ?? null,
+    [catalog, locationId],
   )
 
   const clearPlannedResults = () => {
@@ -224,6 +255,10 @@ export default function StoryPlannerMode() {
         useRegistryCharacters,
         leadCharacterId,
         supportCharacterId,
+        supportLockMode,
+        supportFreeformDescription,
+        locationId,
+        preferredAnchorBeat,
       }),
     })
   }
@@ -248,8 +283,8 @@ export default function StoryPlannerMode() {
     { label: 'Policy Packs', value: `${catalog?.policy_packs.length ?? 0}`, accent: 'default' as const },
     {
       label: 'Registry Cast',
-      value: useRegistryCharacters ? `${[leadCharacterId, supportCharacterId].filter(Boolean).length}/2` : 'Off',
-      accent: useRegistryCharacters ? 'good' : 'default',
+      value: `${(useRegistryCharacters && leadCharacterId.trim() ? 1 : 0) + (supportLockMode === 'registry' && supportCharacterId.trim() ? 1 : 0)}/2`,
+      accent: useRegistryCharacters || supportLockMode === 'registry' ? 'good' : 'default',
     },
   ] as const
 
@@ -307,6 +342,10 @@ export default function StoryPlannerMode() {
             useRegistryCharacters={useRegistryCharacters}
             leadCharacterId={leadCharacterId}
             supportCharacterId={supportCharacterId}
+            locationId={locationId}
+            preferredAnchorBeat={preferredAnchorBeat}
+            supportLockMode={supportLockMode}
+            supportFreeformDescription={supportFreeformDescription}
             isPlanning={planMutation.isPending}
             onStoryPromptChange={(value) => {
               clearPlannedResults()
@@ -319,6 +358,15 @@ export default function StoryPlannerMode() {
             onUseRegistryCharactersChange={(value) => {
               clearPlannedResults()
               setUseRegistryCharacters(value)
+              setSupportLockMode((current) => {
+                if (value && current === 'unlocked') {
+                  return 'registry'
+                }
+                if (!value && current === 'registry') {
+                  return 'unlocked'
+                }
+                return current
+              })
             }}
             onLeadCharacterIdChange={(value) => {
               clearPlannedResults()
@@ -327,6 +375,22 @@ export default function StoryPlannerMode() {
             onSupportCharacterIdChange={(value) => {
               clearPlannedResults()
               setSupportCharacterId(value)
+            }}
+            onLocationIdChange={(value) => {
+              clearPlannedResults()
+              setLocationId(value)
+            }}
+            onPreferredAnchorBeatChange={(value) => {
+              clearPlannedResults()
+              setPreferredAnchorBeat(value)
+            }}
+            onSupportLockModeChange={(value) => {
+              clearPlannedResults()
+              setSupportLockMode(value)
+            }}
+            onSupportFreeformDescriptionChange={(value) => {
+              clearPlannedResults()
+              setSupportFreeformDescription(value)
             }}
             onSubmit={handlePlanSubmit}
           />
@@ -343,7 +407,9 @@ export default function StoryPlannerMode() {
             </section>
           )}
 
-          {queuedResult ? <StoryPlannerAnchorResults result={queuedResult} /> : null}
+          {queuedResult && plannedEpisode ? (
+            <StoryPlannerAnchorResults result={queuedResult} plan={plannedEpisode} />
+          ) : null}
         </div>
       )}
 
@@ -356,9 +422,18 @@ export default function StoryPlannerMode() {
             Lead selection: {leadCharacter.name} · {leadCharacter.canonical_anchor}
           </p>
         ) : null}
-        {supportCharacter ? (
+        {supportLockMode === 'registry' && supportCharacter ? (
           <p className="mt-2 text-xs leading-5 text-gray-500">
             Support selection: {supportCharacter.name} · {supportCharacter.canonical_anchor}
+          </p>
+        ) : supportLockMode === 'freeform' && supportFreeformDescription.trim() ? (
+          <p className="mt-2 text-xs leading-5 text-gray-500">
+            Support selection: freeform · {supportFreeformDescription.trim()}
+          </p>
+        ) : null}
+        {location ? (
+          <p className="mt-2 text-xs leading-5 text-gray-500">
+            Location lock: {location.name} · {location.setting_anchor}
           </p>
         ) : null}
       </section>

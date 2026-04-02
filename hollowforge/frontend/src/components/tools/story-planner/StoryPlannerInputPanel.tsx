@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import type {
   StoryPlannerCatalog,
   StoryPlannerLane,
+  StoryPlannerPreferredAnchorBeat,
 } from '../../../api/client'
 
 const LANE_OPTIONS: Array<{
@@ -24,6 +25,55 @@ const LANE_OPTIONS: Array<{
     value: 'adult_nsfw',
     label: 'Adult NSFW',
     description: 'Preserve adult-only continuity and keep consent logic explicit.',
+  },
+]
+
+const PREFERRED_ANCHOR_BEAT_OPTIONS: Array<{
+  value: StoryPlannerPreferredAnchorBeat
+  label: string
+  description: string
+}> = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'Let the planner choose the strongest anchor beat.',
+  },
+  {
+    value: 'exchange',
+    label: 'Exchange',
+    description: 'Prefer the beat where the lead and support exchange.',
+  },
+  {
+    value: 'reveal',
+    label: 'Reveal',
+    description: 'Prefer the beat where the key detail is revealed.',
+  },
+  {
+    value: 'decision',
+    label: 'Decision',
+    description: 'Prefer the beat where the scene closes on a choice.',
+  },
+]
+
+const SUPPORT_LOCK_MODE_OPTIONS: Array<{
+  value: 'unlocked' | 'registry' | 'freeform'
+  label: string
+  description: string
+}> = [
+  {
+    value: 'unlocked',
+    label: 'Unlocked',
+    description: 'Leave support unspecified and let the planner infer it from the prompt.',
+  },
+  {
+    value: 'registry',
+    label: 'Registry',
+    description: 'Bind support to a catalog character.',
+  },
+  {
+    value: 'freeform',
+    label: 'Freeform',
+    description: 'Describe support directly with a short freeform note.',
   },
 ]
 
@@ -54,12 +104,20 @@ export interface StoryPlannerInputPanelProps {
   useRegistryCharacters: boolean
   leadCharacterId: string
   supportCharacterId: string
+  locationId: string
+  preferredAnchorBeat: StoryPlannerPreferredAnchorBeat
+  supportLockMode: 'unlocked' | 'registry' | 'freeform'
+  supportFreeformDescription: string
   isPlanning: boolean
   onStoryPromptChange: (value: string) => void
   onLaneChange: (value: StoryPlannerLane) => void
   onUseRegistryCharactersChange: (value: boolean) => void
   onLeadCharacterIdChange: (value: string) => void
   onSupportCharacterIdChange: (value: string) => void
+  onLocationIdChange: (value: string) => void
+  onPreferredAnchorBeatChange: (value: StoryPlannerPreferredAnchorBeat) => void
+  onSupportLockModeChange: (value: 'unlocked' | 'registry' | 'freeform') => void
+  onSupportFreeformDescriptionChange: (value: string) => void
   onSubmit: () => void
 }
 
@@ -70,12 +128,20 @@ export default function StoryPlannerInputPanel({
   useRegistryCharacters,
   leadCharacterId,
   supportCharacterId,
+  locationId,
+  preferredAnchorBeat,
+  supportLockMode,
+  supportFreeformDescription,
   isPlanning,
   onStoryPromptChange,
   onLaneChange,
   onUseRegistryCharactersChange,
   onLeadCharacterIdChange,
   onSupportCharacterIdChange,
+  onLocationIdChange,
+  onPreferredAnchorBeatChange,
+  onSupportLockModeChange,
+  onSupportFreeformDescriptionChange,
   onSubmit,
 }: StoryPlannerInputPanelProps) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -125,6 +191,47 @@ export default function StoryPlannerInputPanel({
               </p>
             </label>
 
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-gray-100">Location Lock</span>
+              <select
+                aria-label="Location Lock"
+                value={locationId}
+                onChange={(event) => onLocationIdChange(event.target.value)}
+                className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
+              >
+                <option value="">Auto resolve from prompt</option>
+                {catalog?.locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs leading-5 text-gray-500">
+                Optional hard lock. Leave this blank to let the planner resolve the location from the story prompt.
+              </p>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-gray-100">Preferred Anchor Beat</span>
+              <select
+                aria-label="Preferred Anchor Beat"
+                value={preferredAnchorBeat}
+                onChange={(event) =>
+                  onPreferredAnchorBeatChange(event.target.value as StoryPlannerPreferredAnchorBeat)
+                }
+                className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
+              >
+                {PREFERRED_ANCHOR_BEAT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs leading-5 text-gray-500">
+                {PREFERRED_ANCHOR_BEAT_OPTIONS.find((option) => option.value === preferredAnchorBeat)?.description}
+              </p>
+            </label>
+
             <button
               type="button"
               onClick={() => onUseRegistryCharactersChange(!useRegistryCharacters)}
@@ -147,43 +254,95 @@ export default function StoryPlannerInputPanel({
               </div>
             </button>
 
-            {useRegistryCharacters ? (
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-gray-100">Support Lock Mode</span>
+              <select
+                aria-label="Support Lock Mode"
+                value={supportLockMode}
+                onChange={(event) =>
+                  onSupportLockModeChange(event.target.value as 'unlocked' | 'registry' | 'freeform')
+                }
+                className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
+              >
+                {SUPPORT_LOCK_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs leading-5 text-gray-500">
+                {SUPPORT_LOCK_MODE_OPTIONS.find((option) => option.value === supportLockMode)?.description}
+              </p>
+            </label>
+
+            {useRegistryCharacters || supportLockMode !== 'unlocked' ? (
               <div className="grid gap-4">
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-gray-100">Lead Character</span>
-                  <select
-                    aria-label="Lead Character"
-                    value={leadCharacterId}
-                    onChange={(event) => onLeadCharacterIdChange(event.target.value)}
-                    className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
-                  >
-                    <option value="">Select lead character</option>
-                    {catalog?.characters.map((character) => (
-                      <option key={character.id} value={character.id}>
-                        {character.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {useRegistryCharacters ? (
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-gray-100">Lead Character</span>
+                    <select
+                      aria-label="Lead Character"
+                      value={leadCharacterId}
+                      onChange={(event) => onLeadCharacterIdChange(event.target.value)}
+                      className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
+                    >
+                      <option value="">Select lead character</option>
+                      {catalog?.characters.map((character) => (
+                        <option key={character.id} value={character.id}>
+                          {character.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-gray-800 bg-gray-950/70 px-4 py-4 text-xs leading-5 text-gray-500">
+                    Lead stays unlocked, but support can still be locked or described directly.
+                  </div>
+                )}
 
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-gray-100">Support Character</span>
-                  <select
-                    aria-label="Support Character"
-                    value={supportCharacterId}
-                    onChange={(event) => onSupportCharacterIdChange(event.target.value)}
-                    className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
-                  >
-                    <option value="">Select support character</option>
-                    {catalog?.characters.map((character) => (
-                      <option key={character.id} value={character.id}>
-                        {character.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {supportLockMode === 'registry' ? (
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-gray-100">Support Character</span>
+                    <select
+                      aria-label="Support Character"
+                      value={supportCharacterId}
+                      onChange={(event) => onSupportCharacterIdChange(event.target.value)}
+                      className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-100 outline-none transition focus:border-violet-500"
+                    >
+                      <option value="">Select support character</option>
+                      {catalog?.characters.map((character) => (
+                        <option key={character.id} value={character.id}>
+                          {character.name}
+                        </option>
+                      ))}
+                    </select>
+                    {catalog?.characters.length ? (
+                      <p className="text-xs leading-5 text-gray-500">
+                        Registry support options are loaded from the Story Planner catalog.
+                      </p>
+                    ) : null}
+                  </label>
+                ) : supportLockMode === 'freeform' ? (
+                  <label className="block space-y-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm font-medium text-gray-100">Support Freeform Description</span>
+                      <span className="text-xs text-gray-500">{supportFreeformDescription.length}/200</span>
+                    </div>
+                    <textarea
+                      aria-label="Support Freeform Description"
+                      value={supportFreeformDescription}
+                      onChange={(event) => onSupportFreeformDescriptionChange(event.target.value)}
+                      rows={4}
+                      className="w-full rounded-2xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm leading-6 text-gray-100 outline-none transition placeholder:text-gray-600 focus:border-violet-500"
+                      placeholder="Describe the support role in one short phrase."
+                    />
+                    <p className="text-xs leading-5 text-gray-500">
+                      Freeform support text is trimmed before serialization.
+                    </p>
+                  </label>
+                ) : null}
 
-                {catalog?.characters.length ? (
+                {useRegistryCharacters ? (
                   <p className="text-xs leading-5 text-gray-500">
                     Registry options are loaded from the Story Planner catalog.
                   </p>
@@ -191,7 +350,7 @@ export default function StoryPlannerInputPanel({
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-gray-800 bg-gray-950/70 px-4 py-5 text-sm text-gray-400">
-                Registry characters are optional. Keep this off if you want the planner to resolve the episode from the story prompt alone.
+                Lead and support stay unlocked. The planner will work from the story prompt and optional guidance only.
               </div>
             )}
           </div>

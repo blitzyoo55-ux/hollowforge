@@ -114,6 +114,8 @@ function buildPlanResponse() {
       negative_prompt: 'minors, age ambiguity, non-consensual framing',
       preserve_blank_negative_prompt: false,
     },
+    recommended_anchor_shot_no: 3,
+    recommended_anchor_reason: 'Shot 3 keeps the reveal readable while preserving location continuity.',
     resolved_cast: [
       {
         role: 'lead' as const,
@@ -359,7 +361,7 @@ beforeEach(() => {
 test('renders the story prompt input and Plan Episode button', async () => {
   renderMode()
 
-  expect(await screen.findByLabelText(/Story Prompt/i)).toBeInTheDocument()
+  expect(await screen.findByRole('textbox', { name: /^Story Prompt$/i })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Plan Episode/i })).toBeInTheDocument()
   expect(screen.getByLabelText(/Lane/i)).toHaveValue('unrestricted')
 })
@@ -369,7 +371,7 @@ test('plans a prompt-only episode without registry characters', async () => {
 
   renderMode()
 
-  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
   fireEvent.change(promptInput, {
     target: {
       value: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
@@ -383,6 +385,8 @@ test('plans a prompt-only episode without registry characters', async () => {
       story_prompt: 'Hana Seo meets a quiet messenger in the Moonlit Bathhouse corridor after closing.',
       lane: 'unrestricted',
       cast: [],
+      location_id: null,
+      preferred_anchor_beat: 'auto',
     })
   })
 
@@ -391,14 +395,56 @@ test('plans a prompt-only episode without registry characters', async () => {
   expect(screen.getByText(/Derived lead candidate from the story prompt/i)).toBeInTheDocument()
 })
 
-test('renders plan review cards after planner preview succeeds', async () => {
+test('plans with optional guidance controls and freeform support', async () => {
   renderMode()
 
-  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
   fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
   fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
 
-  fireEvent.click(screen.getByLabelText(/Lead Character/i))
+  fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
+  fireEvent.change(screen.getByLabelText(/Support Lock Mode/i), { target: { value: 'freeform' } })
+  fireEvent.change(screen.getByLabelText(/Support Freeform Description/i), {
+    target: { value: '  a quiet messenger  ' },
+  })
+  fireEvent.change(screen.getByLabelText(/Location Lock/i), { target: { value: 'moonlit_bathhouse' } })
+  fireEvent.change(screen.getByLabelText(/Preferred Anchor Beat/i), { target: { value: 'decision' } })
+
+  fireEvent.click(screen.getByRole('button', { name: /Plan Episode/i }))
+
+  await waitFor(() => {
+    expect(planStoryEpisode).toHaveBeenCalledTimes(1)
+    expect(planStoryEpisode).toHaveBeenCalledWith({
+      story_prompt: 'A tense bathhouse rendezvous.',
+      lane: 'unrestricted',
+      cast: [
+        {
+          role: 'lead',
+          source_type: 'registry',
+          character_id: 'hana_seo',
+        },
+        {
+          role: 'support',
+          source_type: 'freeform',
+          freeform_description: 'a quiet messenger',
+        },
+      ],
+      location_id: 'moonlit_bathhouse',
+      preferred_anchor_beat: 'decision',
+    })
+  })
+
+  expect(screen.getByText(/Recommended Anchor Shot/i)).toBeInTheDocument()
+  expect(screen.getByText(/Shot 3 keeps the reveal readable while preserving location continuity\./i)).toBeInTheDocument()
+})
+
+test('renders plan review cards after planner preview succeeds', async () => {
+  renderMode()
+
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
+  fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
+  fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
+
   fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
   fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'mina_park' } })
 
@@ -414,12 +460,14 @@ test('renders plan review cards after planner preview succeeds', async () => {
   expect(screen.getByText(/Shot 1/i)).toBeInTheDocument()
   expect(screen.getByText(/Shot 4/i)).toBeInTheDocument()
   expect(screen.getAllByText(/Moonlit Bathhouse/i).length).toBeGreaterThan(0)
+  expect(screen.getByText(/Recommended Anchor Shot/i)).toBeInTheDocument()
+  expect(screen.getByText(/Shot 3 keeps the reveal readable while preserving location continuity\./i)).toBeInTheDocument()
 })
 
 test('allows approve and generate and shows queued anchor summary', async () => {
   renderMode()
 
-  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
   fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
   fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
   fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
@@ -437,20 +485,22 @@ test('allows approve and generate and shows queued anchor summary', async () => 
     expect(generateStoryPlannerAnchors).toHaveBeenCalledTimes(1)
   })
 
-  expect(screen.getAllByText(/Queued Anchor Results/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/Planner Recommendation/i).length).toBeGreaterThan(0)
   expect(screen.getByText(/8 queued anchors/i)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /Queue/i })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /Gallery/i })).toBeInTheDocument()
+  expect(screen.getByText(/Planner Recommendation/i)).toBeInTheDocument()
 
-  const summary = screen.getByText(/Queued Anchor Results/i).closest('section')
+  const summary = screen.getByText(/Planner Recommendation/i).closest('section')
   expect(summary).not.toBeNull()
+  expect(within(summary as HTMLElement).getByText(/Shot 3 keeps the reveal readable while preserving location continuity\./i)).toBeInTheDocument()
   expect(within(summary as HTMLElement).getByText(/Shot 4/i)).toBeInTheDocument()
 })
 
 test('ignores late preview success after the prompt changes', async () => {
   renderMode()
 
-  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
   fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
   fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
   fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
@@ -468,7 +518,7 @@ test('ignores late preview success after the prompt changes', async () => {
   fireEvent.change(promptInput, { target: { value: 'A revised bathhouse rendezvous.' } })
 
   expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
-  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Planner Recommendation/i)).not.toBeInTheDocument()
 
   await act(async () => {
     deferredPlan.resolve(buildPlanResponse())
@@ -476,13 +526,13 @@ test('ignores late preview success after the prompt changes', async () => {
   })
 
   expect(screen.queryByText(/Plan Review/i)).not.toBeInTheDocument()
-  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Planner Recommendation/i)).not.toBeInTheDocument()
 })
 
 test('ignores late queue success after the support character changes', async () => {
   renderMode()
 
-  const promptInput = await screen.findByLabelText(/Story Prompt/i)
+  const promptInput = await screen.findByRole('textbox', { name: /^Story Prompt$/i })
   fireEvent.change(promptInput, { target: { value: 'A tense bathhouse rendezvous.' } })
   fireEvent.click(screen.getByRole('button', { name: /Use Registry Characters/i }))
   fireEvent.change(screen.getByLabelText(/Lead Character/i), { target: { value: 'hana_seo' } })
@@ -505,7 +555,7 @@ test('ignores late queue success after the support character changes', async () 
 
   fireEvent.change(screen.getByLabelText(/Support Character/i), { target: { value: 'hana_seo' } })
 
-  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Planner Recommendation/i)).not.toBeInTheDocument()
 
   await act(async () => {
     deferredQueue.resolve({
@@ -532,5 +582,5 @@ test('ignores late queue success after the support character changes', async () 
     await Promise.resolve()
   })
 
-  expect(screen.queryByText(/Queued Anchor Results/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Planner Recommendation/i)).not.toBeInTheDocument()
 })
