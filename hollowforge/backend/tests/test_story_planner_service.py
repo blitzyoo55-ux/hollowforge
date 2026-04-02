@@ -259,10 +259,19 @@ def test_plan_story_episode_synthesizes_metadata_for_freeform_support() -> None:
     )
 
     assert support.freeform_description == "quiet messenger in a dark coat"
-    assert support.canonical_anchor
-    assert support.anti_drift
-    assert support.wardrobe_notes
-    assert support.personality_notes
+    assert support.canonical_anchor == "Adult secondary figure: quiet messenger in a dark coat."
+    assert (
+        support.anti_drift
+        == "Keep the support presence visually separate from Hana Seo by using a smaller, secondary silhouette, different styling, and no lead-like framing."
+    )
+    assert (
+        support.wardrobe_notes
+        == "Keep the look grounded in quiet messenger in a dark coat and visually secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Quiet messenger in a dark coat energy, with a restrained secondary presence."
+    )
 
 
 def test_plan_story_episode_synthesizes_support_anti_drift_to_separate_from_lead() -> None:
@@ -310,11 +319,70 @@ def test_plan_story_episode_falls_back_to_minimal_support_identity_for_sparse_fr
     )
 
     assert support.freeform_description == "figure"
-    assert support.canonical_anchor
-    assert "adult" in support.canonical_anchor.lower()
-    assert support.anti_drift
-    assert support.wardrobe_notes
-    assert support.personality_notes
+    assert support.canonical_anchor == "Adult secondary figure with a restrained, observant presence."
+    assert (
+        support.anti_drift
+        == "Keep the support presence visually separate from Hana Seo by using a smaller, secondary silhouette, different styling, and no lead-like framing."
+    )
+    assert (
+        support.wardrobe_notes
+        == "Use subdued adult wardrobe cues that keep the support figure secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Quiet, observant, and deferential to the lead's space."
+    )
+
+
+def test_plan_story_episode_uses_neutral_support_copy_in_non_adult_lane() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Hana Seo meets a companion in the corridor after closing.",
+            lane="all_ages",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="figure",
+                ),
+            ],
+        )
+    )
+
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+    combined_notes = " ".join(
+        note
+        for note in (
+            support.canonical_anchor,
+            support.anti_drift,
+            support.wardrobe_notes,
+            support.personality_notes,
+        )
+        if note
+    ).lower()
+
+    assert support.freeform_description == "figure"
+    assert support.canonical_anchor == "Supporting figure with a restrained, observant presence."
+    assert (
+        support.anti_drift
+        == "Keep the support presence visually separate from Hana Seo by using a smaller, secondary silhouette, different styling, and no lead-like framing."
+    )
+    assert (
+        support.wardrobe_notes
+        == "Use subdued wardrobe cues that keep the support figure secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Quiet, observant, and deferential to the lead's space."
+    )
+    assert "adult" not in combined_notes
 
 
 def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_name() -> None:
