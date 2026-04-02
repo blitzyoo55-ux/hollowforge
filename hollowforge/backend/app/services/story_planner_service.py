@@ -123,6 +123,10 @@ _REVEAL_DETAIL_MARKERS = (
 )
 
 
+class StoryPlannerValidationError(ValueError):
+    """Planner-specific validation error for user-facing request issues."""
+
+
 def _tokenize(text: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if token}
 
@@ -179,7 +183,9 @@ def _resolve_story_planner_location(
             None,
         )
         if locked_location is None:
-            raise ValueError(f"location_id '{location_id}' was not found in the catalog.")
+            raise StoryPlannerValidationError(
+                f"location_id '{location_id}' was not found in the catalog."
+            )
         return (
             locked_location,
             f"Locked to catalog location: {locked_location.name}.",
@@ -322,11 +328,16 @@ def _recommend_anchor_shot(
     valid_shot_numbers = {shot.shot_no for shot in shots}
 
     if preferred_anchor_beat != "auto":
-        preferred_shot_no = {
+        preferred_shot_no_by_beat = {
             "exchange": 2,
             "reveal": 3,
             "decision": 4,
-        }[preferred_anchor_beat]
+        }
+        preferred_shot_no = preferred_shot_no_by_beat.get(preferred_anchor_beat)
+        if preferred_shot_no is None:
+            raise StoryPlannerValidationError(
+                f"preferred_anchor_beat '{preferred_anchor_beat}' is not supported."
+            )
         reason = f"Preferred anchor beat '{preferred_anchor_beat}' maps to shot {preferred_shot_no}."
         if preferred_shot_no in valid_shot_numbers:
             return preferred_shot_no, reason

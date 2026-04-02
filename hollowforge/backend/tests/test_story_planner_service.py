@@ -10,6 +10,7 @@ from app.services.story_planner_service import (
     _get_story_planner_approval_secret,
     plan_story_episode,
     queue_story_planner_anchor_batch,
+    StoryPlannerValidationError,
 )
 
 
@@ -190,6 +191,15 @@ def test_plan_story_episode_recommends_shot_four_for_explicit_decision_beats() -
 
     assert preview.recommended_anchor_shot_no == 4
     assert "decision" in preview.recommended_anchor_reason.lower()
+
+
+def test_plan_story_episode_rejects_unsupported_preferred_anchor_beat() -> None:
+    request = _build_request(
+        story_prompt="Hana Seo studies the message before deciding whether to go in.",
+    ).model_copy(update={"preferred_anchor_beat": "pivot"})
+
+    with pytest.raises(StoryPlannerValidationError, match="preferred_anchor_beat"):
+        plan_story_episode(request)
 
 
 def test_plan_story_episode_builds_lane_aware_adult_shot_two_with_exchange_and_gaze_signal() -> None:

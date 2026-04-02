@@ -37,6 +37,7 @@ from app.services.story_planner_catalog import load_story_planner_catalog
 from app.services.story_planner_service import (
     plan_story_episode,
     queue_story_planner_anchor_batch,
+    StoryPlannerValidationError,
 )
 
 router = APIRouter(tags=["marketing"])
@@ -88,7 +89,7 @@ async def story_planner_plan(
 ) -> StoryPlannerPlanResponse:
     try:
         return plan_story_episode(payload)
-    except ValueError as exc:
+    except StoryPlannerValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
