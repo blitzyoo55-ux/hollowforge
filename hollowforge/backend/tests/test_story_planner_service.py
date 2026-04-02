@@ -316,6 +316,27 @@ def test_plan_story_episode_uses_story_prompt_details_in_brief_and_shots() -> No
 
 
 @pytest.mark.asyncio
+async def test_queue_story_planner_anchor_batch_uses_render_oriented_intent_sections() -> None:
+    approved_plan = plan_story_episode(
+        _build_request(
+            story_prompt=(
+                "Hana Seo compares notes with a quiet messenger in the Moonlit Bathhouse corridor after closing."
+            )
+        )
+    )
+    service = _CapturingGenerationService()
+
+    await queue_story_planner_anchor_batch(approved_plan, service, candidate_count=1)
+
+    prompt = service.batch_requests[0][0].prompt
+    assert "render_intent:" in prompt
+    assert "subject_focus:" in prompt
+    assert "relationship_signal:" in prompt
+    assert "framing_signal:" in prompt
+    assert "continuity_guard:" in prompt
+
+
+@pytest.mark.asyncio
 async def test_queue_story_planner_anchor_batch_includes_continuity_details_in_anchor_prompt() -> None:
     approved_plan = plan_story_episode(
         _build_request(

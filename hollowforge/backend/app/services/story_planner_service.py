@@ -596,6 +596,47 @@ def _format_story_planner_cast_label(member: StoryPlannerResolvedCastEntry | Non
     return member.role
 
 
+def _compile_story_planner_anchor_intent(
+    plan: StoryPlannerPlanResponse,
+    shot: StoryPlannerShotCard,
+) -> dict[str, str]:
+    lead = next((member for member in plan.resolved_cast if member.role == "lead"), None)
+    support = next(
+        (member for member in plan.resolved_cast if member.role == "support"),
+        None,
+    )
+    lead_label = _format_story_planner_cast_label(lead)
+    support_label = _format_story_planner_cast_label(support)
+    relationship_label = (
+        f"{lead_label} and {support_label}"
+        if support is not None
+        else lead_label
+    )
+    visual_rules = "; ".join(plan.location.visual_rules)
+    restricted_elements = (
+        ", ".join(plan.location.restricted_elements)
+        if plan.location.restricted_elements
+        else "none"
+    )
+    return {
+        "subject_focus": (
+            f"{lead_label} stays the primary subject, with {support_label} secondary."
+        ),
+        "relationship_signal": (
+            f"{relationship_label} should read clearly in {shot.beat.lower()} through {shot.action}"
+        ),
+        "environment_signal": (
+            f"Frame {plan.location.name} from {plan.location.setting_anchor}; visual rules: {visual_rules}; "
+            f"restricted elements: {restricted_elements}"
+        ),
+        "framing_signal": f"{shot.camera} Anchor the composition around {shot.beat.lower()}.",
+        "mood_signal": f"{shot.emotion} carried by {shot.action}",
+        "continuity_guard": (
+            f"{shot.continuity_note} Keep {plan.location.name} and the resolved cast identity stable."
+        ),
+    }
+
+
 def _build_story_planner_anchor_prompt(
     *,
     plan: StoryPlannerPlanResponse,
@@ -608,8 +649,17 @@ def _build_story_planner_anchor_prompt(
         (member for member in plan.resolved_cast if member.role == "support"),
         None,
     )
+    anchor_intent = _compile_story_planner_anchor_intent(plan, shot)
     lines = [
-        "story_planner_anchor still generation",
+        "story_planner_anchor render prompt",
+        "render_intent:",
+        f"- subject_focus: {anchor_intent['subject_focus']}",
+        f"- relationship_signal: {anchor_intent['relationship_signal']}",
+        f"- environment_signal: {anchor_intent['environment_signal']}",
+        f"- framing_signal: {anchor_intent['framing_signal']}",
+        f"- mood_signal: {anchor_intent['mood_signal']}",
+        f"- continuity_guard: {anchor_intent['continuity_guard']}",
+        "context:",
         f"story_prompt: {plan.story_prompt}",
         f"lane: {plan.lane}",
         f"policy_pack: {plan.policy_pack_id}",
@@ -620,7 +670,7 @@ def _build_story_planner_anchor_prompt(
         "resolved_cast:",
         f"- lead: {_format_story_planner_cast_label(lead)}",
         f"- support: {_format_story_planner_cast_label(support)}",
-        "continuity_details:",
+        "continuity_metadata:",
         f"- lead_canonical_anchor: {lead.canonical_anchor if lead and lead.canonical_anchor else 'none'}",
         f"- lead_anti_drift: {lead.anti_drift if lead and lead.anti_drift else 'none'}",
         f"- lead_wardrobe_notes: {lead.wardrobe_notes if lead and lead.wardrobe_notes else 'none'}",
