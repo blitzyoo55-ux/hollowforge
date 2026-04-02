@@ -22,7 +22,7 @@
 - generation id: 7056ca96-dc29-4421-996d-ca2fc47d7894
   - publishing readiness: full
   - caption variants created: 1
-  - caption variant id: cfd7cca0-1e34-4abe-b16f-47bd48625fd2
+  - caption variant id: 4dbfdea5-df10-403f-aede-3b39c3beaea8
   - caption provider/model: openrouter / x-ai/grok-4-fast
   - approved caption id: none
   - draft publish job id: cae30b47-4831-4c55-957e-16e75d34481d

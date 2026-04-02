@@ -1,7 +1,7 @@
 # HollowForge Ops Pilot Retro
 
 ## Outcome
-- success or failure: runtime-readiness success; the prior adult_nsfw pilot path now reaches live caption generation against the ready asset, clearing the OPENROUTER_API_KEY blocker and proving the first caption variant can be created on the branch backend.
+- success or failure: runtime-readiness success; the prior adult_nsfw pilot path now reaches live caption generation against the ready asset, clearing the OPENROUTER_API_KEY blocker and producing caption variant `4dbfdea5-df10-403f-aede-3b39c3beaea8` on the branch backend.
 
 ## What Hurt Most
 - bottleneck: the remaining gap is operational, not runtime readiness.
