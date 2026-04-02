@@ -124,8 +124,10 @@ _REVEAL_DETAIL_MARKERS = (
 _NON_ADULT_SUPPORT_WORDS_TO_STRIP = (
     "adult",
     "bare",
+    "explicit",
     "erotic",
     "lingerie",
+    "nude",
     "provocative",
     "risque",
     "risqué",
@@ -134,6 +136,7 @@ _NON_ADULT_SUPPORT_WORDS_TO_STRIP = (
     "sensual",
     "silk-clad",
     "suggestive",
+    "topless",
     "revealing",
 )
 
@@ -387,33 +390,63 @@ def _normalize_non_adult_freeform_support_description(description: str) -> str:
     return sanitized.strip(" ,.;:!-")
 
 
+def _format_story_planner_support_label(
+    member: StoryPlannerResolvedCastEntry | None,
+    lane: str,
+) -> str:
+    if member is None:
+        return "a support presence"
+    if member.character_name:
+        return member.character_name
+    if member.character_id:
+        return member.character_id
+    if member.source_type != "freeform":
+        return "a support presence"
+
+    description = _normalize_freeform_support_description(member.freeform_description)
+    if lane == "adult_nsfw":
+        return description or "a support presence"
+
+    sanitized_description = _normalize_non_adult_freeform_support_description(
+        description
+    )
+    if not sanitized_description:
+        return "supporting figure"
+    if sanitized_description == description and _is_sparse_freeform_support_description(
+        sanitized_description
+    ):
+        return "supporting figure"
+    return sanitized_description
+
+
 def _build_freeform_support_synthesis(
     *,
     lane: str,
-    description: str,
+    display_label: str,
     sparse_description: bool,
     lead_label: str,
 ) -> dict[str, str]:
     if lane == "adult_nsfw":
         identity_prefix = "Adult secondary figure"
         wardrobe_prefix = "Use subdued adult wardrobe cues"
-        display_description = description
     else:
         identity_prefix = "Supporting figure"
         wardrobe_prefix = "Use subdued wardrobe cues"
-        display_description = _normalize_non_adult_freeform_support_description(
-            description
-        )
-        if not display_description:
-            sparse_description = True
 
-    if sparse_description:
+    if lane == "adult_nsfw" and sparse_description:
+        canonical_anchor = f"{identity_prefix} with a restrained, observant presence."
+        wardrobe_notes = (
+            f"{wardrobe_prefix} that keep the support figure secondary to the lead."
+        )
+        personality_notes = "Quiet, observant, and deferential to the lead's space."
+    elif lane != "adult_nsfw" and display_label == "supporting figure":
         canonical_anchor = f"{identity_prefix} with a restrained, observant presence."
         wardrobe_notes = (
             f"{wardrobe_prefix} that keep the support figure secondary to the lead."
         )
         personality_notes = "Quiet, observant, and deferential to the lead's space."
     else:
+        display_description = display_label
         canonical_anchor = f"{identity_prefix}: {display_description}."
         wardrobe_notes = (
             f"Keep the look grounded in {display_description} and visually secondary to the lead."
@@ -456,9 +489,10 @@ def _synthesize_freeform_support_metadata(
             member.freeform_description
         )
         sparse_description = _is_sparse_freeform_support_description(description)
+        display_label = _format_story_planner_support_label(member, lane)
         synthesis = _build_freeform_support_synthesis(
             lane=lane,
-            description=description,
+            display_label=display_label,
             sparse_description=sparse_description,
             lead_label=lead_label,
         )
@@ -761,7 +795,7 @@ def _compile_story_planner_anchor_intent(
         None,
     )
     lead_label = _format_story_planner_cast_label(lead)
-    support_label = _format_story_planner_cast_label(support)
+    support_label = _format_story_planner_support_label(support, plan.lane)
     relationship_label = (
         f"{lead_label} and {support_label}"
         if support is not None
@@ -824,7 +858,7 @@ def _build_story_planner_anchor_prompt(
         f"location_anchor: {plan.location.setting_anchor}",
         "resolved_cast:",
         f"- lead: {_format_story_planner_cast_label(lead)}",
-        f"- support: {_format_story_planner_cast_label(support)}",
+        f"- support: {_format_story_planner_support_label(support, plan.lane)}",
         "continuity_metadata:",
         f"- lead_canonical_anchor: {lead.canonical_anchor if lead and lead.canonical_anchor else 'none'}",
         f"- lead_anti_drift: {lead.anti_drift if lead and lead.anti_drift else 'none'}",
@@ -960,17 +994,15 @@ async def queue_story_planner_anchor_batch(
     )
 
 
-def _format_cast_labels(resolved_cast: list[StoryPlannerResolvedCastEntry]) -> tuple[str, str]:
+def _format_cast_labels(
+    resolved_cast: list[StoryPlannerResolvedCastEntry],
+    lane: str = "adult_nsfw",
+) -> tuple[str, str]:
     lead = next((member for member in resolved_cast if member.role == "lead"), None)
     support = next((member for member in resolved_cast if member.role == "support"), None)
 
     lead_label = lead.character_name if lead and lead.character_name else "the lead"
-    if support is None:
-        support_label = "a support presence"
-    elif support.character_name:
-        support_label = support.character_name
-    else:
-        support_label = support.freeform_description or "a support presence"
+    support_label = _format_story_planner_support_label(support, lane)
 
     return lead_label, support_label
 
@@ -1001,7 +1033,7 @@ def _build_shots(
     location: StoryPlannerResolvedLocationEntry,
     lane: str,
 ) -> list[StoryPlannerShotCard]:
-    lead_label, support_label = _format_cast_labels(resolved_cast)
+    lead_label, support_label = _format_cast_labels(resolved_cast, lane)
     story_focus = _normalize_story_prompt(story_prompt)
     reveal_detail = _extract_reveal_detail(story_prompt)
     if lane == "adult_nsfw":
