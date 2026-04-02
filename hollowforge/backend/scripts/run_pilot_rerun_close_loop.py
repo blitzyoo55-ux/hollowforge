@@ -17,6 +17,7 @@ DEFAULT_STORY_PROMPT = (
     "trading a charged look with a quiet attendant in a narrow, steam-bright passage."
 )
 DEFAULT_SUPPORT_DESCRIPTION = "quiet bathhouse attendant in a dark robe with damp hair"
+_TERMINAL_NON_SUCCESS_STATUSES = {"failed", "cancelled", "canceled"}
 
 
 def _request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -46,8 +47,13 @@ def _wait_for_generation_completion(
     latest_status: dict[str, Any] | None = None
     while elapsed < timeout_sec:
         latest_status = _request_json("GET", status_url)
-        if str(latest_status.get("status")) == "completed":
+        status = str(latest_status.get("status"))
+        if status == "completed":
             return latest_status
+        if status in _TERMINAL_NON_SUCCESS_STATUSES:
+            raise RuntimeError(
+                f"Generation {generation_id} reached terminal non-success status: {status}"
+            )
         time.sleep(poll_interval_sec)
         elapsed += poll_interval_sec
     detail = latest_status.get("status") if latest_status else "unknown"
@@ -110,7 +116,6 @@ def _render_rerun_log(
     approval_result: dict[str, Any],
     publish_job_result: dict[str, Any],
 ) -> str:
-    _ = ready_result
     queued_generation_ids = ", ".join(_queued_generation_ids(queue_result))
     fixture_summary = (
         f"shot {selected_generation.get('shot_no')} candidate {selected_generation.get('candidate_no')} "
@@ -131,9 +136,14 @@ def _render_rerun_log(
             f"- selected shot: {selected_generation.get('shot_no')}",
             f"- selected candidate: {selected_generation.get('candidate_no')}",
             f"- selected generation id: {selected_generation.get('generation_id')}",
-            f"- caption id: {caption_result.get('id')}",
-            f"- approved caption id: {approval_result.get('id')}",
+            f"- ready publish_approved: {ready_result.get('publish_approved')}",
+            f"- ready curated_at: {ready_result.get('curated_at')}",
+            f"- caption variant id: {caption_result.get('id')}",
+            f"- approval approved: {approval_result.get('approved')}",
+            f"- approved caption variant id: {approval_result.get('id')}",
             f"- draft publish job id: {publish_job_result.get('id')}",
+            f"- draft publish status: {publish_job_result.get('status')}",
+            f"- draft publish caption_variant_id: {publish_job_result.get('caption_variant_id')}",
             "- outcome: closed-loop draft publish created with no manual UI intervention",
         ]
     )
@@ -144,7 +154,8 @@ def _render_rerun_retro(
     readiness_result: dict[str, Any],
     queue_result: dict[str, Any],
     selected_generation: dict[str, Any],
-    caption_result: dict[str, Any],
+    ready_result: dict[str, Any],
+    approval_result: dict[str, Any],
     publish_job_result: dict[str, Any],
 ) -> str:
     queued_generation_ids = ", ".join(_queued_generation_ids(queue_result))
@@ -154,13 +165,25 @@ def _render_rerun_retro(
             "",
             "## IDs",
             f"- generation id: {selected_generation.get('generation_id')}",
-            f"- caption id: {caption_result.get('id')}",
+            f"- caption variant id: {approval_result.get('id')}",
             f"- publish job id: {publish_job_result.get('id')}",
             "",
             "## Queue",
             f"- queued generation ids: {queued_generation_ids}",
             "",
             "## Notes",
+            (
+                f"- ready evidence: publish_approved={ready_result.get('publish_approved')} "
+                f"curated_at={ready_result.get('curated_at')}"
+            ),
+            (
+                f"- approval evidence: approved={approval_result.get('approved')} "
+                f"caption_variant_id={approval_result.get('id')}"
+            ),
+            (
+                f"- publish evidence: status={publish_job_result.get('status')} "
+                f"caption_variant_id={publish_job_result.get('caption_variant_id')}"
+            ),
             (
                 "- closed-loop outcome: ready, caption, approve, and draft publish "
                 "completed without manual UI intervention."
@@ -285,6 +308,8 @@ def main() -> int:
             ready_result,
             keys=["id", "publish_approved", "curated_at"],
         )
+        if int(ready_result.get("publish_approved") or 0) != 1:
+            raise RuntimeError("ready endpoint did not set publish_approved=1")
 
         caption_result = _request_json(
             "POST",
@@ -311,6 +336,8 @@ def main() -> int:
             approval_result,
             keys=["id", "generation_id", "approved", "platform", "tone", "channel"],
         )
+        if approval_result.get("approved") is not True:
+            raise RuntimeError("approval endpoint did not return approved=True")
 
         publish_job_result = _request_json(
             "POST",
@@ -327,6 +354,8 @@ def main() -> int:
             publish_job_result,
             keys=["id", "generation_id", "caption_variant_id", "platform", "status"],
         )
+        if publish_job_result.get("caption_variant_id") != approval_result["id"]:
+            raise RuntimeError("publish job did not retain approved caption_variant_id")
 
         rerun_log = _render_rerun_log(
             readiness_result=readiness_result,
@@ -342,7 +371,8 @@ def main() -> int:
             readiness_result=readiness_result,
             queue_result=queue_result,
             selected_generation=selected_generation,
-            caption_result=approval_result,
+            ready_result=ready_result,
+            approval_result=approval_result,
             publish_job_result=publish_job_result,
         )
         _write_optional_output(args.log_path, rerun_log)
