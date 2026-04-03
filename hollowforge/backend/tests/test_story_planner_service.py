@@ -8,6 +8,7 @@ from app.models import GenerationResponse, StoryPlannerCastInput, StoryPlannerPl
 from app.services import story_planner_service
 from app.services.story_planner_service import (
     _get_story_planner_approval_secret,
+    _normalize_non_adult_freeform_support_description,
     plan_story_episode,
     queue_story_planner_anchor_batch,
     StoryPlannerValidationError,
@@ -515,6 +516,64 @@ def test_plan_story_episode_strips_high_risk_support_terms_in_non_adult_copy() -
     assert "nude" not in shot_action
     assert "topless" not in shot_action
     assert "explicit" not in shot_action
+
+
+def test_normalize_non_adult_freeform_support_description_removes_broken_fragments() -> None:
+    assert (
+        _normalize_non_adult_freeform_support_description(
+            "explicit and seductive companion"
+        )
+        == "companion"
+    )
+    assert (
+        _normalize_non_adult_freeform_support_description(
+            "a sexy, elegant companion"
+        )
+        == "elegant companion"
+    )
+
+
+def test_plan_story_episode_uses_sanitized_story_copy_in_all_ages_anchor_prompt() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt=(
+                "Hana Seo meets an explicit and seductive companion in the corridor "
+                "after closing."
+            ),
+            lane="all_ages",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="explicit and seductive companion",
+                ),
+            ],
+        )
+    )
+    service = _CapturingGenerationService()
+
+    async def _queue() -> None:
+        await queue_story_planner_anchor_batch(preview, service, candidate_count=1)
+
+    import asyncio
+
+    asyncio.run(_queue())
+
+    prompt_lines = "\n".join(
+        line
+        for line in service.batch_requests[1][0].prompt.splitlines()
+        if line.startswith(("story_prompt:", "episode_premise:"))
+    ).lower()
+
+    assert "explicit" not in prompt_lines
+    assert "seductive" not in prompt_lines
+    assert "hena seo meets" not in prompt_lines
+    assert "companion" in prompt_lines
 
 
 def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_name() -> None:

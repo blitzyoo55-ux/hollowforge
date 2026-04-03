@@ -341,6 +341,19 @@ def _normalize_freeform_support_description(description: str | None) -> str:
     return re.sub(r"\s+", " ", description).strip(" .,!?:;-")
 
 
+def _sanitize_non_adult_render_copy(text: str) -> str:
+    sanitized = text
+    for term in _NON_ADULT_SUPPORT_WORDS_TO_STRIP:
+        sanitized = re.sub(rf"(?i)\b{re.escape(term)}\b", "", sanitized)
+    sanitized = re.sub(r"(?i)\b(?:a|an|and)\b", "", sanitized)
+    sanitized = re.sub(r"\s*,\s*", ", ", sanitized)
+    sanitized = re.sub(r"\s{2,}", " ", sanitized)
+    sanitized = re.sub(r",\s*,", ", ", sanitized)
+    sanitized = re.sub(r"\s+,", ",", sanitized)
+    sanitized = re.sub(r"\s+\.", ".", sanitized)
+    return sanitized.strip(" ,.;:!-")
+
+
 def _is_sparse_freeform_support_description(description: str | None) -> bool:
     normalized = _normalize_freeform_support_description(description)
     if not normalized:
@@ -379,15 +392,7 @@ def _is_sparse_freeform_support_description(description: str | None) -> bool:
 
 
 def _normalize_non_adult_freeform_support_description(description: str) -> str:
-    sanitized = description
-    for term in _NON_ADULT_SUPPORT_WORDS_TO_STRIP:
-        sanitized = re.sub(rf"(?i)\b{re.escape(term)}\b", "", sanitized)
-    sanitized = re.sub(r"\s*,\s*", ", ", sanitized)
-    sanitized = re.sub(r"\s{2,}", " ", sanitized)
-    sanitized = re.sub(r",\s*,", ", ", sanitized)
-    sanitized = re.sub(r"\s+,", ",", sanitized)
-    sanitized = re.sub(r"\s+\.", ".", sanitized)
-    return sanitized.strip(" ,.;:!-")
+    return _sanitize_non_adult_render_copy(description)
 
 
 def _format_story_planner_support_label(
@@ -839,6 +844,16 @@ def _build_story_planner_anchor_prompt(
         None,
     )
     anchor_intent = _compile_story_planner_anchor_intent(plan, shot)
+    story_prompt = (
+        plan.story_prompt
+        if plan.lane == "adult_nsfw"
+        else _sanitize_non_adult_render_copy(plan.story_prompt)
+    )
+    episode_premise = (
+        plan.episode_brief.premise
+        if plan.lane == "adult_nsfw"
+        else _sanitize_non_adult_render_copy(plan.episode_brief.premise)
+    )
     lines = [
         "story_planner_anchor render prompt",
         "render_intent:",
@@ -849,11 +864,11 @@ def _build_story_planner_anchor_prompt(
         f"- mood_signal: {anchor_intent['mood_signal']}",
         f"- continuity_guard: {anchor_intent['continuity_guard']}",
         "context:",
-        f"story_prompt: {plan.story_prompt}",
+        f"story_prompt: {story_prompt}",
         f"lane: {plan.lane}",
         f"policy_pack: {plan.policy_pack_id}",
         f"shot_no: {shot.shot_no}",
-        f"episode_premise: {plan.episode_brief.premise}",
+        f"episode_premise: {episode_premise}",
         f"location_name: {plan.location.name}",
         f"location_anchor: {plan.location.setting_anchor}",
         "resolved_cast:",
