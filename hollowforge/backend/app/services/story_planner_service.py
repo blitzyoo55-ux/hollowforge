@@ -395,6 +395,12 @@ def _normalize_non_adult_freeform_support_description(description: str) -> str:
     return _sanitize_non_adult_render_copy(description)
 
 
+def _format_story_planner_anchor_context_copy(text: str, lane: str) -> str:
+    if lane == "all_ages":
+        return _sanitize_non_adult_render_copy(text)
+    return text
+
+
 def _format_story_planner_support_label(
     member: StoryPlannerResolvedCastEntry | None,
     lane: str,
@@ -846,15 +852,10 @@ def _build_story_planner_anchor_prompt(
         None,
     )
     anchor_intent = _compile_story_planner_anchor_intent(plan, shot)
-    story_prompt = (
-        plan.story_prompt
-        if plan.lane == "adult_nsfw"
-        else _sanitize_non_adult_render_copy(plan.story_prompt)
-    )
-    episode_premise = (
-        plan.episode_brief.premise
-        if plan.lane == "adult_nsfw"
-        else _sanitize_non_adult_render_copy(plan.episode_brief.premise)
+    story_prompt = _format_story_planner_anchor_context_copy(plan.story_prompt, plan.lane)
+    episode_premise = _format_story_planner_anchor_context_copy(
+        plan.episode_brief.premise,
+        plan.lane,
     )
     lines = [
         "story_planner_anchor render prompt",

@@ -623,6 +623,88 @@ def test_plan_story_episode_uses_sanitized_story_copy_in_all_ages_anchor_prompt(
     assert "companion" in prompt_lines
 
 
+def test_plan_story_episode_preserves_raw_story_copy_in_unrestricted_anchor_prompt_context() -> None:
+    unrestricted_preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt=(
+                "Hana Seo meets a warm, elegant, silk-clad companion in the corridor "
+                "after closing."
+            ),
+            lane="unrestricted",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="warm, elegant, silk-clad companion",
+                ),
+            ],
+        )
+    )
+    all_ages_preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt=(
+                "Hana Seo meets a warm, elegant, silk-clad companion in the corridor "
+                "after closing."
+            ),
+            lane="all_ages",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="warm, elegant, silk-clad companion",
+                ),
+            ],
+        )
+    )
+    unrestricted_service = _CapturingGenerationService()
+    all_ages_service = _CapturingGenerationService()
+
+    async def _queue_unrestricted() -> None:
+        await queue_story_planner_anchor_batch(
+            unrestricted_preview,
+            unrestricted_service,
+            candidate_count=1,
+        )
+
+    async def _queue_all_ages() -> None:
+        await queue_story_planner_anchor_batch(
+            all_ages_preview,
+            all_ages_service,
+            candidate_count=1,
+        )
+
+    import asyncio
+
+    asyncio.run(_queue_unrestricted())
+    asyncio.run(_queue_all_ages())
+
+    unrestricted_prompt_lines = "\n".join(
+        line
+        for line in unrestricted_service.batch_requests[0][0].prompt.splitlines()
+        if line.startswith(("story_prompt:", "episode_premise:"))
+    ).lower()
+    all_ages_prompt_lines = "\n".join(
+        line
+        for line in all_ages_service.batch_requests[0][0].prompt.splitlines()
+        if line.startswith(("story_prompt:", "episode_premise:"))
+    ).lower()
+
+    assert "silk-clad" in unrestricted_prompt_lines
+    assert "warm, elegant, silk-clad companion" in unrestricted_prompt_lines
+    assert "silk-clad" not in all_ages_prompt_lines
+    assert "warm, elegant, companion" in all_ages_prompt_lines
+
+
 def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_name() -> None:
     preview = plan_story_episode(
         StoryPlannerPlanRequest(
