@@ -20,6 +20,8 @@ data/hollowforge.db
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/story_planner_approval_secret.txt
+data/story_planner_approval_secret.lock
 data/backups/
 backend/hollowforge.db
 backend/*.db
