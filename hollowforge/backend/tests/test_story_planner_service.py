@@ -434,6 +434,53 @@ def test_plan_story_episode_strips_adult_specific_words_from_rich_non_adult_supp
     assert "silk-clad" not in combined_notes
 
 
+def test_plan_story_episode_preserves_raw_support_copy_in_unrestricted_lane() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Hana Seo meets a warm, elegant, silk-clad companion in the corridor after closing.",
+            lane="unrestricted",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                ),
+                StoryPlannerCastInput(
+                    role="support",
+                    source_type="freeform",
+                    freeform_description="warm, elegant, silk-clad companion",
+                ),
+            ],
+        )
+    )
+
+    support = next(
+        member for member in preview.resolved_cast if member.role == "support"
+    )
+    combined_notes = " ".join(
+        note
+        for note in (
+            support.canonical_anchor,
+            support.anti_drift,
+            support.wardrobe_notes,
+            support.personality_notes,
+        )
+        if note
+    ).lower()
+
+    assert support.freeform_description == "warm, elegant, silk-clad companion"
+    assert support.canonical_anchor == "Supporting figure: warm, elegant, silk-clad companion."
+    assert (
+        support.wardrobe_notes
+        == "Keep the look grounded in warm, elegant, silk-clad companion and visually secondary to the lead."
+    )
+    assert (
+        support.personality_notes
+        == "Warm, elegant, silk-clad companion energy, with a restrained secondary presence."
+    )
+    assert "silk-clad" in combined_notes
+
+
 def test_plan_story_episode_uses_sanitized_support_labels_in_non_adult_shots_and_anchor_prompt() -> None:
     preview = plan_story_episode(
         StoryPlannerPlanRequest(
@@ -572,7 +619,7 @@ def test_plan_story_episode_uses_sanitized_story_copy_in_all_ages_anchor_prompt(
 
     assert "explicit" not in prompt_lines
     assert "seductive" not in prompt_lines
-    assert "hena seo meets" not in prompt_lines
+    assert "hana seo meets" in prompt_lines
     assert "companion" in prompt_lines
 
 

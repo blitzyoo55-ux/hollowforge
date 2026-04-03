@@ -411,6 +411,8 @@ def _format_story_planner_support_label(
     description = _normalize_freeform_support_description(member.freeform_description)
     if lane == "adult_nsfw":
         return description or "a support presence"
+    if lane == "unrestricted":
+        return description or "a support presence"
 
     sanitized_description = _normalize_non_adult_freeform_support_description(
         description
