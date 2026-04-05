@@ -7,6 +7,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
@@ -66,6 +67,27 @@ def _parse_json_object(raw: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _optional_text(raw: Any) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _callback_output_path(raw: Any) -> str | None:
+    value = _optional_text(raw)
+    if value is None:
+        return None
+
+    parsed = urlparse(value)
+    normalized = parsed.path if parsed.scheme or parsed.netloc else value
+    if normalized.startswith("/data/"):
+        return normalized[len("/data/") :]
+    if normalized.startswith("data/"):
+        return normalized[len("data/") :]
+    return normalized.lstrip("/")
+
+
 def _row_to_response(row: dict[str, Any]) -> WorkerJobResponse:
     return WorkerJobResponse(
         id=row["id"],
@@ -77,7 +99,7 @@ def _row_to_response(row: dict[str, Any]) -> WorkerJobResponse:
         executor_mode=row["executor_mode"],
         executor_key=row["executor_key"],
         status=row["status"],
-        source_image_url=row["source_image_url"],
+        source_image_url=_optional_text(row.get("source_image_url")),
         generation_metadata=_parse_json_object(row.get("generation_metadata")),
         request_json=_parse_json_object(row.get("request_json")),
         callback_url=row.get("callback_url"),
@@ -102,6 +124,11 @@ async def _notify_hollowforge(row: dict[str, Any], payload: HollowForgeCallbackP
     callback_token = row.get("callback_token")
     if isinstance(callback_token, str) and callback_token:
         headers["Authorization"] = f"Bearer {callback_token}"
+    cf_access_client_id = settings.WORKER_CF_ACCESS_CLIENT_ID
+    cf_access_client_secret = settings.WORKER_CF_ACCESS_CLIENT_SECRET
+    if cf_access_client_id and cf_access_client_secret:
+        headers["CF-Access-Client-Id"] = cf_access_client_id
+        headers["CF-Access-Client-Secret"] = cf_access_client_secret
 
     try:
         async with httpx.AsyncClient(
@@ -197,7 +224,7 @@ async def _run_worker_job(worker_job_id: str) -> None:
                 status="completed",
                 external_job_id=row.get("external_job_id"),
                 external_job_url=row.get("external_job_url"),
-                output_path=row.get("output_url"),
+                output_path=_callback_output_path(row.get("output_url")),
                 error_message=row.get("error_message"),
             ),
         )
@@ -238,9 +265,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Lab451 Animation Worker",
+    title="Lab451 Execution Worker",
     version="0.1.0",
-    description="Separate execution worker for HollowForge animation jobs",
+    description="Separate execution worker for HollowForge animation and comic still jobs",
     lifespan=lifespan,
 )
 
@@ -338,7 +365,7 @@ async def create_job(
                 payload.target_tool,
                 payload.executor_mode,
                 payload.executor_key,
-                str(payload.source_image_url),
+                str(payload.source_image_url) if payload.source_image_url else "",
                 json.dumps(payload.generation_metadata, ensure_ascii=False)
                 if payload.generation_metadata is not None
                 else None,

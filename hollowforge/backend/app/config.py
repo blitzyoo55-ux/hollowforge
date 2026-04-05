@@ -281,6 +281,10 @@ class Settings:
     IMAGES_DIR: Path = DATA_DIR / "images"
     THUMBS_DIR: Path = DATA_DIR / "thumbs"
     WORKFLOWS_DIR: Path = DATA_DIR / "workflows"
+    COMICS_DIR: Path = DATA_DIR / "comics"
+    COMICS_PREVIEWS_DIR: Path = COMICS_DIR / "previews"
+    COMICS_EXPORTS_DIR: Path = COMICS_DIR / "exports"
+    COMICS_MANIFESTS_DIR: Path = COMICS_DIR / "manifests"
     PINOKIO_ROOT_DIR: Path = _resolve_pinokio_root_dir()
     PINOKIO_PEERS_DIR: Path = _resolve_pinokio_peers_dir(PINOKIO_ROOT_DIR)
     PINOKIO_PRIMARY_PEER_DIR: Path | None = _resolve_pinokio_primary_peer_dir(
@@ -314,5 +318,21 @@ class Settings:
     POLL_INTERVAL: float = float(os.getenv("POLL_INTERVAL", "1.0"))
     GENERATION_TIMEOUT: int = int(os.getenv("GENERATION_TIMEOUT", "900"))
 
+    @property
+    def COMICS_REPORTS_DIR(self) -> Path:
+        path = self.COMICS_DIR / "reports"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 settings = Settings()
+
+for _directory in (
+    settings.DATA_DIR,
+    settings.COMICS_DIR,
+    settings.COMICS_PREVIEWS_DIR,
+    settings.COMICS_EXPORTS_DIR,
+    settings.COMICS_MANIFESTS_DIR,
+    settings.COMICS_REPORTS_DIR,
+):
+    _directory.mkdir(parents=True, exist_ok=True)

@@ -68,6 +68,21 @@ launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.cloudflared
 - Open: `https://hollowforge.your-domain.com`
 - You should be redirected to Google login first.
 
+## Worker callback note
+
+If you use this protected hostname as `HOLLOWFORGE_PUBLIC_API_BASE_URL`, remote
+workers cannot post callbacks through it with a plain bearer callback token
+alone. Cloudflare Access will redirect unauthenticated worker requests to the
+login flow unless you either:
+
+- bypass Access for the callback path, or
+- give the worker a Cloudflare Access service token and send
+  `CF-Access-Client-Id` plus `CF-Access-Client-Secret` on callback requests
+
+Worker env mapping:
+- `WORKER_CF_ACCESS_CLIENT_ID=<service token client id>`
+- `WORKER_CF_ACCESS_CLIENT_SECRET=<service token client secret>`
+
 ## Logs
 
 - Nginx:
