@@ -27,6 +27,11 @@ Last updated: 2026-04-05
   `backend/scripts/launch_comic_production_dry_run.py`.
 - The frontend must be rebuilt explicitly with `npm run build` before deploy.
 - The current local animation preview lane is `sdxl_ipadapter_microanim_v2`.
+- The stable launchd labels are `com.mori.hollowforge.backend` and
+  `com.mori.hollowforge.animation-worker`.
+- The stable animation worker launchd lane runs `executor_backend=comfyui_pipeline`,
+  so the remote comic smoke should use an extended render poll budget such as
+  `--render-poll-attempts 360 --render-poll-sec 1.0`.
 
 ## Resume Here
 
@@ -111,6 +116,8 @@ Last updated: 2026-04-05
 - frontend comic route: `/comic`
 - frontend checks: `frontend/package.json`
 - animation worker runtime: `lab451-animation-worker/run_local_animation_worker.sh`
+- animation worker launchd:
+  `deploy/launchd/com.mori.hollowforge.animation-worker.plist`
 - deployment assets: `deploy/cloudflared/`, `deploy/nginx/`,
   `deploy/oauth2-proxy/`, `deploy/launchd/`
 

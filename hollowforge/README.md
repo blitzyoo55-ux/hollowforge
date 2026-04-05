@@ -7,12 +7,15 @@ Production image generation and orchestration console for Lab451.
 - stack: FastAPI + React 19 + Tailwind v4 + SQLite + ComfyUI
 - primary access: `https://sec.hlfglll.com` behind Cloudflare Zero Trust
 - local backend entrypoint: `backend/run_local_backend.sh`
+- local animation worker entrypoint: `lab451-animation-worker/run_local_animation_worker.sh`
 - operator UI workspace: `frontend/`
 - comic backend routes: `backend/app/routes/comic.py`
 - comic manuscript profile API: `GET /api/v1/comic/manuscript-profiles`
 - comic frontend route: `/comic` with `/comic-studio` kept as a compatibility alias
 - animation execution worker: `lab451-animation-worker/`
 - deploy/runtime assets: `deploy/`
+  - launchd templates now include `com.mori.hollowforge.backend` and
+    `com.mori.hollowforge.animation-worker`
 
 ## Canonical Re-entry Docs
 
@@ -61,6 +64,12 @@ npm run build
 
 cd lab451-animation-worker
 ./run_local_animation_worker.sh
+
+launchctl print gui/$(id -u)/com.mori.hollowforge.backend
+launchctl print gui/$(id -u)/com.mori.hollowforge.animation-worker
+
+cd backend
+./.venv/bin/python scripts/launch_comic_remote_render_smoke.py --base-url http://127.0.0.1:8000 --render-poll-attempts 360 --render-poll-sec 1.0
 ```
 
 ## Important Runbooks

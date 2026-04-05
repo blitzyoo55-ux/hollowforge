@@ -55,12 +55,18 @@ Zero Trust -> Access -> Applications:
 ```bash
 cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.nginx.cloudflare.plist ~/Library/LaunchAgents/
 cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.cloudflared.plist ~/Library/LaunchAgents/
+cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.backend.plist ~/Library/LaunchAgents/
+cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.animation-worker.plist ~/Library/LaunchAgents/
 
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.nginx.cloudflare.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.cloudflared.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.backend.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.animation-worker.plist
 
 launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.nginx.cloudflare
 launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.cloudflared
+launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.backend
+launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.animation-worker
 ```
 
 ## 7) Verify
@@ -92,3 +98,9 @@ Worker env mapping:
 - Cloudflared:
   - `backend/logs/cloudflared_launchd_stdout.log`
   - `backend/logs/cloudflared_launchd_stderr.log`
+- Backend:
+  - `backend/logs/launchd_stdout.log`
+  - `backend/logs/launchd_stderr.log`
+- Animation worker:
+  - `lab451-animation-worker/logs/launchd_stdout.log`
+  - `lab451-animation-worker/logs/launchd_stderr.log`
