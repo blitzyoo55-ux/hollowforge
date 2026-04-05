@@ -55,8 +55,8 @@ animation 쪽에는 동일한 운영 규칙이 아직 없다.
 지금 stale animation job 문제가 생기는 이유는 두 가지다.
 
 1. worker process가 내려가면 in-flight `worker_jobs`가 terminal state로 정리되지 않는다.
-2. backend `animation_jobs`는 worker callback에 의존하므로, worker가 죽은 뒤 callback이
-   오지 않으면 `processing`으로 남는다.
+2. backend `animation_jobs`는 worker callback에 크게 의존하므로, worker가 죽거나 callback이
+   누락되면 `processing`으로 남는다.
 
 이 상태를 방치하면 operator는 실제로 끝난 작업인지, 죽은 작업인지, 다시 실행해도 되는지
 판단하기 어렵다. 특히 teaser helper는 성공 사례가 이미 있는 상태라서, 다음 필요한 것은
@@ -84,15 +84,18 @@ backend script 또는 route 하나를 두고 stale job을 수동 정리한다.
 ### 2. Startup Fail Then Rerun
 
 worker startup 시 non-terminal `worker_jobs`를 전부 `failed`로 정리하고,
-callback으로 backend `animation_jobs`도 `failed`로 맞춘다. 이후 operator는 기존
-teaser helper나 preset launch로 새 job을 다시 실행한다.
+callback으로 backend `animation_jobs`를 best-effort로 맞춘다. 동시에 backend 쪽에도
+별도 stale reconciliation pass를 두어 callback 누락이나 backend restart 뒤에도 terminal
+state를 따라잡게 한다. 이후 operator는 기존 teaser helper나 preset launch로 새 job을
+다시 실행한다.
 
 장점:
 
 - 결정적이다
 - generation stale cleanup 패턴과 철학이 맞다
 - worker가 중간 상태를 “재개 가능”하다고 착각하지 않는다
-- 구현 범위가 작고 테스트하기 쉽다
+- callback 누락까지 backend 쪽에서 보정할 수 있다
+- 구현 범위가 여전히 작고 테스트하기 쉽다
 
 단점:
 
@@ -139,8 +142,9 @@ worker가 restart 뒤 stale `worker_jobs`를 다시 읽고 ComfyUI prompt 상태
 
 - worker startup stale cleanup
 - stale worker job의 failed callback propagation
+- backend-side stale animation reconciliation pass
 - backend animation callback의 terminal-state precedence hardening
-- teaser helper/README/STATE에 `fail then rerun` 운영 규칙 반영
+- teaser helper/operator rerun contract 유지
 - unit/integration test coverage
 
 ## Out Of Scope
@@ -151,6 +155,7 @@ worker가 restart 뒤 stale `worker_jobs`를 다시 읽고 ComfyUI prompt 상태
 - animation shot registry
 - publish automation
 - general-purpose animation orchestration refactor
+- broad README/STATE polishing
 
 ## Design Details
 
@@ -185,6 +190,41 @@ callback payload:
 
 여기서 `output_path`는 보내지 않는다.
 
+## Backend Stale Reconciliation Pass
+
+worker callback만으로 backend stale를 전부 정리하는 것은 충분하지 않다. 따라서 backend도
+자기 쪽 non-terminal `animation_jobs`를 worker state와 대조하는 reconciliation pass를
+가져야 한다.
+
+대상 row:
+
+- `executor_mode = remote_worker`
+- `status IN ('queued', 'submitted', 'processing')`
+- `external_job_id`가 비어 있지 않음
+
+reconciliation source:
+
+- worker `GET /api/v1/jobs/{worker_job_id}`
+- 여기서 `worker_job_id`는 `animation_jobs.external_job_id`에서
+  `microanim-<worker_job_id>` prefix를 벗겨 얻는다
+
+reconciliation rules:
+
+- worker status가 `completed`이면 backend row도 `completed`로 맞춤
+- worker status가 `failed`이면 backend row도 `failed`로 맞춤
+- worker status가 `cancelled`이면 backend row도 `cancelled`로 맞춤
+- worker job이 `404`이거나 startup cleanup 뒤 terminal row가 없으면 backend row를
+  `failed / Worker restarted`로 정리
+- worker가 일시적으로 unreachable이면 row를 그대로 두고 이번 pass에서는 건너뜀
+
+이 reconciliation pass는 두 경로에서 재사용한다.
+
+1. backend startup
+2. operator-facing bounded helper/script
+
+즉 worker startup callback이 실패해도, backend restart 또는 manual reconcile 한 번으로
+backend stale row를 terminal state에 맞출 수 있어야 한다.
+
 ## Backend Animation Terminal-State Guard
 
 `/api/v1/animation/jobs/{job_id}/callback`는 stale restart 이후 late callback이 와도
@@ -212,7 +252,7 @@ operator는 stale animation job을 `resume`하지 않는다.
 
 recovery SOP:
 
-1. stale job이 `failed / Worker restarted`로 정리됐는지 확인
+1. stale job이 `failed / Worker restarted` 또는 equivalent terminal state로 정리됐는지 확인
 2. 동일 source panel에 대해 기존 helper를 다시 실행
 3. 새 animation job id와 새 worker job id를 사용
 
@@ -234,21 +274,26 @@ cd backend
 
 ## Testing Strategy
 
-필수 테스트는 네 묶음이다.
+필수 테스트는 다섯 묶음이다.
 
 1. worker startup cleanup
 - stale `worker_jobs`가 startup에서 `failed / Worker restarted`로 바뀜
 - callback payload가 failed로 전송됨
 
-2. backend callback regression guard
+2. backend stale reconciliation pass
+- worker terminal state를 backend terminal state로 mirror함
+- worker 404 또는 missing row를 `failed / Worker restarted`로 정리함
+- worker unreachable은 mutation 없이 skip함
+
+3. backend callback regression guard
 - `failed` animation job이 late `processing` 또는 late `completed`로 되돌아가지 않음
 - `completed` animation job이 late `failed`로 되돌아가지 않음
 
-3. teaser helper/operator contract
+4. teaser helper/operator contract
 - stale failure 이후 기존 teaser helper rerun path는 그대로 동작
 - 새 job id를 반환
 
-4. live bounded verification
+5. live bounded verification
 - stale row fixture 또는 실제 restart 상황에서 `processing` row가 `failed / Worker restarted`
   로 정리됨
 - 그 다음 rerun helper가 새 completed mp4를 만듦
@@ -258,7 +303,8 @@ cd backend
 이번 단계가 끝났다고 말하려면 아래가 모두 맞아야 한다.
 
 - worker restart 뒤 stale `worker_jobs`가 자동으로 terminal state가 된다
-- matching backend `animation_jobs`도 `failed / Worker restarted`로 정리된다
+- matching backend `animation_jobs`도 callback 또는 reconciliation pass를 통해 terminal
+  state로 정리된다
 - late callback이 terminal backend state를 되돌리지 못한다
 - operator는 새 retry surface 없이 기존 teaser helper로 rerun할 수 있다
 - stale failure 1건 + rerun success 1건이 실제로 검증된다
