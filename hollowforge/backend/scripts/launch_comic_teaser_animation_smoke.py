@@ -64,6 +64,22 @@ def _require_source_asset_mapping(payload: Any) -> dict[str, Any]:
     return dict(payload)
 
 
+def _extract_preset_id_from_argv(argv: list[str]) -> str:
+    for index, arg in enumerate(argv):
+        if arg == "--preset-id":
+            if index + 1 < len(argv):
+                value = argv[index + 1].strip()
+                if value:
+                    return value
+            return DEFAULT_PRESET_ID
+        if arg.startswith("--preset-id="):
+            value = arg.split("=", 1)[1].strip()
+            if value:
+                return value
+            return DEFAULT_PRESET_ID
+    return DEFAULT_PRESET_ID
+
+
 def _build_summary(*, preset_id: str) -> dict[str, Any]:
     return {
         "episode_id": "",
@@ -80,6 +96,7 @@ def _build_summary(*, preset_id: str) -> dict[str, Any]:
 
 
 def main() -> int:
+    argv = sys.argv[1:]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--episode-id")
@@ -87,9 +104,9 @@ def main() -> int:
     parser.add_argument("--preset-id", default=DEFAULT_PRESET_ID)
     parser.add_argument("--poll-sec", type=float, default=1.0)
     parser.add_argument("--timeout-sec", type=float, default=1800.0)
-    summary = _build_summary(preset_id=DEFAULT_PRESET_ID)
+    summary = _build_summary(preset_id=_extract_preset_id_from_argv(argv))
     try:
-        args = parser.parse_args()
+        args = parser.parse_args(argv)
     except SystemExit as exc:
         if exc.code == 0:
             return 0

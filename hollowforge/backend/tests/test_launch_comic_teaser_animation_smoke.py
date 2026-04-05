@@ -42,6 +42,7 @@ def _assert_required_summary_markers(output: str) -> None:
 
 def _assert_bounded_failure_invariants(output: str) -> None:
     assert "teaser_success: false" in output
+    assert "overall_success: false" in output
     assert "animation_job_id: " in output
     assert "output_path: " in output
 
@@ -83,6 +84,8 @@ def test_main_invalid_cli_input_still_prints_summary_markers(monkeypatch, capsys
         "argv",
         [
             "launch_comic_teaser_animation_smoke.py",
+            "--preset-id",
+            "custom_teaser_v1",
             "--panel-index",
             "not-an-int",
         ],
@@ -92,6 +95,7 @@ def test_main_invalid_cli_input_still_prints_summary_markers(monkeypatch, capsys
     _assert_required_summary_markers(captured.out)
     _assert_bounded_failure_invariants(captured.out)
     assert "failed_step: bootstrap" in captured.out
+    assert "preset_id: custom_teaser_v1" in captured.out
     assert "invalid int value" in captured.err
 
 
