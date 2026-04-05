@@ -26,6 +26,9 @@ backend/*.db
 backend/*.db-shm
 backend/*.db-wal
 backend/logs/
+!lab451-animation-worker/logs/
+lab451-animation-worker/logs/*
+!lab451-animation-worker/logs/.gitkeep
 lab451-animation-worker/data/*.db
 lab451-animation-worker/data/*.db-shm
 lab451-animation-worker/data/*.db-wal
