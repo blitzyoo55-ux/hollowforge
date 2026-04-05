@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
-from app.routes.animation import router as animation_router
+from app.routes import animation as animation_routes
 from app.services import animation_reconciliation_service
 
 
@@ -87,7 +87,7 @@ def _fetch_animation_job(temp_db: Path, job_id: str) -> dict[str, object]:
 
 def _build_app() -> FastAPI:
     app = FastAPI()
-    app.include_router(animation_router)
+    app.include_router(animation_routes.router)
     return app
 
 
@@ -422,7 +422,7 @@ async def test_animation_callback_failed_job_ignores_late_processing(
     _insert_animation_job(
         temp_db,
         job_id=job_id,
-        status="failed",
+        status="processing",
         external_job_id="worker-job-failed",
         external_job_url="https://worker.test/jobs/worker-job-failed",
         error_message="initial failure",
@@ -436,6 +436,7 @@ async def test_animation_callback_failed_job_ignores_late_processing(
             "external_job_id": "worker-job-failed",
             "external_job_url": "https://worker.test/jobs/worker-job-failed",
             "error_message": "initial failure",
+            "request_json": {"worker": {"attempt": 1}},
         },
         token="animation-secret",
     )
@@ -448,6 +449,7 @@ async def test_animation_callback_failed_job_ignores_late_processing(
             "external_job_id": "worker-job-late",
             "external_job_url": "https://worker.test/jobs/worker-job-late",
             "error_message": "late processing",
+            "request_json": {"worker": {"attempt": 99}},
         },
         token="animation-secret",
     )
@@ -455,9 +457,17 @@ async def test_animation_callback_failed_job_ignores_late_processing(
     assert late_processing.status_code == 200
     body = late_processing.json()
     assert body["status"] == "failed"
+    assert body["external_job_id"] == "worker-job-failed"
+    assert body["external_job_url"] == "https://worker.test/jobs/worker-job-failed"
+    assert body["error_message"] == "initial failure"
+    assert body["request_json"] == {"worker": {"attempt": 1}}
 
     row = _fetch_animation_job(temp_db, job_id)
     assert row["status"] == "failed"
+    assert row["external_job_id"] == "worker-job-failed"
+    assert row["external_job_url"] == "https://worker.test/jobs/worker-job-failed"
+    assert row["error_message"] == "initial failure"
+    assert row["request_json"] == '{"worker": {"attempt": 1}}'
 
 
 @pytest.mark.asyncio
@@ -469,7 +479,7 @@ async def test_animation_callback_completed_job_ignores_late_failed(
     _insert_animation_job(
         temp_db,
         job_id=job_id,
-        status="completed",
+        status="processing",
         external_job_id="worker-job-completed",
         external_job_url="https://worker.test/jobs/worker-job-completed",
         output_path="outputs/final.mp4",
@@ -484,6 +494,7 @@ async def test_animation_callback_completed_job_ignores_late_failed(
             "external_job_id": "worker-job-completed",
             "external_job_url": "https://worker.test/jobs/worker-job-completed",
             "output_path": "outputs/final.mp4",
+            "request_json": {"worker": {"attempt": 1}},
         },
         token="animation-secret",
     )
@@ -496,6 +507,7 @@ async def test_animation_callback_completed_job_ignores_late_failed(
             "external_job_id": "worker-job-late",
             "external_job_url": "https://worker.test/jobs/worker-job-late",
             "error_message": "late failure",
+            "request_json": {"worker": {"attempt": 99}},
         },
         token="animation-secret",
     )
@@ -503,9 +515,85 @@ async def test_animation_callback_completed_job_ignores_late_failed(
     assert late_failed.status_code == 200
     body = late_failed.json()
     assert body["status"] == "completed"
+    assert body["external_job_id"] == "worker-job-completed"
+    assert body["external_job_url"] == "https://worker.test/jobs/worker-job-completed"
+    assert body["output_path"] == "outputs/final.mp4"
+    assert body["error_message"] is None
+    assert body["request_json"] == {"worker": {"attempt": 1}}
 
     row = _fetch_animation_job(temp_db, job_id)
     assert row["status"] == "completed"
+    assert row["external_job_id"] == "worker-job-completed"
+    assert row["external_job_url"] == "https://worker.test/jobs/worker-job-completed"
+    assert row["output_path"] == "outputs/final.mp4"
+    assert row["error_message"] is None
+    assert row["request_json"] == '{"worker": {"attempt": 1}}'
+
+
+@pytest.mark.asyncio
+async def test_animation_callback_completed_job_ignores_duplicate_completed(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "anim-job-terminal-duplicate-completed"
+    _insert_animation_job(
+        temp_db,
+        job_id=job_id,
+        status="processing",
+        external_job_id="worker-job-completed",
+        external_job_url="https://worker.test/jobs/worker-job-completed",
+        output_path="outputs/final.mp4",
+        error_message=None,
+    )
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "animation-secret")
+
+    completed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "completed",
+            "external_job_id": "worker-job-completed",
+            "external_job_url": "https://worker.test/jobs/worker-job-completed",
+            "output_path": "outputs/final.mp4",
+            "request_json": {"worker": {"attempt": 1}},
+        },
+        token="animation-secret",
+    )
+    assert completed.status_code == 200
+
+    def _stale_snapshot_guard(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("callback should reload the row inside the transaction")
+
+    monkeypatch.setattr(animation_routes, "_require_animation_job", _stale_snapshot_guard)
+
+    duplicate_completed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "completed",
+            "external_job_id": "worker-job-duplicate",
+            "external_job_url": "https://worker.test/jobs/worker-job-duplicate",
+            "output_path": "outputs/duplicate.mp4",
+            "error_message": "duplicate should be ignored",
+            "request_json": {"worker": {"attempt": 99}},
+        },
+        token="animation-secret",
+    )
+
+    assert duplicate_completed.status_code == 200
+    body = duplicate_completed.json()
+    assert body["status"] == "completed"
+    assert body["external_job_id"] == "worker-job-completed"
+    assert body["external_job_url"] == "https://worker.test/jobs/worker-job-completed"
+    assert body["output_path"] == "outputs/final.mp4"
+    assert body["error_message"] is None
+    assert body["request_json"] == {"worker": {"attempt": 1}}
+
+    row = _fetch_animation_job(temp_db, job_id)
+    assert row["status"] == "completed"
+    assert row["external_job_id"] == "worker-job-completed"
+    assert row["external_job_url"] == "https://worker.test/jobs/worker-job-completed"
+    assert row["output_path"] == "outputs/final.mp4"
+    assert row["error_message"] is None
+    assert row["request_json"] == '{"worker": {"attempt": 1}}'
 
 
 @pytest.mark.asyncio
@@ -517,7 +605,7 @@ async def test_animation_callback_cancelled_job_ignores_late_completed(
     _insert_animation_job(
         temp_db,
         job_id=job_id,
-        status="cancelled",
+        status="queued",
         external_job_id="worker-job-cancelled",
         external_job_url="https://worker.test/jobs/worker-job-cancelled",
         error_message="cancelled by operator",
@@ -531,6 +619,7 @@ async def test_animation_callback_cancelled_job_ignores_late_completed(
             "external_job_id": "worker-job-cancelled",
             "external_job_url": "https://worker.test/jobs/worker-job-cancelled",
             "error_message": "cancelled by operator",
+            "request_json": {"worker": {"attempt": 1}},
         },
         token="animation-secret",
     )
@@ -543,6 +632,7 @@ async def test_animation_callback_cancelled_job_ignores_late_completed(
             "external_job_id": "worker-job-late",
             "external_job_url": "https://worker.test/jobs/worker-job-late",
             "output_path": "outputs/late.mp4",
+            "request_json": {"worker": {"attempt": 99}},
         },
         token="animation-secret",
     )
@@ -550,6 +640,14 @@ async def test_animation_callback_cancelled_job_ignores_late_completed(
     assert late_completed.status_code == 200
     body = late_completed.json()
     assert body["status"] == "cancelled"
+    assert body["external_job_id"] == "worker-job-cancelled"
+    assert body["external_job_url"] == "https://worker.test/jobs/worker-job-cancelled"
+    assert body["error_message"] == "cancelled by operator"
+    assert body["request_json"] == {"worker": {"attempt": 1}}
 
     row = _fetch_animation_job(temp_db, job_id)
     assert row["status"] == "cancelled"
+    assert row["external_job_id"] == "worker-job-cancelled"
+    assert row["external_job_url"] == "https://worker.test/jobs/worker-job-cancelled"
+    assert row["error_message"] == "cancelled by operator"
+    assert row["request_json"] == '{"worker": {"attempt": 1}}'
