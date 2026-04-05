@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import sqlite3
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,6 +17,17 @@ from app.services import animation_reconciliation_service
 
 def _now() -> str:
     return "2026-04-05T12:00:00+00:00"
+
+
+def _load_script_module(filename: str, module_name: str):
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / filename
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _insert_animation_job(
@@ -91,6 +104,37 @@ def _build_app() -> FastAPI:
     return app
 
 
+class _FakeComfyUIClient:
+    async def close(self) -> None:
+        return None
+
+
+class _FakeGenerationService:
+    def __init__(self, *_args, **_kwargs) -> None:
+        self.cleanup_calls = 0
+
+    async def cleanup_stale(self) -> int:
+        self.cleanup_calls += 1
+        return 0
+
+    def start_worker(self) -> None:
+        return None
+
+    async def shutdown(self) -> None:
+        return None
+
+
+class _FakeFavoriteUpscaleService:
+    def __init__(self, *_args, **_kwargs) -> None:
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        return None
+
+
 class _FakeWorkerClient:
     def __init__(self, responses: dict[str, object]) -> None:
         self._responses = responses
@@ -142,6 +186,117 @@ def _install_clip_ready_failure(
         "mark_shot_clip_ready_for_completed_job",
         _raise,
     )
+
+
+@pytest.mark.asyncio
+async def test_backend_startup_invokes_animation_reconciliation(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as backend_main
+
+    calls: list[str] = []
+
+    async def _fake_init_db() -> None:
+        calls.append("init_db")
+
+    async def _fake_reconcile() -> dict[str, int]:
+        calls.append("reconcile")
+        return {
+            "checked": 1,
+            "updated": 1,
+            "failed_restart": 0,
+            "completed": 1,
+            "cancelled": 0,
+            "skipped_unreachable": 0,
+        }
+
+    monkeypatch.setattr(backend_main, "init_db", _fake_init_db)
+    monkeypatch.setattr(backend_main, "reconcile_stale_animation_jobs", _fake_reconcile)
+    monkeypatch.setattr(backend_main, "ComfyUIClient", _FakeComfyUIClient)
+    monkeypatch.setattr(backend_main, "GenerationService", _FakeGenerationService)
+    monkeypatch.setattr(backend_main, "FavoriteUpscaleService", _FakeFavoriteUpscaleService)
+
+    app = FastAPI()
+    app.state.routers_initialized = True
+
+    async with backend_main.lifespan(app):
+        calls.append("booted")
+
+    assert calls == ["init_db", "reconcile", "booted"]
+
+
+def test_reconcile_stale_animation_jobs_script_prints_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script_module(
+        "reconcile_stale_animation_jobs.py",
+        "reconcile_stale_animation_jobs",
+    )
+
+    summary = {
+        "checked": 2,
+        "updated": 1,
+        "failed_restart": 1,
+        "completed": 0,
+        "cancelled": 0,
+        "skipped_unreachable": 0,
+    }
+
+    async def _fake_reconcile() -> dict[str, int]:
+        return summary
+
+    monkeypatch.setattr(module, "reconcile_stale_animation_jobs", _fake_reconcile)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["reconcile_stale_animation_jobs.py", "--base-url", "http://127.0.0.1:8000"],
+    )
+
+    assert module.main() == 0
+
+    captured = capsys.readouterr()
+    assert "checked: 2" in captured.out
+    assert "updated: 1" in captured.out
+    assert "failed_restart: 1" in captured.out
+    assert "completed: 0" in captured.out
+    assert "cancelled: 0" in captured.out
+    assert "skipped_unreachable: 0" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_backend_startup_reconciliation_failure_does_not_abort_boot(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as backend_main
+
+    calls: list[str] = []
+
+    async def _fake_init_db() -> None:
+        calls.append("init_db")
+
+    async def _fake_reconcile() -> dict[str, int]:
+        calls.append("reconcile")
+        raise httpx.ConnectError(
+            "worker unreachable",
+            request=httpx.Request("GET", "http://worker.test/api/v1/jobs/job-1"),
+        )
+
+    monkeypatch.setattr(backend_main, "init_db", _fake_init_db)
+    monkeypatch.setattr(backend_main, "reconcile_stale_animation_jobs", _fake_reconcile)
+    monkeypatch.setattr(backend_main, "ComfyUIClient", _FakeComfyUIClient)
+    monkeypatch.setattr(backend_main, "GenerationService", _FakeGenerationService)
+    monkeypatch.setattr(backend_main, "FavoriteUpscaleService", _FakeFavoriteUpscaleService)
+
+    app = FastAPI()
+    app.state.routers_initialized = True
+
+    async with backend_main.lifespan(app):
+        calls.append("booted")
+
+    assert calls == ["init_db", "reconcile", "booted"]
 
 
 @pytest.mark.asyncio
