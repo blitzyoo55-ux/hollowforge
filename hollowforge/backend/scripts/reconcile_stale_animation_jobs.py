@@ -32,6 +32,10 @@ class _WorkerJobUnreachable(RuntimeError):
     """Raised when the worker cannot be polled reliably."""
 
 
+class _WorkerJobFatalError(RuntimeError):
+    """Raised when the worker returned a fatal polling response."""
+
+
 def _is_local_backend_url(base_url: str) -> bool:
     parsed = urlparse(base_url)
     scheme = (parsed.scheme or "").strip().lower()
@@ -85,6 +89,8 @@ async def _load_stale_jobs(backend_client: httpx.AsyncClient) -> list[dict[str, 
         for item in payload:
             if not isinstance(item, dict):
                 continue
+            if str(item.get("executor_mode") or "").strip() != "remote_worker":
+                continue
             job_id = str(item.get("id") or "").strip()
             if not job_id:
                 continue
@@ -107,10 +113,9 @@ async def _fetch_worker_job(
 
     if response.status_code == 404:
         return None
-    if response.status_code in {401, 403, 408, 429, 500, 502, 503, 504}:
-        raise _WorkerJobUnreachable(f"worker returned HTTP {response.status_code}")
+    if response.status_code < 200 or response.status_code >= 300:
+        raise _WorkerJobFatalError(f"worker returned HTTP {response.status_code}")
 
-    response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
         raise RuntimeError("Worker job response must be a JSON object")
@@ -165,7 +170,7 @@ def _callback_payload_for_job(
                 "external_job_id": current_job.get("external_job_id"),
                 "external_job_url": current_job.get("external_job_url"),
                 "output_path": output_path,
-                "error_message": "",
+                "error_message": None,
             },
             "completed",
         )
@@ -176,7 +181,7 @@ def _callback_payload_for_job(
                 "status": "cancelled",
                 "external_job_id": current_job.get("external_job_id"),
                 "external_job_url": current_job.get("external_job_url"),
-                "error_message": "",
+                "error_message": None,
             },
             "cancelled",
         )
@@ -224,6 +229,10 @@ async def _reconcile_via_http(base_url: str) -> dict[str, int]:
             )
 
         stale_jobs = await _load_stale_jobs(backend_client)
+        if stale_jobs and not worker_base_url:
+            raise RuntimeError(
+                "HOLLOWFORGE_ANIMATION_REMOTE_BASE_URL is required for remote-worker animation jobs"
+            )
         for current_job in stale_jobs:
             summary["checked"] += 1
             external_job_id = str(current_job.get("external_job_id") or "").strip()
@@ -239,6 +248,8 @@ async def _reconcile_via_http(base_url: str) -> dict[str, int]:
             except _WorkerJobUnreachable:
                 summary["skipped_unreachable"] += 1
                 continue
+            except _WorkerJobFatalError as exc:
+                raise RuntimeError(str(exc)) from exc
 
             callback_payload, terminal_key = _callback_payload_for_job(current_job, worker_job)
             if callback_payload is None:

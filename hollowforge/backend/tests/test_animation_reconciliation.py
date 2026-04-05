@@ -39,6 +39,7 @@ def _insert_animation_job(
     external_job_url: str | None = None,
     output_path: str | None = None,
     error_message: str | None = "stale error",
+    executor_mode: str = "remote_worker",
 ) -> None:
     with sqlite3.connect(temp_db) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -70,7 +71,7 @@ def _insert_animation_job(
                 "gen-ready-1",
                 None,
                 "dreamactor",
-                "remote_worker",
+                executor_mode,
                 "default",
                 status,
                 None,
@@ -250,6 +251,14 @@ def test_reconcile_stale_animation_jobs_script_prints_summary(
         external_job_id="worker-job-missing",
         external_job_url="https://worker.test/jobs/worker-job-missing",
     )
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-local",
+        status="queued",
+        external_job_id="worker-job-local",
+        external_job_url="https://worker.test/jobs/worker-job-local",
+        executor_mode="local",
+    )
 
     monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
     monkeypatch.setattr(settings, "ANIMATION_WORKER_API_TOKEN", "worker-token")
@@ -352,13 +361,153 @@ def test_reconcile_stale_animation_jobs_script_prints_summary(
         for request in backend_client.requests
     )
 
+    completed_payload = next(
+        request[3]
+        for request in backend_client.requests
+        if request[0] == "POST" and request[3].get("status") == "completed"
+    )
+    assert completed_payload["error_message"] is None
+
     completed_row = _fetch_animation_job(temp_db, "anim-job-completed")
     missing_row = _fetch_animation_job(temp_db, "anim-job-missing")
     assert completed_row["status"] == "completed"
     assert completed_row["output_path"] == "outputs/reconciled.mp4"
-    assert not completed_row["error_message"]
     assert missing_row["status"] == "failed"
     assert missing_row["error_message"] == "Worker restarted"
+    local_row = _fetch_animation_job(temp_db, "anim-job-local")
+    assert local_row["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_script_ignores_non_remote_worker_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "reconcile_stale_animation_jobs.py",
+        "reconcile_stale_animation_jobs_ignore_local_rows",
+    )
+
+    calls: list[str] = []
+
+    async def _fake_fetch_worker_job(_worker_client, job_id: str):  # type: ignore[no-untyped-def]
+        calls.append(job_id)
+        return None
+
+    async def _fake_post_callback(_backend_client, *, job_id: str, payload: dict[str, object]):  # type: ignore[no-untyped-def]
+        return None
+
+    backend_jobs_response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "http://127.0.0.1:8000/api/v1/animation/jobs"),
+        json=[
+            {
+                "id": "anim-job-local",
+                "executor_mode": "local",
+                "external_job_id": "worker-job-local",
+                "external_job_url": "https://worker.test/jobs/worker-job-local",
+                "status": "queued",
+            },
+            {
+                "id": "anim-job-remote",
+                "executor_mode": "remote_worker",
+                "external_job_id": "worker-job-remote",
+                "external_job_url": "https://worker.test/jobs/worker-job-remote",
+                "status": "processing",
+            },
+        ],
+    )
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.base_url = str(kwargs.get("base_url") or "")
+
+        async def __aenter__(self) -> "_DummyClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if self.base_url == "http://127.0.0.1:8000":
+                return backend_jobs_response
+            raise AssertionError("worker get should not be called for local row filtering test")
+
+        async def post(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return httpx.Response(200, request=httpx.Request("POST", "http://127.0.0.1:8000/api/v1/animation/jobs/anim-job-remote/callback"))
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _DummyClient)
+    monkeypatch.setattr(module, "_fetch_worker_job", _fake_fetch_worker_job)
+    monkeypatch.setattr(module, "_post_callback", _fake_post_callback)
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+
+    summary = await module._reconcile_via_http("http://127.0.0.1:8000")
+
+    assert calls == ["worker-job-remote"]
+    assert summary["checked"] == 1
+    assert summary["updated"] == 1
+    assert summary["failed_restart"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_script_raises_on_fatal_worker_http_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "reconcile_stale_animation_jobs.py",
+        "reconcile_stale_animation_jobs_worker_401",
+    )
+
+    async def _fake_load_stale_jobs(_backend_client):  # type: ignore[no-untyped-def]
+        return [
+            {
+                "id": "anim-job-401",
+                "executor_mode": "remote_worker",
+                "external_job_id": "worker-job-401",
+                "external_job_url": "https://worker.test/jobs/worker-job-401",
+            }
+        ]
+
+    async def _fake_fetch_worker_job(_worker_client, job_id: str):  # type: ignore[no-untyped-def]
+        raise module._WorkerJobFatalError("worker returned HTTP 401")
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.base_url = str(kwargs.get("base_url") or "")
+
+        async def __aenter__(self) -> "_DummyClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _DummyClient)
+    monkeypatch.setattr(module, "_load_stale_jobs", _fake_load_stale_jobs)
+    monkeypatch.setattr(module, "_fetch_worker_job", _fake_fetch_worker_job)
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+
+    with pytest.raises(RuntimeError, match="worker returned HTTP 401"):
+        await module._reconcile_via_http("http://127.0.0.1:8000")
+
+
+def test_reconcile_stale_animation_jobs_script_exits_non_zero_on_fatal_worker_http_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "reconcile_stale_animation_jobs.py",
+        "reconcile_stale_animation_jobs_main_worker_401",
+    )
+
+    async def _fake_reconcile_via_http(base_url: str) -> dict[str, int]:
+        raise RuntimeError("worker returned HTTP 401")
+
+    monkeypatch.setattr(module, "_reconcile_via_http", _fake_reconcile_via_http)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["reconcile_stale_animation_jobs.py", "--base-url", "http://127.0.0.1:8000"],
+    )
+
+    assert module.main() == 1
 
 
 @pytest.mark.asyncio
