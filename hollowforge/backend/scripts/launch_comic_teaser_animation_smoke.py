@@ -41,9 +41,28 @@ def _print_summary(summary: dict[str, Any]) -> None:
         comic_smoke._print_marker(key, value)
 
 
-def _find_latest_successful_dry_run_report() -> tuple[Path, str]:
+def _extract_persisted_report_value(
+    payload: Mapping[str, Any],
+    key: str,
+    default: str,
+) -> str:
+    direct_value = str(payload.get(key) or "").strip()
+    if direct_value:
+        return direct_value
+
+    for nested_key in ("assembly_detail", "export_detail"):
+        nested_payload = payload.get(nested_key)
+        if not isinstance(nested_payload, Mapping):
+            continue
+        nested_value = str(nested_payload.get(key) or "").strip()
+        if nested_value:
+            return nested_value
+    return default
+
+
+def _find_latest_successful_dry_run_report() -> tuple[Path, dict[str, str]]:
     reports_dir = comic_dry_run.settings.DATA_DIR / "comics" / "reports"
-    latest_report: tuple[float, Path, str] | None = None
+    latest_report: tuple[float, Path, dict[str, str]] | None = None
     for report_path in reports_dir.glob("*_dry_run.json"):
         if not report_path.is_file():
             continue
@@ -57,7 +76,23 @@ def _find_latest_successful_dry_run_report() -> tuple[Path, str]:
         export_zip_path = str(payload.get("export_zip_path") or "").strip()
         if not episode_id or not export_zip_path:
             continue
-        candidate = (report_path.stat().st_mtime, report_path, episode_id)
+        candidate = (
+            report_path.stat().st_mtime,
+            report_path,
+            {
+                "episode_id": episode_id,
+                "layout_template_id": _extract_persisted_report_value(
+                    payload,
+                    "layout_template_id",
+                    comic_dry_run.DEFAULT_LAYOUT_TEMPLATE_ID,
+                ),
+                "manuscript_profile_id": _extract_persisted_report_value(
+                    payload,
+                    "manuscript_profile_id",
+                    comic_dry_run.DEFAULT_MANUSCRIPT_PROFILE_ID,
+                ),
+            },
+        )
         if latest_report is None or candidate[:2] > latest_report[:2]:
             latest_report = candidate
     if latest_report is None:
@@ -65,12 +100,16 @@ def _find_latest_successful_dry_run_report() -> tuple[Path, str]:
     return latest_report[1], latest_report[2]
 
 
-def _resolve_episode_id(episode_id: str | None) -> str:
+def _resolve_episode_context(episode_id: str | None) -> dict[str, str]:
     explicit_episode_id = str(episode_id or "").strip()
     if explicit_episode_id:
-        return explicit_episode_id
-    _, resolved_episode_id = _find_latest_successful_dry_run_report()
-    return resolved_episode_id
+        return {
+            "episode_id": explicit_episode_id,
+            "layout_template_id": comic_dry_run.DEFAULT_LAYOUT_TEMPLATE_ID,
+            "manuscript_profile_id": comic_dry_run.DEFAULT_MANUSCRIPT_PROFILE_ID,
+        }
+    _, resolved_context = _find_latest_successful_dry_run_report()
+    return resolved_context
 
 
 def _resolve_source_asset(
@@ -80,12 +119,12 @@ def _resolve_source_asset(
     panel_index: int,
     **_: Any,
 ) -> dict[str, Any]:
-    resolved_episode_id = _resolve_episode_id(episode_id)
+    resolved_context = _resolve_episode_context(episode_id)
     _, assembly_detail, _ = comic_dry_run._ensure_exported_episode(
         base_url=base_url,
-        episode_id=resolved_episode_id,
-        layout_template_id=comic_dry_run.DEFAULT_LAYOUT_TEMPLATE_ID,
-        manuscript_profile_id=comic_dry_run.DEFAULT_MANUSCRIPT_PROFILE_ID,
+        episode_id=resolved_context["episode_id"],
+        layout_template_id=resolved_context["layout_template_id"],
+        manuscript_profile_id=resolved_context["manuscript_profile_id"],
     )
     selected_panel_assets = comic_dry_run._extract_selected_panel_assets(assembly_detail)
     if not selected_panel_assets:
@@ -97,7 +136,7 @@ def _resolve_source_asset(
 
     selected_asset = dict(selected_panel_assets[panel_index])
     return {
-        "episode_id": resolved_episode_id,
+        "episode_id": resolved_context["episode_id"],
         "scene_panel_id": str(
             selected_asset.get("scene_panel_id") or selected_asset.get("panel_id") or ""
         ).strip(),
