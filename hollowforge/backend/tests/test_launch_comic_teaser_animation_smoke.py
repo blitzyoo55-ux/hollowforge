@@ -90,6 +90,7 @@ def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
     assert "scene_panel_id: panel-1" in captured.out
     assert "selected_render_asset_id: asset-1" in captured.out
     assert "generation_id: gen-1" in captured.out
+    assert "failed_step: validate_source_asset" in captured.out
     assert "placeholder selected asset is not allowed" in captured.out
 
 
@@ -110,7 +111,23 @@ def test_main_rejects_missing_selected_asset_storage_path(monkeypatch, capsys):
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
     assert "selected_render_asset_id: asset-2" in captured.out
+    assert "failed_step: validate_source_asset" in captured.out
     assert "selected asset storage_path is missing" in captured.out
+
+
+def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
+    module = _load_module()
+
+    def fail_resolve_source_asset(**_):
+        raise ValueError("invalid source asset payload")
+
+    monkeypatch.setattr(module, "_resolve_source_asset", fail_resolve_source_asset)
+    monkeypatch.setattr(sys, "argv", ["launch_comic_teaser_animation_smoke.py"])
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    assert "failed_step: resolve_source_asset" in captured.out
+    assert "invalid source asset payload" in captured.out
 
 
 def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
