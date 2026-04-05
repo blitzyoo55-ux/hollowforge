@@ -177,6 +177,12 @@ async def test_reconcile_stale_animation_jobs_treats_missing_worker_job_as_faile
     assert job_row["error_message"] == "Worker restarted"
 ```
 
+```python
+async def test_reconcile_stale_animation_jobs_mirrors_cancelled_worker_rows(...):
+    ...
+    assert job_row["status"] == "cancelled"
+```
+
 - [ ] **Step 2: Run the backend reconciliation tests to verify RED**
 
 Run:
@@ -199,6 +205,8 @@ Required responsibilities:
   - `status IN ('queued', 'submitted', 'processing')`
   - `external_job_id` is not empty
 - fetch worker state from `GET /api/v1/jobs/{external_job_id}`
+  - include the configured worker bearer token header when
+    `HOLLOWFORGE_ANIMATION_WORKER_API_TOKEN` is set
 - normalize worker terminal states into backend updates
 - normalize worker `output_url` using the same path logic as callback updates:
 
