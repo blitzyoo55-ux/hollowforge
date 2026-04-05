@@ -137,6 +137,71 @@ class DownloadCapturingAsyncClient:
         return self.response
 
 
+def _insert_worker_job(
+    conn: sqlite3.Connection,
+    *,
+    worker_job_id: str,
+    status: str,
+    callback_url: str | None = None,
+    callback_token: str | None = None,
+    external_job_id: str | None = None,
+    external_job_url: str | None = None,
+) -> None:
+    now = "2026-04-05T00:00:00+00:00"
+    conn.execute(
+        """
+        INSERT INTO worker_jobs (
+            id,
+            hollowforge_job_id,
+            candidate_id,
+            generation_id,
+            publish_job_id,
+            target_tool,
+            executor_mode,
+            executor_key,
+            status,
+            source_image_url,
+            generation_metadata,
+            request_json,
+            callback_url,
+            callback_token,
+            external_job_id,
+            external_job_url,
+            output_url,
+            error_message,
+            submitted_at,
+            completed_at,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            worker_job_id,
+            f"hollowforge-{worker_job_id}",
+            None,
+            f"gen-{worker_job_id}",
+            None,
+            "comic_panel_still",
+            "remote_worker",
+            "default",
+            status,
+            "",
+            None,
+            None,
+            callback_url,
+            callback_token,
+            external_job_id,
+            external_job_url,
+            None,
+            None,
+            None,
+            None,
+            now,
+            now,
+        ),
+    )
+
+
 def test_worker_job_create_accepts_comic_panel_still_without_source_image_url() -> None:
     payload = WorkerJobCreate.model_validate(
         {
@@ -226,6 +291,120 @@ def test_notify_hollowforge_skips_partial_cloudflare_access_headers(
     assert calls[0]["headers"] == {
         "Authorization": "Bearer callback-secret",
     }
+
+
+def test_cleanup_stale_worker_jobs_marks_non_terminal_rows_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(conn, worker_job_id="worker-job-queued", status="queued")
+        _insert_worker_job(conn, worker_job_id="worker-job-submitted", status="submitted")
+        _insert_worker_job(conn, worker_job_id="worker-job-processing", status="processing")
+        conn.commit()
+
+    asyncio.run(worker_main._cleanup_stale_worker_jobs())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = {
+            row["id"]: row
+            for row in conn.execute(
+                """
+                SELECT id, status, error_message, completed_at, updated_at
+                FROM worker_jobs
+                ORDER BY id
+                """
+            ).fetchall()
+        }
+
+    for worker_job_id in (
+        "worker-job-queued",
+        "worker-job-submitted",
+        "worker-job-processing",
+    ):
+        row = rows[worker_job_id]
+        assert row["status"] == "failed"
+        assert row["error_message"] == "Worker restarted"
+        assert row["completed_at"] is not None
+        assert row["updated_at"] == row["completed_at"]
+
+
+def test_cleanup_stale_worker_jobs_sends_failed_callback_for_rows_with_callback_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-1",
+            status="processing",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-1/callback",
+            callback_token="callback-secret",
+            external_job_id="remote-1",
+            external_job_url="https://worker.test/history/remote-1",
+        )
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-2",
+            status="queued",
+        )
+        conn.commit()
+
+    payloads: list[tuple[dict[str, object], HollowForgeCallbackPayload]] = []
+
+    async def _fake_notify(row, payload):  # type: ignore[no-untyped-def]
+        payloads.append((dict(row), payload))
+
+    monkeypatch.setattr(worker_main, "_notify_hollowforge", _fake_notify)
+
+    asyncio.run(worker_main._cleanup_stale_worker_jobs())
+
+    assert len(payloads) == 1
+    row, payload = payloads[0]
+    assert row["id"] == "worker-job-1"
+    assert payload.status == "failed"
+    assert payload.error_message == "Worker restarted"
+    assert payload.external_job_id == "remote-1"
+    assert payload.external_job_url == "https://worker.test/history/remote-1"
+    assert payload.output_path is None
+
+
+def test_lifespan_calls_cleanup_stale_worker_jobs_after_init_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def _fake_init_db() -> None:
+        calls.append("init_db")
+
+    async def _fake_cleanup() -> None:
+        calls.append("cleanup")
+
+    monkeypatch.setattr(worker_main, "init_db", _fake_init_db)
+    monkeypatch.setattr(worker_main, "_cleanup_stale_worker_jobs", _fake_cleanup)
+
+    async def _run() -> None:
+        async with worker_main.lifespan(worker_main.app):
+            calls.append("lifespan_active")
+
+    asyncio.run(_run())
+
+    assert calls == ["init_db", "cleanup", "lifespan_active"]
 
 
 def test_download_source_image_includes_cloudflare_access_headers_for_trusted_hollowforge_host(
