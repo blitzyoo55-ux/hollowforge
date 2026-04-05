@@ -167,6 +167,50 @@ async def _update_worker_job(worker_job_id: str, **fields: Any) -> dict[str, Any
     return row
 
 
+async def _cleanup_stale_worker_jobs() -> None:
+    now = now_iso()
+    stale_statuses = ("queued", "submitted", "processing")
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT *
+            FROM worker_jobs
+            WHERE status IN ({", ".join("?" for _ in stale_statuses)})
+            ORDER BY updated_at ASC
+            """,
+            stale_statuses,
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            await db.execute(
+                """
+                UPDATE worker_jobs
+                SET status = ?, error_message = ?, completed_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("failed", "Worker restarted", now, now, row["id"]),
+            )
+        await db.commit()
+
+    for row in rows:
+        if row.get("callback_url"):
+            callback_row = dict(row)
+            callback_row["status"] = "failed"
+            callback_row["error_message"] = "Worker restarted"
+            callback_row["completed_at"] = now
+            callback_row["updated_at"] = now
+            await _notify_hollowforge(
+                callback_row,
+                HollowForgeCallbackPayload(
+                    status="failed",
+                    external_job_id=callback_row.get("external_job_id"),
+                    external_job_url=callback_row.get("external_job_url"),
+                    error_message="Worker restarted",
+                ),
+            )
+
+
 async def _run_worker_job(worker_job_id: str) -> None:
     executor = build_executor(
         outputs_dir=settings.OUTPUTS_DIR,
@@ -258,6 +302,7 @@ def _schedule_job(app: FastAPI, worker_job_id: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _cleanup_stale_worker_jobs()
     settings.INPUTS_DIR.mkdir(parents=True, exist_ok=True)
     settings.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     app.state.worker_tasks = set()
