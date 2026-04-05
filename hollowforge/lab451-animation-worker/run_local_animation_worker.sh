@@ -20,6 +20,13 @@ fi
 : "${WORKER_COMFYUI_LTXV_TEXT_ENCODER:=t5xxl_fp16.safetensors}"
 : "${WORKER_COMFYUI_IPADAPTER_MODEL:=ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors}"
 : "${WORKER_COMFYUI_CLIP_VISION_MODEL:=CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors}"
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+if [[ -z "${WORKER_FFMPEG_BIN:-}" ]]; then
+  FFMPEG_BIN="$(command -v ffmpeg || true)"
+  if [[ -n "${FFMPEG_BIN}" ]]; then
+    export WORKER_FFMPEG_BIN="${FFMPEG_BIN}"
+  fi
+fi
 export WORKER_EXECUTOR_BACKEND
 export WORKER_PUBLIC_BASE_URL
 export WORKER_COMFYUI_URL
@@ -28,6 +35,7 @@ export WORKER_COMFYUI_LTXV_CHECKPOINT_FALLBACK
 export WORKER_COMFYUI_LTXV_TEXT_ENCODER
 export WORKER_COMFYUI_IPADAPTER_MODEL
 export WORKER_COMFYUI_CLIP_VISION_MODEL
+export WORKER_FFMPEG_BIN
 
 cd "${SCRIPT_DIR}"
 exec "${PYTHON_BIN}" -m uvicorn app.main:app --app-dir "${SCRIPT_DIR}" --host 127.0.0.1 --port 8600

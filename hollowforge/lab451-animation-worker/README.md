@@ -58,6 +58,7 @@ WORKER_PUBLIC_BASE_URL=https://animation-worker.example.com \
 - `WORKER_PUBLIC_BASE_URL`
 - `WORKER_DATA_DIR`
 - `WORKER_DEFAULT_NEGATIVE_PROMPT`
+- `WORKER_FFMPEG_BIN`
 
 Default storage root:
 - if `WORKER_DATA_DIR` is unset, the worker uses the shared repo data root at `../data`
@@ -87,6 +88,7 @@ Default storage root:
 - `WORKER_COMFYUI_CLIP_VISION_MODEL=CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors`
 - `WORKER_COMFYUI_POLL_INTERVAL_SEC=2.0`
 - `WORKER_COMFYUI_TIMEOUT_SEC=1800`
+- `WORKER_FFMPEG_BIN=/opt/homebrew/bin/ffmpeg`
 
 ## Required local ComfyUI assets for phase 1
 - LTX-Video checkpoint

@@ -88,6 +88,7 @@ class Settings:
     WORKER_COMFYUI_IMAGE_COMPRESSION: int = int(
         os.getenv("WORKER_COMFYUI_IMAGE_COMPRESSION", "35")
     )
+    WORKER_FFMPEG_BIN: str = os.getenv("WORKER_FFMPEG_BIN", "ffmpeg").strip() or "ffmpeg"
     DATA_DIR: Path = Path(os.getenv("WORKER_DATA_DIR", str(_HOLLOWFORGE_DIR / "data")))
     DB_PATH: Path = DATA_DIR / "animation_worker.db"
     OUTPUTS_DIR: Path = DATA_DIR / "outputs"

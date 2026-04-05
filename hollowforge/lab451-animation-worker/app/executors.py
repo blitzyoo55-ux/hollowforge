@@ -338,7 +338,7 @@ class ComfyUILTXVExecutorAdapter:
             shutil.copyfile(frame_paths[frame_index], target)
 
         cmd = [
-            "ffmpeg",
+            settings.WORKER_FFMPEG_BIN,
             "-y",
             "-framerate",
             str(max(1.0, fps)),

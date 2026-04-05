@@ -488,6 +488,41 @@ def test_build_sdxl_still_workflow_applies_clip_skip_to_clip_path() -> None:
     assert workflow[save_node_id]["class_type"] == "SaveImage"
 
 
+def test_render_video_from_frames_uses_configured_ffmpeg_binary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+    frame_paths = []
+    for index in range(2):
+        frame_path = tmp_path / f"frame_{index:02d}.png"
+        frame_path.write_bytes(b"png")
+        frame_paths.append(frame_path)
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(settings, "WORKER_FFMPEG_BIN", "/opt/homebrew/bin/ffmpeg", raising=False)
+    monkeypatch.setattr(worker_executors.subprocess, "run", fake_run)
+
+    adapter._render_video_from_frames(
+        frame_paths=frame_paths,
+        fps=7,
+        output_path=tmp_path / "outputs" / "worker-job-1.mp4",
+    )
+
+    assert captured["cmd"][0] == "/opt/homebrew/bin/ffmpeg"
+
+
 def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:
     adapter = ComfyUILTXVExecutorAdapter(
         inputs_dir=tmp_path / "inputs",
