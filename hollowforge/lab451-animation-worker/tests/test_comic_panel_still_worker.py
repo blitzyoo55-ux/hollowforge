@@ -386,6 +386,57 @@ def test_cleanup_stale_worker_jobs_sends_failed_callback_for_rows_with_callback_
     assert payload.output_path is None
 
 
+def test_cleanup_stale_worker_jobs_dispatches_failed_callbacks_concurrently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-1",
+            status="processing",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-1/callback",
+        )
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-2",
+            status="submitted",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-2/callback",
+        )
+        conn.commit()
+
+    started: list[str] = []
+    release = asyncio.Event()
+
+    async def _fake_notify(row, payload):  # type: ignore[no-untyped-def]
+        started.append(row["id"])
+        await release.wait()
+
+    monkeypatch.setattr(worker_main, "_notify_hollowforge", _fake_notify)
+
+    async def _run_cleanup() -> int:
+        cleanup_task = asyncio.create_task(worker_main._cleanup_stale_worker_jobs())
+        for _ in range(50):
+            if len(started) == 2:
+                break
+            await asyncio.sleep(0.01)
+        assert len(started) == 2
+        release.set()
+        return await cleanup_task
+
+    count = asyncio.run(_run_cleanup())
+
+    assert count == 2
+    assert set(started) == {"worker-job-1", "worker-job-2"}
+
+
 def test_lifespan_calls_cleanup_stale_worker_jobs_after_init_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

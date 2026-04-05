@@ -193,6 +193,7 @@ async def _cleanup_stale_worker_jobs() -> int:
             )
         await db.commit()
 
+    callback_tasks = []
     for row in rows:
         if row.get("callback_url"):
             callback_row = dict(row)
@@ -200,15 +201,20 @@ async def _cleanup_stale_worker_jobs() -> int:
             callback_row["error_message"] = "Worker restarted"
             callback_row["completed_at"] = now
             callback_row["updated_at"] = now
-            await _notify_hollowforge(
-                callback_row,
-                HollowForgeCallbackPayload(
-                    status="failed",
-                    external_job_id=callback_row.get("external_job_id"),
-                    external_job_url=callback_row.get("external_job_url"),
-                    error_message="Worker restarted",
-                ),
+            callback_tasks.append(
+                _notify_hollowforge(
+                    callback_row,
+                    HollowForgeCallbackPayload(
+                        status="failed",
+                        external_job_id=callback_row.get("external_job_id"),
+                        external_job_url=callback_row.get("external_job_url"),
+                        error_message="Worker restarted",
+                    ),
+                )
             )
+
+    if callback_tasks:
+        await asyncio.gather(*callback_tasks, return_exceptions=True)
 
     return len(rows)
 
