@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +47,30 @@ def _assert_bounded_failure_invariants(output: str) -> None:
     assert "overall_success: false" in output
     assert "animation_job_id: " in output
     assert "output_path: " in output
+
+
+def _write_dry_run_report(
+    reports_dir: Path,
+    name: str,
+    *,
+    dry_run_success: bool,
+    episode_id: str,
+    mtime: int,
+) -> Path:
+    report_path = reports_dir / name
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "dry_run_success": dry_run_success,
+                "episode_id": episode_id,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    os.utime(report_path, (mtime, mtime))
+    return report_path
 
 
 def test_is_placeholder_asset_rejects_only_the_exact_smoke_assets_prefix() -> None:
@@ -203,6 +229,109 @@ def test_main_rejects_malformed_source_asset_payload(monkeypatch, capsys):
     assert "source asset resolution must return a mapping" in captured.err
 
 
+def test_resolve_source_asset_uses_latest_successful_dry_run_report_when_episode_id_omitted(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    module = _load_module()
+    data_dir = tmp_path / "data"
+    reports_dir = data_dir / "comics" / "reports"
+    monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
+
+    _write_dry_run_report(
+        reports_dir,
+        "older_success_dry_run.json",
+        dry_run_success=True,
+        episode_id="episode-old",
+        mtime=100,
+    )
+    _write_dry_run_report(
+        reports_dir,
+        "newest_invalid_dry_run.json",
+        dry_run_success=True,
+        episode_id="",
+        mtime=300,
+    )
+    _write_dry_run_report(
+        reports_dir,
+        "newest_success_dry_run.json",
+        dry_run_success=True,
+        episode_id="episode-new",
+        mtime=200,
+    )
+
+    received_kwargs = {}
+
+    def fake_ensure_exported_episode(**kwargs):
+        received_kwargs.update(kwargs)
+        return {}, {"episode_id": kwargs["episode_id"]}, {}
+
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_ensure_exported_episode",
+        fake_ensure_exported_episode,
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_extract_selected_panel_assets",
+        lambda _: [
+            {
+                "panel_id": "panel-0",
+                "asset_id": "asset-0",
+                "generation_id": "gen-0",
+                "storage_path": "comics/previews/panel-0.png",
+            },
+            {
+                "scene_panel_id": "panel-1",
+                "selected_render_asset_id": "asset-1",
+                "generation_id": "gen-1",
+                "storage_path": "comics/previews/panel-1.png",
+            },
+        ],
+    )
+
+    source_asset = module._resolve_source_asset(
+        base_url="http://127.0.0.1:8000",
+        episode_id=None,
+        panel_index=1,
+    )
+
+    assert source_asset == {
+        "episode_id": "episode-new",
+        "scene_panel_id": "panel-1",
+        "selected_render_asset_id": "asset-1",
+        "generation_id": "gen-1",
+        "storage_path": "comics/previews/panel-1.png",
+    }
+    assert received_kwargs == {
+        "base_url": "http://127.0.0.1:8000",
+        "episode_id": "episode-new",
+        "layout_template_id": module.comic_dry_run.DEFAULT_LAYOUT_TEMPLATE_ID,
+        "manuscript_profile_id": module.comic_dry_run.DEFAULT_MANUSCRIPT_PROFILE_ID,
+    }
+
+
+def test_resolve_source_asset_rejects_missing_selected_assets(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_ensure_exported_episode",
+        lambda **_: ({}, {"episode_id": "episode-empty"}, {}),
+    )
+    monkeypatch.setattr(module.comic_dry_run, "_extract_selected_panel_assets", lambda _: [])
+
+    try:
+        module._resolve_source_asset(
+            base_url="http://127.0.0.1:8000",
+            episode_id="episode-empty",
+            panel_index=0,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "Comic teaser handoff did not include any selected panel assets"
+    else:
+        raise AssertionError("Expected missing selected asset rejection")
+
+
 def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
     module = _load_module()
 
@@ -219,8 +348,18 @@ def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
     assert "invalid source asset payload" in captured.err
 
 
-def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
+def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
     module = _load_module()
+    data_dir = tmp_path / "data"
+    output_path = data_dir / "animations" / "teaser.mp4"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(b"mp4")
+    monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
+
     monkeypatch.setattr(
         module,
         "_resolve_source_asset",
@@ -232,33 +371,74 @@ def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
             "storage_path": "comics/previews/panel-03.png",
         },
     )
+    launch_kwargs = {}
+
+    def fake_launch_job(**kwargs):
+        launch_kwargs.update(kwargs)
+        return "anim-job-3"
+
+    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
+    monkeypatch.setattr(
+        module.animation_smoke,
+        "_poll_job",
+        lambda **_: {
+            "id": "anim-job-3",
+            "status": "completed",
+            "output_path": "animations/teaser.mp4",
+        },
+    )
     monkeypatch.setattr(sys, "argv", ["launch_comic_teaser_animation_smoke.py"])
-    assert module.main() == 1
+    assert module.main() == 0
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
-    _assert_bounded_failure_invariants(captured.out)
-    assert "failed_step: launch" in captured.out
-    assert "animation launch is not implemented yet" in captured.err
+    assert "animation_job_id: anim-job-3" in captured.out
+    assert "output_path: animations/teaser.mp4" in captured.out
+    assert "teaser_success: true" in captured.out
+    assert "overall_success: true" in captured.out
+    assert "launch_result:" not in captured.out
+    assert "[status]" not in captured.out
+    assert captured.err == ""
+    assert launch_kwargs == {
+        "base_url": "http://127.0.0.1:8000",
+        "preset_id": module.DEFAULT_PRESET_ID,
+        "generation_id": "gen-3",
+        "request_overrides": {},
+        "dispatch_immediately": True,
+    }
 
 
-def test_main_passes_cli_values_to_source_resolution_and_prints_custom_preset(
+def test_main_rejects_completed_animation_output_that_is_not_mp4(
     monkeypatch,
     capsys,
+    tmp_path,
 ):
     module = _load_module()
-    received_kwargs = {}
-
-    def fake_resolve_source_asset(**kwargs):
-        received_kwargs.update(kwargs)
-        return {
+    data_dir = tmp_path / "data"
+    output_path = data_dir / "animations" / "teaser.gif"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(b"gif")
+    monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(
+        module,
+        "_resolve_source_asset",
+        lambda **_: {
             "episode_id": "episode-cli",
             "scene_panel_id": "panel-cli",
             "selected_render_asset_id": "asset-cli",
             "generation_id": "gen-cli",
             "storage_path": "comics/previews/panel-cli.png",
-        }
-
-    monkeypatch.setattr(module, "_resolve_source_asset", fake_resolve_source_asset)
+        },
+    )
+    monkeypatch.setattr(module.animation_smoke, "_launch_job", lambda **_: "anim-job-cli")
+    monkeypatch.setattr(
+        module.animation_smoke,
+        "_poll_job",
+        lambda **_: {
+            "id": "anim-job-cli",
+            "status": "completed",
+            "output_path": "animations/teaser.gif",
+        },
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -280,13 +460,7 @@ def test_main_passes_cli_values_to_source_resolution_and_prints_custom_preset(
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
     _assert_bounded_failure_invariants(captured.out)
-    assert received_kwargs == {
-        "base_url": "http://127.0.0.1:8000",
-        "episode_id": "episode-cli",
-        "panel_index": 7,
-        "preset_id": "custom_teaser_v1",
-        "poll_sec": 2.5,
-        "timeout_sec": 900.0,
-    }
     assert "preset_id: custom_teaser_v1" in captured.out
-    assert "animation launch is not implemented yet" in captured.err
+    assert "animation_job_id: anim-job-cli" in captured.out
+    assert "failed_step: validate_output_path" in captured.out
+    assert "animation output_path must point to an .mp4 file" in captured.err
