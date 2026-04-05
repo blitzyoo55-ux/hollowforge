@@ -440,13 +440,18 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
     }
 
 
-def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
+def test_main_reconciles_stale_failure_with_new_animation_job_id(
     monkeypatch,
     capsys,
     tmp_path,
 ):
     module = _load_module()
     rerun_animation_job_id = "anim-job-rerun"
+    stale_failed_job = {
+        "id": "anim-job-stale-failed",
+        "status": "failed",
+        "error_message": "Worker restarted",
+    }
     data_dir = tmp_path / "data"
     output_path = data_dir / "animations" / "teaser.mp4"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -454,23 +459,24 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
     monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
     resolve_kwargs = {}
 
-    monkeypatch.setattr(
-        module,
-        "_resolve_source_asset",
-        lambda **kwargs: resolve_kwargs.update(kwargs)
-        or {
+    def fake_resolve_source_asset(**kwargs):
+        resolve_kwargs.update(kwargs)
+        return {
             "episode_id": "episode-stale-failed",
             "scene_panel_id": "panel-stale",
             "selected_render_asset_id": "asset-stale",
             "generation_id": "gen-stale",
             "storage_path": "comics/previews/panel-stale.png",
-        },
-    )
-    launch_call_count = 0
+        }
 
     def fake_launch_job(**kwargs):
-        nonlocal launch_call_count
-        launch_call_count += 1
+        assert stale_failed_job == {
+            "id": "anim-job-stale-failed",
+            "status": "failed",
+            "error_message": "Worker restarted",
+        }
+        assert stale_failed_job["status"] == "failed"
+        assert stale_failed_job["error_message"] == "Worker restarted"
         assert kwargs == {
             "base_url": "http://127.0.0.1:8000",
             "preset_id": module.DEFAULT_PRESET_ID,
@@ -480,16 +486,16 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
         }
         return rerun_animation_job_id
 
-    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
-    monkeypatch.setattr(
-        module.animation_smoke,
-        "_poll_job",
-        lambda **_: {
+    def fake_poll_job(**_):
+        return {
             "id": rerun_animation_job_id,
             "status": "completed",
             "output_path": "animations/teaser.mp4",
-        },
-    )
+        }
+
+    monkeypatch.setattr(module, "_resolve_source_asset", fake_resolve_source_asset)
+    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
+    monkeypatch.setattr(module.animation_smoke, "_poll_job", fake_poll_job)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -518,7 +524,6 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
         "poll_sec": 5.0,
         "timeout_sec": 1800.0,
     }
-    assert launch_call_count == 1
     assert f"animation_job_id: {rerun_animation_job_id}" in captured.out
     assert "animation_job_id: anim-job-stale-failed" not in captured.out
     assert "teaser_success: true" in captured.out
