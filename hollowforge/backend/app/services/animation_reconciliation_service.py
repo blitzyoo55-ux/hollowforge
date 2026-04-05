@@ -12,7 +12,6 @@ from app.config import settings
 from app.db import get_db
 from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
-_STALE_JOB_STATUSES = ("queued", "submitted", "processing")
 _JOB_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 
@@ -20,8 +19,12 @@ class _WorkerJobMissing(RuntimeError):
     """Raised when the worker no longer knows about a job id."""
 
 
-class _WorkerJobUnreachable(RuntimeError):
+class _WorkerJobTransientError(RuntimeError):
     """Raised when the worker could not be contacted reliably."""
+
+
+class _WorkerJobFatalError(RuntimeError):
+    """Raised when the worker returned a fatal polling response."""
 
 
 def _now_iso() -> str:
@@ -75,7 +78,7 @@ async def _fetch_worker_job(
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(request_url, headers=headers)
     except httpx.RequestError as exc:
-        raise _WorkerJobUnreachable(f"{request_url}: {exc}") from exc
+        raise _WorkerJobTransientError(f"{request_url}: {exc}") from exc
 
     if response.status_code == 404:
         return None
@@ -83,15 +86,15 @@ async def _fetch_worker_job(
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise _WorkerJobUnreachable(f"{request_url}: {exc}") from exc
+        raise _WorkerJobFatalError(f"{request_url}: {exc}") from exc
 
     try:
         payload = response.json()
     except ValueError as exc:
-        raise _WorkerJobUnreachable(f"{request_url}: invalid JSON") from exc
+        raise _WorkerJobFatalError(f"{request_url}: invalid JSON") from exc
 
     if not isinstance(payload, dict):
-        raise _WorkerJobUnreachable(f"{request_url}: unexpected response payload")
+        raise _WorkerJobFatalError(f"{request_url}: unexpected response payload")
     return payload
 
 
@@ -104,7 +107,6 @@ async def _update_animation_job(
     next_error_message: str | None | object = Ellipsis,
 ) -> None:
     now = _now_iso()
-    current_status = str(current.get("status") or "")
     next_submitted_at = current.get("submitted_at")
     if next_status in {"submitted", "processing", "completed"} and not next_submitted_at:
         next_submitted_at = now
@@ -169,10 +171,13 @@ async def _update_animation_job(
         normalized_output_path = next_output_path if next_output_path is not None else current.get("output_path")
         if isinstance(normalized_output_path, str) and normalized_output_path.strip():
             clip_path = normalized_output_path.strip()
-            await mark_shot_clip_ready_for_completed_job(
-                animation_job_id=str(current["id"]),
-                clip_path=clip_path,
-            )
+            try:
+                await mark_shot_clip_ready_for_completed_job(
+                    animation_job_id=str(current["id"]),
+                    clip_path=clip_path,
+                )
+            except Exception:
+                pass
 
 
 async def reconcile_stale_animation_jobs() -> dict[str, int]:
@@ -209,9 +214,11 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
             external_job_id = str(current["external_job_id"]).strip()
             try:
                 worker_job = await _fetch_worker_job(worker_base_url, external_job_id)
-            except _WorkerJobUnreachable:
+            except _WorkerJobTransientError:
                 summary["skipped_unreachable"] += 1
                 continue
+            except _WorkerJobFatalError:
+                raise
 
             if worker_job is None:
                 await _update_animation_job(
@@ -256,6 +263,19 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                 )
                 summary["updated"] += 1
                 summary["cancelled"] += 1
+                continue
+
+            if worker_status == "failed":
+                worker_error_message = worker_job.get("error_message")
+                if not isinstance(worker_error_message, str) or not worker_error_message.strip():
+                    worker_error_message = current.get("error_message")
+                await _update_animation_job(
+                    db,
+                    current,
+                    next_status="failed",
+                    next_error_message=worker_error_message,
+                )
+                summary["updated"] += 1
                 continue
 
             await _update_animation_job(
