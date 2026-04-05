@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import shutil
 import subprocess
@@ -18,13 +19,19 @@ from app.config import settings
 from app.workflows import (
     LTXV_REQUIRED_NODES,
     LTXVRequest,
+    SDXL_STILL_REQUIRED_NODES,
+    SDXLStillRequest,
     SDXL_IPADAPTER_REQUIRED_NODES,
     SDXLIPAdapterRequest,
     build_ltxv_2b_fast_workflow,
+    build_sdxl_still_workflow,
     build_sdxl_ipadapter_frame_workflow,
 )
 
 _DUMMY_MP4_BYTES = b"DUMMY_MP4_CONTENT"
+_DUMMY_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE4kAAAAASUVORK5CYII="
+)
 _IMAGE_CONTENT_TYPE_TO_SUFFIX = {
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
@@ -42,6 +49,7 @@ _SUPPORTED_EXECUTOR_BACKENDS = {
 _SUPPORTED_BACKEND_FAMILIES = {
     "ltxv",
     "sdxl_ipadapter",
+    "sdxl_still",
 }
 
 
@@ -108,15 +116,25 @@ def _default_prompt_from_row(row: dict[str, Any]) -> str:
     return "Animate the source image with subtle camera and body motion."
 
 
+def _default_still_prompt_from_row(row: dict[str, Any]) -> str:
+    generation_metadata = _parse_json_object(row.get("generation_metadata")) or {}
+    prompt = str(generation_metadata.get("prompt") or "").strip()
+    if prompt:
+        return prompt
+    return "Single-panel manga still, preserve character identity and panel composition."
+
+
 class StubExecutorAdapter:
     """Minimal backend used to verify orchestration and callback flow."""
 
     def __init__(self, outputs_dir: Path, public_base_url: str) -> None:
         self._outputs_dir = outputs_dir
         self._public_base_url = public_base_url.rstrip("/")
+        self._target_tool: str | None = None
 
     async def submit(self, row: dict[str, Any]) -> SubmissionResult:
         worker_job_id = str(row["id"])
+        self._target_tool = str(row.get("target_tool") or "").strip().lower()
         await asyncio.sleep(settings.WORKER_STUB_SUBMIT_DELAY_SEC)
         return SubmissionResult(
             external_job_id=f"stub-{worker_job_id}",
@@ -125,11 +143,14 @@ class StubExecutorAdapter:
 
     async def wait_for_completion(self, worker_job_id: str) -> CompletionResult:
         await asyncio.sleep(settings.WORKER_STUB_PROCESS_DELAY_SEC)
-        output_path = self._outputs_dir / f"{worker_job_id}.mp4"
+        is_comic_still = self._target_tool == "comic_panel_still"
+        output_suffix = ".png" if is_comic_still else ".mp4"
+        output_bytes = _DUMMY_PNG_BYTES if is_comic_still else _DUMMY_MP4_BYTES
+        output_path = self._outputs_dir / f"{worker_job_id}{output_suffix}"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(_DUMMY_MP4_BYTES)
+        output_path.write_bytes(output_bytes)
         return CompletionResult(
-            output_url=f"{self._public_base_url}/data/outputs/{worker_job_id}.mp4",
+            output_url=f"{self._public_base_url}/data/outputs/{worker_job_id}{output_suffix}",
         )
 
 
@@ -147,12 +168,16 @@ class ComfyUILTXVExecutorAdapter:
         self._inputs_dir = inputs_dir
         self._outputs_dir = outputs_dir
         self._public_base_url = public_base_url.rstrip("/")
+        self._comfyui_url = comfyui_url.rstrip("/")
         self._client = ComfyUIClient(comfyui_url)
         self._job_mode: str | None = None
         self._prompt_id: str | None = None
         self._save_node_id: str | None = None
         self._sdxl_request: SDXLIPAdapterRequest | None = None
         self._sdxl_source_image_name: str | None = None
+
+    def _history_url(self, prompt_id: str) -> str:
+        return f"{self._comfyui_url}/history/{prompt_id}"
 
     async def _download_source_image(self, worker_job_id: str, source_image_url: str) -> Path:
         timeout = httpx.Timeout(60.0)
@@ -209,6 +234,18 @@ class ComfyUILTXVExecutorAdapter:
                 f"expected: {preferred}"
             )
         return preferred
+
+    async def _resolve_still_checkpoint_name(self, preferred: str) -> str:
+        checkpoint_name = preferred.strip()
+        if not checkpoint_name:
+            raise RuntimeError("Still generation job is missing a checkpoint name")
+        available = await self._client.get_models()
+        if available and checkpoint_name not in available:
+            raise RuntimeError(
+                "Configured still checkpoint is missing in ComfyUI. "
+                f"expected: {checkpoint_name}"
+            )
+        return checkpoint_name
 
     def _build_microanim_schedule(
         self,
@@ -272,6 +309,7 @@ class ComfyUILTXVExecutorAdapter:
     async def submit(self, row: dict[str, Any]) -> SubmissionResult:
         worker_job_id = str(row["id"])
         request_json = _parse_json_object(row.get("request_json")) or {}
+        target_tool = str(row.get("target_tool") or "").strip().lower()
         backend_family = str(request_json.get("backend_family") or "").strip().lower()
         model_profile = str(request_json.get("model_profile") or "").strip().lower()
         if backend_family and backend_family not in _SUPPORTED_BACKEND_FAMILIES:
@@ -288,6 +326,44 @@ class ComfyUILTXVExecutorAdapter:
         if not await self._client.check_health():
             raise RuntimeError(
                 f"ComfyUI is not reachable at {settings.WORKER_COMFYUI_URL}"
+            )
+
+        if target_tool == "comic_panel_still":
+            generation_metadata = _parse_json_object(row.get("generation_metadata")) or {}
+            default_checkpoint = str(generation_metadata.get("checkpoint") or "").strip()
+            still_payload = request_json.get("still_generation")
+            still_request = SDXLStillRequest.from_payload(
+                still_payload if isinstance(still_payload, dict) else request_json,
+                default_prompt=_default_still_prompt_from_row(row),
+                default_checkpoint=default_checkpoint,
+            )
+            required_nodes = [
+                node
+                for node in SDXL_STILL_REQUIRED_NODES
+                if node != "CLIPSetLastLayer" or still_request.clip_skip > 1
+            ]
+            if still_request.loras:
+                required_nodes.append("LoraLoader")
+            missing_nodes = await self._client.missing_nodes(required_nodes)
+            if missing_nodes:
+                raise RuntimeError(
+                    "ComfyUI is missing required SDXL still nodes: "
+                    f"{', '.join(missing_nodes)}"
+                )
+            still_request.checkpoint_name = await self._resolve_still_checkpoint_name(
+                still_request.checkpoint_name
+            )
+            workflow, save_node_id = build_sdxl_still_workflow(
+                request=still_request,
+                filename_prefix=f"lab451_animation_worker/{worker_job_id}",
+            )
+            prompt_id = await self._client.submit_prompt(workflow)
+            self._prompt_id = prompt_id
+            self._save_node_id = save_node_id
+            self._job_mode = "sdxl_still"
+            return SubmissionResult(
+                external_job_id=prompt_id,
+                external_job_url=self._history_url(prompt_id),
             )
 
         source_image_url = str(row.get("source_image_url") or "").strip()
@@ -345,7 +421,7 @@ class ComfyUILTXVExecutorAdapter:
         self._job_mode = "ltxv"
         return SubmissionResult(
             external_job_id=prompt_id,
-            external_job_url=f"{settings.WORKER_COMFYUI_URL.rstrip('/')}/history/{prompt_id}",
+            external_job_url=self._history_url(prompt_id),
         )
 
     async def wait_for_completion(self, worker_job_id: str) -> CompletionResult:
@@ -398,10 +474,22 @@ class ComfyUILTXVExecutorAdapter:
                 self._save_node_id,
             )
             if not assets:
-                raise RuntimeError("ComfyUI finished without returning a saved video asset")
+                asset_kind = "image" if self._job_mode == "sdxl_still" else "video"
+                raise RuntimeError(
+                    f"ComfyUI finished without returning a saved {asset_kind} asset"
+                )
 
             asset = assets[0]
             asset_bytes = await self._client.download_asset(asset)
+            if self._job_mode == "sdxl_still":
+                suffix = _pick_file_suffix(str(asset.get("filename") or ""), None)
+                output_name = f"{worker_job_id}{suffix}"
+                output_path = self._outputs_dir / output_name
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(asset_bytes)
+                return CompletionResult(
+                    output_url=f"{self._public_base_url}/data/outputs/{output_name}",
+                )
             suffix = _pick_video_suffix(str(asset.get("filename") or ""))
             output_name = f"{worker_job_id}{suffix}"
             output_path = self._outputs_dir / output_name
