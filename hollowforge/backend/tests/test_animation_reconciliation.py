@@ -449,6 +449,59 @@ async def test_reconcile_stale_animation_jobs_script_ignores_non_remote_worker_r
 
 
 @pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_script_ignores_blank_external_job_id_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "reconcile_stale_animation_jobs.py",
+        "reconcile_stale_animation_jobs_blank_external_job_id",
+    )
+
+    backend_jobs_response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "http://127.0.0.1:8000/api/v1/animation/jobs"),
+        json=[
+            {
+                "id": "anim-job-blank",
+                "executor_mode": "remote_worker",
+                "external_job_id": "   ",
+                "external_job_url": "https://worker.test/jobs/anim-job-blank",
+                "status": "queued",
+            }
+        ],
+    )
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.base_url = str(kwargs.get("base_url") or "")
+
+        async def __aenter__(self) -> "_DummyClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if self.base_url == "http://127.0.0.1:8000":
+                return backend_jobs_response
+            raise AssertionError("worker client should not be created for blank external_job_id rows")
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _DummyClient)
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "")
+
+    summary = await module._reconcile_via_http("http://127.0.0.1:8000")
+
+    assert summary == {
+        "checked": 0,
+        "updated": 0,
+        "failed_restart": 0,
+        "completed": 0,
+        "cancelled": 0,
+        "skipped_unreachable": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_reconcile_stale_animation_jobs_script_raises_on_fatal_worker_http_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
