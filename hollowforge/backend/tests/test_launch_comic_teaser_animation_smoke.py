@@ -53,8 +53,8 @@ def _write_dry_run_report(
     reports_dir: Path,
     name: str,
     *,
-    dry_run_success: bool,
     episode_id: str,
+    export_zip_path: str,
     mtime: int,
 ) -> Path:
     report_path = reports_dir / name
@@ -62,8 +62,26 @@ def _write_dry_run_report(
     report_path.write_text(
         json.dumps(
             {
-                "dry_run_success": dry_run_success,
                 "episode_id": episode_id,
+                "selected_panel_asset_count": 1 if export_zip_path else 0,
+                "page_count": 1 if export_zip_path else 0,
+                "export_zip_path": export_zip_path,
+                "teaser_handoff_manifest_path": (
+                    "comics/manifests/example_teaser_handoff.json" if export_zip_path else ""
+                ),
+                "episode_detail": {},
+                "assembly_detail": {},
+                "export_detail": (
+                    {"export_zip_path": export_zip_path} if export_zip_path else {}
+                ),
+                "teaser_handoff_manifest": {
+                    "selected_panel_assets": (
+                        [{"panel_id": "panel-1", "asset_id": "asset-1"}]
+                        if export_zip_path
+                        else []
+                    ),
+                },
+                "created_at": "2026-04-05T00:00:00+00:00",
             },
             ensure_ascii=False,
         ),
@@ -241,22 +259,22 @@ def test_resolve_source_asset_uses_latest_successful_dry_run_report_when_episode
     _write_dry_run_report(
         reports_dir,
         "older_success_dry_run.json",
-        dry_run_success=True,
         episode_id="episode-old",
+        export_zip_path="comics/exports/episode-old_handoff.zip",
         mtime=100,
     )
     _write_dry_run_report(
         reports_dir,
-        "newest_invalid_dry_run.json",
-        dry_run_success=True,
-        episode_id="",
+        "newest_missing_export_dry_run.json",
+        episode_id="episode-skip",
+        export_zip_path="",
         mtime=300,
     )
     _write_dry_run_report(
         reports_dir,
         "newest_success_dry_run.json",
-        dry_run_success=True,
         episode_id="episode-new",
+        export_zip_path="comics/exports/episode-new_handoff.zip",
         mtime=200,
     )
 

@@ -51,10 +51,11 @@ def _find_latest_successful_dry_run_report() -> tuple[Path, str]:
             payload = json.loads(report_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if not isinstance(payload, dict) or not bool(payload.get("dry_run_success")):
+        if not isinstance(payload, dict):
             continue
         episode_id = str(payload.get("episode_id") or "").strip()
-        if not episode_id:
+        export_zip_path = str(payload.get("export_zip_path") or "").strip()
+        if not episode_id or not export_zip_path:
             continue
         candidate = (report_path.stat().st_mtime, report_path, episode_id)
         if latest_report is None or candidate[:2] > latest_report[:2]:
