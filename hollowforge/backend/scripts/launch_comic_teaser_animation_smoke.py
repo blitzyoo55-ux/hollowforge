@@ -45,6 +45,14 @@ def _extract_selected_asset_id(source_asset: dict[str, Any]) -> str:
     ).strip()
 
 
+def _validate_source_asset(source_asset: dict[str, Any]) -> None:
+    storage_path = str(source_asset.get("storage_path") or "").strip()
+    if not storage_path:
+        raise RuntimeError("selected asset storage_path is missing")
+    if _is_placeholder_asset(storage_path):
+        raise RuntimeError("placeholder selected asset is not allowed")
+
+
 def _build_summary(*, preset_id: str) -> dict[str, Any]:
     return {
         "episode_id": "",
@@ -91,15 +99,11 @@ def main() -> int:
         summary["selected_render_asset_id"] = _extract_selected_asset_id(source_asset)
         summary["generation_id"] = str(source_asset.get("generation_id") or "")
 
-        storage_path = str(source_asset.get("storage_path") or "").strip()
-        if not storage_path:
-            raise RuntimeError("selected asset storage_path is missing")
-        if _is_placeholder_asset(storage_path):
-            raise RuntimeError("placeholder selected asset is not allowed")
-
+        summary["failed_step"] = "validate_source_asset"
+        _validate_source_asset(source_asset)
         summary["failed_step"] = "launch"
         raise RuntimeError("animation launch is not implemented yet")
-    except RuntimeError as exc:
+    except Exception as exc:
         _print_summary(summary)
         print(str(exc))
         return 1
