@@ -94,6 +94,9 @@ async def _load_stale_jobs(backend_client: httpx.AsyncClient) -> list[dict[str, 
             job_id = str(item.get("id") or "").strip()
             if not job_id:
                 continue
+            external_job_id = str(item.get("external_job_id") or "").strip()
+            if not external_job_id:
+                continue
             jobs_by_id[job_id] = item
     return list(jobs_by_id.values())
 
