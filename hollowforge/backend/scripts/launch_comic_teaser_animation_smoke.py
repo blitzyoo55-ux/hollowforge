@@ -20,11 +20,14 @@ import launch_comic_mvp_smoke as comic_smoke
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_PRESET_ID = "sdxl_ipadapter_microanim_v2"
-PLACEHOLDER_ASSET_MARKER = "comics/previews/smoke_assets"
+PLACEHOLDER_ASSET_PREFIX = "comics/previews/smoke_assets/"
 
 
 def _is_placeholder_asset(storage_path: str) -> bool:
-    return PLACEHOLDER_ASSET_MARKER in storage_path.strip().replace("\\", "/")
+    normalized = storage_path.strip().replace("\\", "/")
+    return normalized.startswith(PLACEHOLDER_ASSET_PREFIX) or (
+        f"/{PLACEHOLDER_ASSET_PREFIX}" in normalized
+    )
 
 
 def _print_summary(summary: dict[str, Any]) -> None:

@@ -40,6 +40,16 @@ def _assert_required_summary_markers(output: str) -> None:
         assert marker in output
 
 
+def test_is_placeholder_asset_rejects_only_the_exact_smoke_assets_prefix() -> None:
+    module = _load_module()
+
+    assert module._is_placeholder_asset("comics/previews/smoke_assets/panel-01.png") is True
+    assert (
+        module._is_placeholder_asset("comics/previews/smoke_assets_backup/panel-01.png")
+        is False
+    )
+
+
 def test_main_rejects_remote_backend_urls_for_comic_teaser_smoke(monkeypatch, capsys):
     module = _load_module()
     monkeypatch.setattr(
