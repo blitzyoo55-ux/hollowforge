@@ -3,10 +3,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from fastapi import FastAPI
 import httpx
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
+from app.routes.animation import router as animation_router
 from app.services import animation_reconciliation_service
 
 
@@ -80,6 +83,12 @@ def _fetch_animation_job(temp_db: Path, job_id: str) -> dict[str, object]:
         ).fetchone()
     assert row is not None
     return dict(row)
+
+
+def _build_app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(animation_router)
+    return app
 
 
 class _FakeWorkerClient:
@@ -383,4 +392,164 @@ async def test_reconcile_stale_animation_jobs_mirrors_cancelled_worker_rows(
 
     assert result["cancelled"] == 1
     row = _fetch_animation_job(temp_db, "anim-job-cancelled")
+    assert row["status"] == "cancelled"
+
+
+async def _post_animation_callback(
+    job_id: str,
+    payload: dict[str, object],
+    *,
+    token: str,
+) -> httpx.Response:
+    app = _build_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        return await client.post(
+            f"/api/v1/animation/jobs/{job_id}/callback",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+
+
+@pytest.mark.asyncio
+async def test_animation_callback_failed_job_ignores_late_processing(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "anim-job-terminal-failed"
+    _insert_animation_job(
+        temp_db,
+        job_id=job_id,
+        status="failed",
+        external_job_id="worker-job-failed",
+        external_job_url="https://worker.test/jobs/worker-job-failed",
+        error_message="initial failure",
+    )
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "animation-secret")
+
+    failed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "failed",
+            "external_job_id": "worker-job-failed",
+            "external_job_url": "https://worker.test/jobs/worker-job-failed",
+            "error_message": "initial failure",
+        },
+        token="animation-secret",
+    )
+    assert failed.status_code == 200
+
+    late_processing = await _post_animation_callback(
+        job_id,
+        {
+            "status": "processing",
+            "external_job_id": "worker-job-late",
+            "external_job_url": "https://worker.test/jobs/worker-job-late",
+            "error_message": "late processing",
+        },
+        token="animation-secret",
+    )
+
+    assert late_processing.status_code == 200
+    body = late_processing.json()
+    assert body["status"] == "failed"
+
+    row = _fetch_animation_job(temp_db, job_id)
+    assert row["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_animation_callback_completed_job_ignores_late_failed(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "anim-job-terminal-completed"
+    _insert_animation_job(
+        temp_db,
+        job_id=job_id,
+        status="completed",
+        external_job_id="worker-job-completed",
+        external_job_url="https://worker.test/jobs/worker-job-completed",
+        output_path="outputs/final.mp4",
+        error_message=None,
+    )
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "animation-secret")
+
+    completed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "completed",
+            "external_job_id": "worker-job-completed",
+            "external_job_url": "https://worker.test/jobs/worker-job-completed",
+            "output_path": "outputs/final.mp4",
+        },
+        token="animation-secret",
+    )
+    assert completed.status_code == 200
+
+    late_failed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "failed",
+            "external_job_id": "worker-job-late",
+            "external_job_url": "https://worker.test/jobs/worker-job-late",
+            "error_message": "late failure",
+        },
+        token="animation-secret",
+    )
+
+    assert late_failed.status_code == 200
+    body = late_failed.json()
+    assert body["status"] == "completed"
+
+    row = _fetch_animation_job(temp_db, job_id)
+    assert row["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_animation_callback_cancelled_job_ignores_late_completed(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "anim-job-terminal-cancelled"
+    _insert_animation_job(
+        temp_db,
+        job_id=job_id,
+        status="cancelled",
+        external_job_id="worker-job-cancelled",
+        external_job_url="https://worker.test/jobs/worker-job-cancelled",
+        error_message="cancelled by operator",
+    )
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "animation-secret")
+
+    cancelled = await _post_animation_callback(
+        job_id,
+        {
+            "status": "cancelled",
+            "external_job_id": "worker-job-cancelled",
+            "external_job_url": "https://worker.test/jobs/worker-job-cancelled",
+            "error_message": "cancelled by operator",
+        },
+        token="animation-secret",
+    )
+    assert cancelled.status_code == 200
+
+    late_completed = await _post_animation_callback(
+        job_id,
+        {
+            "status": "completed",
+            "external_job_id": "worker-job-late",
+            "external_job_url": "https://worker.test/jobs/worker-job-late",
+            "output_path": "outputs/late.mp4",
+        },
+        token="animation-secret",
+    )
+
+    assert late_completed.status_code == 200
+    body = late_completed.json()
+    assert body["status"] == "cancelled"
+
+    row = _fetch_animation_job(temp_db, job_id)
     assert row["status"] == "cancelled"

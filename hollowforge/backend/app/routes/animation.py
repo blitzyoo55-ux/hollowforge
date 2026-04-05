@@ -440,6 +440,16 @@ def _candidate_status_for_job_status(job_status: str) -> str:
     }.get(job_status, "approved")
 
 
+def _should_preserve_terminal_animation_status(current_status: str, next_status: str) -> bool:
+    if current_status == "completed":
+        return next_status in {"failed", "queued", "submitted", "processing", "cancelled"}
+    if current_status == "failed":
+        return next_status in {"queued", "submitted", "processing", "completed"}
+    if current_status == "cancelled":
+        return next_status in {"queued", "submitted", "processing", "completed"}
+    return False
+
+
 def _extract_bearer_token(authorization: str | None) -> str | None:
     if not authorization:
         return None
@@ -919,6 +929,10 @@ async def callback_animation_job(
             )
 
     current = await _require_animation_job(job_id)
+    next_status = payload.status or current["status"]
+    if _should_preserve_terminal_animation_status(current["status"], next_status):
+        return _row_to_animation_job(current)
+
     async with get_db() as db:
         updated_row = await _apply_animation_job_update(db, current, payload, _now_iso())
     return _row_to_animation_job(updated_row)
