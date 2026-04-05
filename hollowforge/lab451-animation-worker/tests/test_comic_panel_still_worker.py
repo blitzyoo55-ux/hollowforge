@@ -17,6 +17,7 @@ if str(WORKER_ROOT) not in sys.path:
 
 from app import main as worker_main
 from app import config as worker_config
+from app import executors as worker_executors
 from app.config import settings
 from app.db import init_db
 from app.executors import CompletionResult, SubmissionResult
@@ -85,6 +86,20 @@ class FakeHttpxResponse:
         return None
 
 
+class FakeDownloadResponse:
+    def __init__(
+        self,
+        *,
+        content: bytes = b"fake-image-bytes",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.content = content
+        self.headers = headers or {"content-type": "image/png"}
+
+    def raise_for_status(self) -> None:
+        return None
+
+
 class CapturingAsyncClient:
     def __init__(self, calls: list[dict[str, object]], *args, **kwargs) -> None:
         self.calls = calls
@@ -98,6 +113,28 @@ class CapturingAsyncClient:
     async def post(self, url: str, json: dict[str, object], headers: dict[str, str]):
         self.calls.append({"url": url, "json": json, "headers": dict(headers)})
         return FakeHttpxResponse()
+
+
+class DownloadCapturingAsyncClient:
+    def __init__(
+        self,
+        calls: list[dict[str, object]],
+        response: FakeDownloadResponse,
+        *args,
+        **kwargs,
+    ) -> None:
+        self.calls = calls
+        self.response = response
+
+    async def __aenter__(self) -> DownloadCapturingAsyncClient:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    async def get(self, url: str, headers: dict[str, str] | None = None):
+        self.calls.append({"url": url, "headers": dict(headers or {})})
+        return self.response
 
 
 def test_worker_job_create_accepts_comic_panel_still_without_source_image_url() -> None:
@@ -189,6 +226,88 @@ def test_notify_hollowforge_skips_partial_cloudflare_access_headers(
     assert calls[0]["headers"] == {
         "Authorization": "Bearer callback-secret",
     }
+
+
+def test_download_source_image_includes_cloudflare_access_headers_when_fully_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-1",
+            "https://sec.hlfglll.com/data/outputs/source-image.png",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://sec.hlfglll.com/data/outputs/source-image.png",
+        "headers": {
+            "CF-Access-Client-Id": "cf-access-id",
+            "CF-Access-Client-Secret": "cf-access-secret",
+        },
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-1.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_skips_partial_cloudflare_access_headers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_SECRET", "", raising=False)
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-2",
+            "https://sec.hlfglll.com/data/outputs/source-image.png",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://sec.hlfglll.com/data/outputs/source-image.png",
+        "headers": {},
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-2.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
 
 
 def test_worker_job_create_requires_request_json_for_comic_panel_still() -> None:

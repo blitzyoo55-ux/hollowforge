@@ -205,7 +205,8 @@ Cloudflare Access note:
 - if `HOLLOWFORGE_PUBLIC_API_BASE_URL` points to a hostname protected by
   Cloudflare Access, keep `callback_token` for the HollowForge callback route
   and also set `WORKER_CF_ACCESS_CLIENT_ID` plus
-  `WORKER_CF_ACCESS_CLIENT_SECRET` so the worker can pass the Access layer
+  `WORKER_CF_ACCESS_CLIENT_SECRET` so the worker can pass the Access layer for
+  both HollowForge callbacks and source image downloads
 
 Comic still completion behavior:
 - this flow is for comic render jobs using `target_tool="comic_panel_still"`, not `animation_jobs`

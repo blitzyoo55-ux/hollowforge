@@ -124,6 +124,17 @@ def _default_still_prompt_from_row(row: dict[str, Any]) -> str:
     return "Single-panel manga still, preserve character identity and panel composition."
 
 
+def _cloudflare_access_headers() -> dict[str, str]:
+    cf_access_client_id = settings.WORKER_CF_ACCESS_CLIENT_ID
+    cf_access_client_secret = settings.WORKER_CF_ACCESS_CLIENT_SECRET
+    if cf_access_client_id and cf_access_client_secret:
+        return {
+            "CF-Access-Client-Id": cf_access_client_id,
+            "CF-Access-Client-Secret": cf_access_client_secret,
+        }
+    return {}
+
+
 class StubExecutorAdapter:
     """Minimal backend used to verify orchestration and callback flow."""
 
@@ -182,7 +193,10 @@ class ComfyUILTXVExecutorAdapter:
     async def _download_source_image(self, worker_job_id: str, source_image_url: str) -> Path:
         timeout = httpx.Timeout(60.0)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(source_image_url)
+            response = await client.get(
+                source_image_url,
+                headers=_cloudflare_access_headers(),
+            )
             response.raise_for_status()
             suffix = _pick_file_suffix(source_image_url, response.headers.get("content-type"))
             local_path = self._inputs_dir / f"{worker_job_id}{suffix}"
