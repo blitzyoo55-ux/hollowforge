@@ -70,6 +70,7 @@ launchctl print gui/$(id -u)/com.mori.hollowforge.animation-worker
 
 cd backend
 ./.venv/bin/python scripts/launch_comic_remote_render_smoke.py --base-url http://127.0.0.1:8000 --render-poll-attempts 360 --render-poll-sec 1.0
+./.venv/bin/python scripts/launch_comic_remote_one_shot_dry_run.py --base-url http://127.0.0.1:8000 --candidate-count 2
 ```
 
 ## Important Runbooks

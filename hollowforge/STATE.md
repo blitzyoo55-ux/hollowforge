@@ -23,6 +23,8 @@ Last updated: 2026-04-05
   `backend/scripts/check_comic_remote_render_preflight.py`.
 - The comic remote render smoke helper entry point is
   `backend/scripts/launch_comic_remote_render_smoke.py`.
+- The stable one-shot remote dry-run helper entry point is
+  `backend/scripts/launch_comic_remote_one_shot_dry_run.py`.
 - The production dry-run helper entry point is
   `backend/scripts/launch_comic_production_dry_run.py`.
 - The frontend must be rebuilt explicitly with `npm run build` before deploy.
@@ -32,6 +34,8 @@ Last updated: 2026-04-05
 - The stable animation worker launchd lane runs `executor_backend=comfyui_pipeline`,
   so the remote comic smoke should use an extended render poll budget such as
   `--render-poll-attempts 360 --render-poll-sec 1.0`.
+- The stable one-shot remote dry-run helper should currently be run with
+  `--candidate-count 2` to keep the live production validation bounded.
 
 ## Resume Here
 
@@ -111,6 +115,8 @@ Last updated: 2026-04-05
   `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py`
 - backend comic remote render smoke:
   `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py`
+- backend comic remote one-shot dry run:
+  `backend/.venv/bin/python scripts/launch_comic_remote_one_shot_dry_run.py`
 - backend comic production dry run:
   `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
 - frontend comic route: `/comic`
