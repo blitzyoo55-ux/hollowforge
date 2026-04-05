@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,12 @@ def _validate_source_asset(source_asset: dict[str, Any]) -> None:
         raise RuntimeError("placeholder selected asset is not allowed")
 
 
+def _require_source_asset_mapping(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise RuntimeError("source asset resolution must return a mapping")
+    return dict(payload)
+
+
 def _build_summary(*, preset_id: str) -> dict[str, Any]:
     return {
         "episode_id": "",
@@ -80,7 +87,14 @@ def main() -> int:
     parser.add_argument("--preset-id", default=DEFAULT_PRESET_ID)
     parser.add_argument("--poll-sec", type=float, default=1.0)
     parser.add_argument("--timeout-sec", type=float, default=1800.0)
-    args = parser.parse_args()
+    summary = _build_summary(preset_id=DEFAULT_PRESET_ID)
+    try:
+        args = parser.parse_args()
+    except SystemExit as exc:
+        if exc.code == 0:
+            return 0
+        _print_summary(summary)
+        return 1
 
     summary = _build_summary(preset_id=args.preset_id)
 
@@ -97,6 +111,7 @@ def main() -> int:
             poll_sec=args.poll_sec,
             timeout_sec=args.timeout_sec,
         )
+        source_asset = _require_source_asset_mapping(source_asset)
 
         summary["episode_id"] = str(source_asset.get("episode_id") or args.episode_id or "")
         summary["scene_panel_id"] = str(source_asset.get("scene_panel_id") or "")
