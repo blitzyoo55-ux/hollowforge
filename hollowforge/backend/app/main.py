@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db import init_db
+from app.services.animation_reconciliation_service import reconcile_stale_animation_jobs
 from app.services.comfyui_client import ComfyUIClient
 from app.services.favorite_upscale_service import FavoriteUpscaleService
 from app.services.generation_service import GenerationService
@@ -163,6 +164,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("Initializing database...")
     await init_db()
+    try:
+        animation_reconciliation_summary = await reconcile_stale_animation_jobs()
+    except Exception:
+        logger.exception("Animation stale reconciliation skipped during startup")
+    else:
+        logger.info(
+            (
+                "Startup stale animation reconciliation complete: "
+                "checked=%d updated=%d failed_restart=%d completed=%d cancelled=%d "
+                "skipped_unreachable=%d"
+            ),
+            animation_reconciliation_summary["checked"],
+            animation_reconciliation_summary["updated"],
+            animation_reconciliation_summary["failed_restart"],
+            animation_reconciliation_summary["completed"],
+            animation_reconciliation_summary["cancelled"],
+            animation_reconciliation_summary["skipped_unreachable"],
+        )
     _ensure_public_data_dirs()
 
     # ComfyUI client
