@@ -446,29 +446,38 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
     tmp_path,
 ):
     module = _load_module()
-    stale_animation_job_id = "anim-job-stale-failed"
     rerun_animation_job_id = "anim-job-rerun"
     data_dir = tmp_path / "data"
     output_path = data_dir / "animations" / "teaser.mp4"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(b"mp4")
     monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
+    resolve_kwargs = {}
+
     monkeypatch.setattr(
         module,
         "_resolve_source_asset",
-        lambda **_: {
+        lambda **kwargs: resolve_kwargs.update(kwargs)
+        or {
             "episode_id": "episode-stale-failed",
             "scene_panel_id": "panel-stale",
             "selected_render_asset_id": "asset-stale",
             "generation_id": "gen-stale",
             "storage_path": "comics/previews/panel-stale.png",
-            "previous_animation_job_id": stale_animation_job_id,
         },
     )
-    launch_kwargs = {}
+    launch_call_count = 0
 
     def fake_launch_job(**kwargs):
-        launch_kwargs.update(kwargs)
+        nonlocal launch_call_count
+        launch_call_count += 1
+        assert kwargs == {
+            "base_url": "http://127.0.0.1:8000",
+            "preset_id": module.DEFAULT_PRESET_ID,
+            "generation_id": "gen-stale",
+            "request_overrides": {},
+            "dispatch_immediately": True,
+        }
         return rerun_animation_job_id
 
     monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
@@ -501,19 +510,20 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
     assert module.main() == 0
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
-    assert stale_animation_job_id != rerun_animation_job_id
+    assert resolve_kwargs == {
+        "base_url": "http://127.0.0.1:8000",
+        "episode_id": "episode-stale-failed",
+        "panel_index": 0,
+        "preset_id": module.DEFAULT_PRESET_ID,
+        "poll_sec": 5.0,
+        "timeout_sec": 1800.0,
+    }
+    assert launch_call_count == 1
     assert f"animation_job_id: {rerun_animation_job_id}" in captured.out
-    assert f"animation_job_id: {stale_animation_job_id}" not in captured.out
+    assert "animation_job_id: anim-job-stale-failed" not in captured.out
     assert "teaser_success: true" in captured.out
     assert "overall_success: true" in captured.out
     assert captured.err == ""
-    assert launch_kwargs == {
-        "base_url": "http://127.0.0.1:8000",
-        "preset_id": module.DEFAULT_PRESET_ID,
-        "generation_id": "gen-stale",
-        "request_overrides": {},
-        "dispatch_immediately": True,
-    }
 
 
 def test_main_rejects_completed_animation_output_that_is_not_mp4(
