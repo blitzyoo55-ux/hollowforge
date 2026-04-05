@@ -446,6 +446,8 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
     tmp_path,
 ):
     module = _load_module()
+    stale_animation_job_id = "anim-job-stale-failed"
+    rerun_animation_job_id = "anim-job-rerun"
     data_dir = tmp_path / "data"
     output_path = data_dir / "animations" / "teaser.mp4"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -460,20 +462,21 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
             "selected_render_asset_id": "asset-stale",
             "generation_id": "gen-stale",
             "storage_path": "comics/previews/panel-stale.png",
+            "previous_animation_job_id": stale_animation_job_id,
         },
     )
     launch_kwargs = {}
 
     def fake_launch_job(**kwargs):
         launch_kwargs.update(kwargs)
-        return "anim-job-rerun"
+        return rerun_animation_job_id
 
     monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
     monkeypatch.setattr(
         module.animation_smoke,
         "_poll_job",
         lambda **_: {
-            "id": "anim-job-rerun",
+            "id": rerun_animation_job_id,
             "status": "completed",
             "output_path": "animations/teaser.mp4",
         },
@@ -498,7 +501,9 @@ def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
     assert module.main() == 0
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
-    assert "animation_job_id: anim-job-rerun" in captured.out
+    assert stale_animation_job_id != rerun_animation_job_id
+    assert f"animation_job_id: {rerun_animation_job_id}" in captured.out
+    assert f"animation_job_id: {stale_animation_job_id}" not in captured.out
     assert "teaser_success: true" in captured.out
     assert "overall_success: true" in captured.out
     assert captured.err == ""
