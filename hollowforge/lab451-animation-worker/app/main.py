@@ -167,7 +167,7 @@ async def _update_worker_job(worker_job_id: str, **fields: Any) -> dict[str, Any
     return row
 
 
-async def _cleanup_stale_worker_jobs() -> None:
+async def _cleanup_stale_worker_jobs() -> int:
     now = now_iso()
     stale_statuses = ("queued", "submitted", "processing")
 
@@ -209,6 +209,8 @@ async def _cleanup_stale_worker_jobs() -> None:
                     error_message="Worker restarted",
                 ),
             )
+
+    return len(rows)
 
 
 async def _run_worker_job(worker_job_id: str) -> None:
