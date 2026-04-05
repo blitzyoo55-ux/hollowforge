@@ -121,6 +121,20 @@ def _install_fake_client(
     return client
 
 
+def _install_clip_ready_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    exc: Exception,
+) -> None:
+    async def _raise(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise exc
+
+    monkeypatch.setattr(
+        animation_reconciliation_service,
+        "mark_shot_clip_ready_for_completed_job",
+        _raise,
+    )
+
+
 @pytest.mark.asyncio
 async def test_reconcile_stale_animation_jobs_marks_failed_worker_rows_failed(
     temp_db: Path,
@@ -151,7 +165,7 @@ async def test_reconcile_stale_animation_jobs_marks_failed_worker_rows_failed(
     assert result == {
         "checked": 1,
         "updated": 1,
-        "failed_restart": 1,
+        "failed_restart": 0,
         "completed": 0,
         "cancelled": 0,
         "skipped_unreachable": 0,
@@ -160,7 +174,7 @@ async def test_reconcile_stale_animation_jobs_marks_failed_worker_rows_failed(
 
     row = _fetch_animation_job(temp_db, "anim-job-failed")
     assert row["status"] == "failed"
-    assert row["error_message"] == "Worker restarted"
+    assert row["error_message"] == "worker crashed"
 
 
 @pytest.mark.asyncio
@@ -202,6 +216,43 @@ async def test_reconcile_stale_animation_jobs_mirrors_completed_worker_output_pa
 
 
 @pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_keeps_going_after_completed_clip_ready_failure(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-completed-fallback",
+        status="processing",
+        external_job_id="worker-job-completed-fallback",
+        error_message="stale error",
+    )
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+    _install_fake_client(
+        monkeypatch,
+        {
+            "worker-job-completed-fallback": _response_for(
+                "worker-job-completed-fallback",
+                200,
+                {
+                    "status": "completed",
+                    "output_url": "https://worker.test/data/outputs/example.mp4",
+                },
+            )
+        },
+    )
+    _install_clip_ready_failure(monkeypatch, RuntimeError("clip propagation failed"))
+
+    result = await animation_reconciliation_service.reconcile_stale_animation_jobs()
+
+    assert result["completed"] == 1
+    row = _fetch_animation_job(temp_db, "anim-job-completed-fallback")
+    assert row["status"] == "completed"
+    assert row["output_path"] == "outputs/example.mp4"
+    assert row["error_message"] is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_stale_animation_jobs_skips_unreachable_worker(
     temp_db: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -228,6 +279,48 @@ async def test_reconcile_stale_animation_jobs_skips_unreachable_worker(
     assert result["skipped_unreachable"] == 1
     row = _fetch_animation_job(temp_db, "anim-job-unreachable")
     assert row["status"] == "processing"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_aborts_after_fatal_worker_polling_error(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-fatal-1",
+        status="processing",
+        external_job_id="worker-job-fatal-1",
+    )
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-fatal-2",
+        status="processing",
+        external_job_id="worker-job-fatal-2",
+    )
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+    client = _install_fake_client(
+        monkeypatch,
+        {
+            "worker-job-fatal-1": _response_for(
+                "worker-job-fatal-1",
+                401,
+                {"detail": "missing token"},
+            ),
+            "worker-job-fatal-2": _response_for(
+                "worker-job-fatal-2",
+                200,
+                {"status": "completed", "output_url": "https://worker.test/data/outputs/skip.mp4"},
+            ),
+        },
+    )
+
+    with pytest.raises(animation_reconciliation_service._WorkerJobFatalError):
+        await animation_reconciliation_service.reconcile_stale_animation_jobs()
+
+    assert [request[0] for request in client.requests] == [
+        "http://worker.test/api/v1/jobs/worker-job-fatal-1",
+    ]
 
 
 @pytest.mark.asyncio
