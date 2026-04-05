@@ -440,6 +440,77 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
     }
 
 
+def test_main_succeeds_after_stale_failure_with_new_animation_job_id(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    module = _load_module()
+    data_dir = tmp_path / "data"
+    output_path = data_dir / "animations" / "teaser.mp4"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(b"mp4")
+    monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(
+        module,
+        "_resolve_source_asset",
+        lambda **_: {
+            "episode_id": "episode-stale-failed",
+            "scene_panel_id": "panel-stale",
+            "selected_render_asset_id": "asset-stale",
+            "generation_id": "gen-stale",
+            "storage_path": "comics/previews/panel-stale.png",
+        },
+    )
+    launch_kwargs = {}
+
+    def fake_launch_job(**kwargs):
+        launch_kwargs.update(kwargs)
+        return "anim-job-rerun"
+
+    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
+    monkeypatch.setattr(
+        module.animation_smoke,
+        "_poll_job",
+        lambda **_: {
+            "id": "anim-job-rerun",
+            "status": "completed",
+            "output_path": "animations/teaser.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_teaser_animation_smoke.py",
+            "--episode-id",
+            "episode-stale-failed",
+            "--panel-index",
+            "0",
+            "--preset-id",
+            module.DEFAULT_PRESET_ID,
+            "--poll-sec",
+            "5",
+            "--timeout-sec",
+            "1800",
+        ],
+    )
+    assert module.main() == 0
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    assert "animation_job_id: anim-job-rerun" in captured.out
+    assert "teaser_success: true" in captured.out
+    assert "overall_success: true" in captured.out
+    assert captured.err == ""
+    assert launch_kwargs == {
+        "base_url": "http://127.0.0.1:8000",
+        "preset_id": module.DEFAULT_PRESET_ID,
+        "generation_id": "gen-stale",
+        "request_overrides": {},
+        "dispatch_immediately": True,
+    }
+
+
 def test_main_rejects_completed_animation_output_that_is_not_mp4(
     monkeypatch,
     capsys,

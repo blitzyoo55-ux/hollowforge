@@ -63,6 +63,7 @@ cd backend
   --preset-id sdxl_ipadapter_microanim_v2 \
   --poll-sec 5 \
   --timeout-sec 1800
+./.venv/bin/python scripts/reconcile_stale_animation_jobs.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_remote_render_smoke.py --base-url http://127.0.0.1:8000
 
 cd frontend

@@ -94,7 +94,11 @@ Last updated: 2026-04-05
    the canonical teaser derivative validation path. This helper stays inside
    the local backend URL boundary and assumes the stable launchd backend plus
    stable launchd animation worker are already healthy.
-12. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
+12. If a teaser animation row is stale `failed / Worker restarted`, run
+   `backend/.venv/bin/python scripts/reconcile_stale_animation_jobs.py --base-url
+   http://127.0.0.1:8000` and then rerun the existing teaser helper. Recovery
+   is `fail then rerun`, not resume.
+13. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
    this file, and the roadmap do not drift.
 
 ## Active Priorities
