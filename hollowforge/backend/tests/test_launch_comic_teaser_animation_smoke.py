@@ -40,6 +40,12 @@ def _assert_required_summary_markers(output: str) -> None:
         assert marker in output
 
 
+def _assert_bounded_failure_invariants(output: str) -> None:
+    assert "teaser_success: false" in output
+    assert "animation_job_id: " in output
+    assert "output_path: " in output
+
+
 def test_is_placeholder_asset_rejects_only_the_exact_smoke_assets_prefix() -> None:
     module = _load_module()
 
@@ -64,9 +70,29 @@ def test_main_rejects_remote_backend_urls_for_comic_teaser_smoke(monkeypatch, ca
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "overall_success: false" in captured.out
     assert "failed_step: bootstrap" in captured.out
     assert "comic teaser animation smoke only supports local backend URLs" in captured.err
+
+
+def test_main_invalid_cli_input_still_prints_summary_markers(monkeypatch, capsys):
+    module = _load_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_teaser_animation_smoke.py",
+            "--panel-index",
+            "not-an-int",
+        ],
+    )
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
+    assert "failed_step: bootstrap" in captured.out
+    assert "invalid int value" in captured.err
 
 
 def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
@@ -86,6 +112,7 @@ def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "episode_id: episode-1" in captured.out
     assert "scene_panel_id: panel-1" in captured.out
     assert "selected_render_asset_id: asset-1" in captured.out
@@ -110,6 +137,7 @@ def test_main_rejects_missing_selected_asset_storage_path(monkeypatch, capsys):
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "selected_render_asset_id: asset-2" in captured.out
     assert "failed_step: validate_source_asset" in captured.out
     assert "selected asset storage_path is missing" in captured.err
@@ -131,9 +159,22 @@ def test_main_rejects_missing_selected_render_asset_id(monkeypatch, capsys):
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "selected_render_asset_id: " in captured.out
     assert "failed_step: validate_source_asset" in captured.out
     assert "selected asset id is missing" in captured.err
+
+
+def test_main_rejects_malformed_source_asset_payload(monkeypatch, capsys):
+    module = _load_module()
+    monkeypatch.setattr(module, "_resolve_source_asset", lambda **_: None)
+    monkeypatch.setattr(sys, "argv", ["launch_comic_teaser_animation_smoke.py"])
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
+    assert "failed_step: resolve_source_asset" in captured.out
+    assert "source asset resolution must return a mapping" in captured.err
 
 
 def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
@@ -147,6 +188,7 @@ def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "failed_step: resolve_source_asset" in captured.out
     assert "invalid source asset payload" in captured.err
 
@@ -168,6 +210,7 @@ def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert "failed_step: launch" in captured.out
     assert "animation launch is not implemented yet" in captured.err
 
@@ -210,6 +253,7 @@ def test_main_passes_cli_values_to_source_resolution_and_prints_custom_preset(
     assert module.main() == 1
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
     assert received_kwargs == {
         "base_url": "http://127.0.0.1:8000",
         "episode_id": "episode-cli",
