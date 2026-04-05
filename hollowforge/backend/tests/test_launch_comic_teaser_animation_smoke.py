@@ -440,17 +440,17 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
     }
 
 
-def test_main_reconciles_stale_failure_with_new_animation_job_id(
+def test_main_reconciles_stale_failure_before_launching_a_new_animation_job_id(
     monkeypatch,
     capsys,
     tmp_path,
 ):
     module = _load_module()
     rerun_animation_job_id = "anim-job-rerun"
-    stale_failed_job = {
-        "id": "anim-job-stale-failed",
-        "status": "failed",
-        "error_message": "Worker restarted",
+    stale_animation_job = {
+        "id": "anim-job-stale",
+        "status": "processing",
+        "error_message": None,
     }
     data_dir = tmp_path / "data"
     output_path = data_dir / "animations" / "teaser.mp4"
@@ -458,6 +458,13 @@ def test_main_reconciles_stale_failure_with_new_animation_job_id(
     output_path.write_bytes(b"mp4")
     monkeypatch.setattr(module.comic_dry_run.settings, "DATA_DIR", data_dir)
     resolve_kwargs = {}
+    reconcile_called = False
+
+    def reconcile_stale_animation_job() -> None:
+        nonlocal reconcile_called
+        reconcile_called = True
+        stale_animation_job["status"] = "failed"
+        stale_animation_job["error_message"] = "Worker restarted"
 
     def fake_resolve_source_asset(**kwargs):
         resolve_kwargs.update(kwargs)
@@ -470,13 +477,12 @@ def test_main_reconciles_stale_failure_with_new_animation_job_id(
         }
 
     def fake_launch_job(**kwargs):
-        assert stale_failed_job == {
-            "id": "anim-job-stale-failed",
+        assert reconcile_called is True
+        assert stale_animation_job == {
+            "id": "anim-job-stale",
             "status": "failed",
             "error_message": "Worker restarted",
         }
-        assert stale_failed_job["status"] == "failed"
-        assert stale_failed_job["error_message"] == "Worker restarted"
         assert kwargs == {
             "base_url": "http://127.0.0.1:8000",
             "preset_id": module.DEFAULT_PRESET_ID,
@@ -493,6 +499,9 @@ def test_main_reconciles_stale_failure_with_new_animation_job_id(
             "output_path": "animations/teaser.mp4",
         }
 
+    assert stale_animation_job["status"] == "processing"
+    assert stale_animation_job["error_message"] is None
+    reconcile_stale_animation_job()
     monkeypatch.setattr(module, "_resolve_source_asset", fake_resolve_source_asset)
     monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
     monkeypatch.setattr(module.animation_smoke, "_poll_job", fake_poll_job)
@@ -525,7 +534,7 @@ def test_main_reconciles_stale_failure_with_new_animation_job_id(
         "timeout_sec": 1800.0,
     }
     assert f"animation_job_id: {rerun_animation_job_id}" in captured.out
-    assert "animation_job_id: anim-job-stale-failed" not in captured.out
+    assert "animation_job_id: anim-job-stale" not in captured.out
     assert "teaser_success: true" in captured.out
     assert "overall_success: true" in captured.out
     assert captured.err == ""
