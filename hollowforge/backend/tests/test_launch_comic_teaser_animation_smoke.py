@@ -105,6 +105,15 @@ def test_is_placeholder_asset_rejects_only_the_exact_smoke_assets_prefix() -> No
     )
 
 
+def test_readme_documents_canonical_teaser_command_with_default_preset() -> None:
+    module = _load_module()
+    readme_path = Path(__file__).resolve().parents[2] / "README.md"
+    readme_text = readme_path.read_text(encoding="utf-8")
+
+    assert "./.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py \\" in readme_text
+    assert f"--preset-id {module.DEFAULT_PRESET_ID}" in readme_text
+
+
 def test_main_rejects_remote_backend_urls_for_comic_teaser_smoke(monkeypatch, capsys):
     module = _load_module()
     monkeypatch.setattr(
