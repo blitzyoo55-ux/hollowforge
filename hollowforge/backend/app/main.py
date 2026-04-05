@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 def _iter_public_data_dirs() -> tuple[pathlib.Path, ...]:
     return (
+        settings.DATA_DIR / "outputs",
         settings.IMAGES_DIR,
         settings.IMAGES_DIR / "upscaled",
         settings.IMAGES_DIR / "adetailed",
@@ -49,6 +50,11 @@ def _ensure_public_data_dirs() -> None:
 
 def _mount_static_dirs(app: FastAPI) -> None:
     _ensure_public_data_dirs()
+    app.mount(
+        "/data/outputs",
+        StaticFiles(directory=str(settings.DATA_DIR / "outputs")),
+        name="data-outputs",
+    )
     app.mount(
         "/data/images/watermarked",
         StaticFiles(directory=str(settings.IMAGES_DIR / "watermarked")),

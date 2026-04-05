@@ -228,7 +228,7 @@ def test_notify_hollowforge_skips_partial_cloudflare_access_headers(
     }
 
 
-def test_download_source_image_includes_cloudflare_access_headers_when_fully_configured(
+def test_download_source_image_includes_cloudflare_access_headers_for_trusted_hollowforge_host(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -258,6 +258,7 @@ def test_download_source_image_includes_cloudflare_access_headers_when_fully_con
         adapter._download_source_image(
             "worker-job-1",
             "https://sec.hlfglll.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-1/callback",
         )
     )
 
@@ -298,6 +299,7 @@ def test_download_source_image_skips_partial_cloudflare_access_headers(
         adapter._download_source_image(
             "worker-job-2",
             "https://sec.hlfglll.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-2/callback",
         )
     )
 
@@ -308,6 +310,91 @@ def test_download_source_image_skips_partial_cloudflare_access_headers(
     }
     assert local_path == tmp_path / "inputs" / "worker-job-2.png"
     assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_skips_cloudflare_access_headers_for_untrusted_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-3",
+            "https://cdn.example.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-3/callback",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://cdn.example.com/data/outputs/source-image.png",
+        "headers": {},
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-3.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_rejects_non_image_success_response(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse(
+        content=b"<!DOCTYPE html>",
+        headers={"content-type": "text/html; charset=utf-8"},
+    )
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    with pytest.raises(RuntimeError, match="non-image content-type"):
+        asyncio.run(
+            adapter._download_source_image(
+                "worker-job-4",
+                "https://sec.hlfglll.com/data/outputs/source-image.png",
+                callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-4/callback",
+            )
+        )
+
+    assert len(calls) == 1
+    assert not (tmp_path / "inputs" / "worker-job-4.png").exists()
 
 
 def test_worker_job_create_requires_request_json_for_comic_panel_still() -> None:
