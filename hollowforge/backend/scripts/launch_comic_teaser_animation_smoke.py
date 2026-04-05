@@ -65,19 +65,15 @@ def _require_source_asset_mapping(payload: Any) -> dict[str, Any]:
 
 
 def _extract_preset_id_from_argv(argv: list[str]) -> str:
-    for index, arg in enumerate(argv):
-        if arg == "--preset-id":
-            if index + 1 < len(argv):
-                value = argv[index + 1].strip()
-                if value:
-                    return value
-            return DEFAULT_PRESET_ID
-        if arg.startswith("--preset-id="):
-            value = arg.split("=", 1)[1].strip()
-            if value:
-                return value
-            return DEFAULT_PRESET_ID
-    return DEFAULT_PRESET_ID
+    preset_parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
+    preset_parser.add_argument("--preset-id", default=DEFAULT_PRESET_ID)
+    try:
+        namespace, _ = preset_parser.parse_known_args(argv)
+    except (argparse.ArgumentError, SystemExit):
+        return DEFAULT_PRESET_ID
+
+    preset_id = str(namespace.preset_id or "").strip()
+    return preset_id or DEFAULT_PRESET_ID
 
 
 def _build_summary(*, preset_id: str) -> dict[str, Any]:
