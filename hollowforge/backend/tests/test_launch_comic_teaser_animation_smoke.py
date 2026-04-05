@@ -99,6 +99,28 @@ def test_main_invalid_cli_input_still_prints_summary_markers(monkeypatch, capsys
     assert "invalid int value" in captured.err
 
 
+def test_main_invalid_cli_missing_preset_value_uses_safe_summary_value(monkeypatch, capsys):
+    module = _load_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_teaser_animation_smoke.py",
+            "--preset-id",
+            "--panel-index",
+            "not-an-int",
+        ],
+    )
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    _assert_bounded_failure_invariants(captured.out)
+    assert "failed_step: bootstrap" in captured.out
+    assert "preset_id: sdxl_ipadapter_microanim_v2" in captured.out
+    assert "preset_id: --panel-index" not in captured.out
+    assert "expected one argument" in captured.err
+
+
 def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
     module = _load_module()
     monkeypatch.setattr(
