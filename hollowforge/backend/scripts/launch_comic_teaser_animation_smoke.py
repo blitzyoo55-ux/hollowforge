@@ -46,6 +46,10 @@ def _extract_selected_asset_id(source_asset: dict[str, Any]) -> str:
 
 
 def _validate_source_asset(source_asset: dict[str, Any]) -> None:
+    selected_asset_id = _extract_selected_asset_id(source_asset)
+    if not selected_asset_id:
+        raise RuntimeError("selected asset id is missing")
+
     storage_path = str(source_asset.get("storage_path") or "").strip()
     if not storage_path:
         raise RuntimeError("selected asset storage_path is missing")
@@ -105,7 +109,7 @@ def main() -> int:
         raise RuntimeError("animation launch is not implemented yet")
     except Exception as exc:
         _print_summary(summary)
-        print(str(exc))
+        print(str(exc), file=sys.stderr)
         return 1
 
 

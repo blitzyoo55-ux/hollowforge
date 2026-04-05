@@ -66,7 +66,7 @@ def test_main_rejects_remote_backend_urls_for_comic_teaser_smoke(monkeypatch, ca
     _assert_required_summary_markers(captured.out)
     assert "overall_success: false" in captured.out
     assert "failed_step: bootstrap" in captured.out
-    assert "comic teaser animation smoke only supports local backend URLs" in captured.out
+    assert "comic teaser animation smoke only supports local backend URLs" in captured.err
 
 
 def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
@@ -91,7 +91,7 @@ def test_main_rejects_placeholder_selected_asset(monkeypatch, capsys):
     assert "selected_render_asset_id: asset-1" in captured.out
     assert "generation_id: gen-1" in captured.out
     assert "failed_step: validate_source_asset" in captured.out
-    assert "placeholder selected asset is not allowed" in captured.out
+    assert "placeholder selected asset is not allowed" in captured.err
 
 
 def test_main_rejects_missing_selected_asset_storage_path(monkeypatch, capsys):
@@ -112,7 +112,28 @@ def test_main_rejects_missing_selected_asset_storage_path(monkeypatch, capsys):
     _assert_required_summary_markers(captured.out)
     assert "selected_render_asset_id: asset-2" in captured.out
     assert "failed_step: validate_source_asset" in captured.out
-    assert "selected asset storage_path is missing" in captured.out
+    assert "selected asset storage_path is missing" in captured.err
+
+
+def test_main_rejects_missing_selected_render_asset_id(monkeypatch, capsys):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_resolve_source_asset",
+        lambda **_: {
+            "episode_id": "episode-assetless",
+            "scene_panel_id": "panel-assetless",
+            "generation_id": "gen-assetless",
+            "storage_path": "comics/previews/panel-assetless.png",
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["launch_comic_teaser_animation_smoke.py"])
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    assert "selected_render_asset_id: " in captured.out
+    assert "failed_step: validate_source_asset" in captured.out
+    assert "selected asset id is missing" in captured.err
 
 
 def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
@@ -127,7 +148,7 @@ def test_main_prints_summary_markers_for_non_runtime_error(monkeypatch, capsys):
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
     assert "failed_step: resolve_source_asset" in captured.out
-    assert "invalid source asset payload" in captured.out
+    assert "invalid source asset payload" in captured.err
 
 
 def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
@@ -148,4 +169,54 @@ def test_main_reports_bounded_stop_after_guardrails_pass(monkeypatch, capsys):
     captured = capsys.readouterr()
     _assert_required_summary_markers(captured.out)
     assert "failed_step: launch" in captured.out
-    assert "animation launch is not implemented yet" in captured.out
+    assert "animation launch is not implemented yet" in captured.err
+
+
+def test_main_passes_cli_values_to_source_resolution_and_prints_custom_preset(
+    monkeypatch,
+    capsys,
+):
+    module = _load_module()
+    received_kwargs = {}
+
+    def fake_resolve_source_asset(**kwargs):
+        received_kwargs.update(kwargs)
+        return {
+            "episode_id": "episode-cli",
+            "scene_panel_id": "panel-cli",
+            "selected_render_asset_id": "asset-cli",
+            "generation_id": "gen-cli",
+            "storage_path": "comics/previews/panel-cli.png",
+        }
+
+    monkeypatch.setattr(module, "_resolve_source_asset", fake_resolve_source_asset)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_teaser_animation_smoke.py",
+            "--episode-id",
+            "episode-cli",
+            "--panel-index",
+            "7",
+            "--preset-id",
+            "custom_teaser_v1",
+            "--poll-sec",
+            "2.5",
+            "--timeout-sec",
+            "900",
+        ],
+    )
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    _assert_required_summary_markers(captured.out)
+    assert received_kwargs == {
+        "base_url": "http://127.0.0.1:8000",
+        "episode_id": "episode-cli",
+        "panel_index": 7,
+        "preset_id": "custom_teaser_v1",
+        "poll_sec": 2.5,
+        "timeout_sec": 900.0,
+    }
+    assert "preset_id: custom_teaser_v1" in captured.out
+    assert "animation launch is not implemented yet" in captured.err
