@@ -20,10 +20,11 @@ import launch_comic_mvp_smoke as comic_smoke
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_PRESET_ID = "sdxl_ipadapter_microanim_v2"
+PLACEHOLDER_ASSET_MARKER = "comics/previews/smoke_assets"
 
 
 def _is_placeholder_asset(storage_path: str) -> bool:
-    return storage_path.startswith("comics/previews/smoke_assets/")
+    return PLACEHOLDER_ASSET_MARKER in storage_path.strip().replace("\\", "/")
 
 
 def _print_summary(summary: dict[str, Any]) -> None:
@@ -33,6 +34,12 @@ def _print_summary(summary: dict[str, Any]) -> None:
 
 def _resolve_source_asset(**_: Any) -> dict[str, Any]:
     raise RuntimeError("source asset resolution is not implemented yet")
+
+
+def _extract_selected_asset_id(source_asset: dict[str, Any]) -> str:
+    return str(
+        source_asset.get("selected_render_asset_id") or source_asset.get("id") or ""
+    ).strip()
 
 
 def _build_summary(*, preset_id: str) -> dict[str, Any]:
@@ -78,9 +85,7 @@ def main() -> int:
 
         summary["episode_id"] = str(source_asset.get("episode_id") or args.episode_id or "")
         summary["scene_panel_id"] = str(source_asset.get("scene_panel_id") or "")
-        summary["selected_render_asset_id"] = str(
-            source_asset.get("selected_render_asset_id") or ""
-        )
+        summary["selected_render_asset_id"] = _extract_selected_asset_id(source_asset)
         summary["generation_id"] = str(source_asset.get("generation_id") or "")
 
         storage_path = str(source_asset.get("storage_path") or "").strip()
@@ -90,8 +95,7 @@ def main() -> int:
             raise RuntimeError("placeholder selected asset is not allowed")
 
         summary["failed_step"] = "launch"
-        _print_summary(summary)
-        return 1
+        raise RuntimeError("animation launch is not implemented yet")
     except RuntimeError as exc:
         _print_summary(summary)
         print(str(exc))
