@@ -229,25 +229,99 @@ async def test_backend_startup_invokes_animation_reconciliation(
 def test_reconcile_stale_animation_jobs_script_prints_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    temp_db: Path,
 ) -> None:
     module = _load_script_module(
         "reconcile_stale_animation_jobs.py",
         "reconcile_stale_animation_jobs",
     )
 
-    summary = {
-        "checked": 2,
-        "updated": 1,
-        "failed_restart": 1,
-        "completed": 0,
-        "cancelled": 0,
-        "skipped_unreachable": 0,
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-completed",
+        status="processing",
+        external_job_id="worker-job-completed",
+        external_job_url="https://worker.test/jobs/worker-job-completed",
+    )
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-missing",
+        status="submitted",
+        external_job_id="worker-job-missing",
+        external_job_url="https://worker.test/jobs/worker-job-missing",
+    )
+
+    monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+    monkeypatch.setattr(settings, "ANIMATION_WORKER_API_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "callback-token")
+
+    backend_app = _build_app()
+    real_async_client = httpx.AsyncClient
+    worker_responses = {
+        "worker-job-completed": httpx.Response(
+            200,
+            request=httpx.Request("GET", "http://worker.test/api/v1/jobs/worker-job-completed"),
+            json={
+                "status": "completed",
+                "output_url": "https://worker.test/data/outputs/reconciled.mp4",
+            },
+        ),
+        "worker-job-missing": httpx.Response(
+            404,
+            request=httpx.Request("GET", "http://worker.test/api/v1/jobs/worker-job-missing"),
+            json={"detail": "not found"},
+        ),
     }
+    created_clients: list[object] = []
 
-    async def _fake_reconcile() -> dict[str, int]:
-        return summary
+    class _FakeHttpClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.base_url = str(kwargs.get("base_url") or "")
+            self.requests: list[tuple[str, str, dict[str, str], object | None]] = []
+            self._backend_client: object | None = None
+            created_clients.append(self)
 
-    monkeypatch.setattr(module, "reconcile_stale_animation_jobs", _fake_reconcile)
+        async def __aenter__(self) -> "_FakeHttpClient":
+            if self.base_url == "http://127.0.0.1:8000":
+                self._backend_client = real_async_client(
+                    transport=ASGITransport(app=backend_app),
+                    base_url=self.base_url,
+                )
+                await self._backend_client.__aenter__()
+                return self
+            if self.base_url == "http://worker.test":
+                return self
+            raise AssertionError(f"Unexpected base_url: {self.base_url}")
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            if self._backend_client is not None:
+                await self._backend_client.__aexit__(exc_type, exc, tb)
+
+        async def get(self, url: str, *, headers=None, params=None):  # type: ignore[no-untyped-def]
+            self.requests.append(("GET", self.base_url, dict(headers or {}), params))
+            if self.base_url == "http://127.0.0.1:8000":
+                assert self._backend_client is not None
+                return await self._backend_client.get(url, headers=headers, params=params)
+            if self.base_url == "http://worker.test":
+                if "Bearer worker-token" not in dict(headers or {}).get("Authorization", ""):
+                    raise AssertionError("worker auth header missing")
+                job_id = url.rsplit("/", 1)[-1]
+                return worker_responses[job_id]
+            raise AssertionError(f"Unexpected GET client base_url: {self.base_url}")
+
+        async def post(self, url: str, *, headers=None, json=None):  # type: ignore[no-untyped-def]
+            self.requests.append(("POST", self.base_url, dict(headers or {}), json))
+            if self.base_url == "http://127.0.0.1:8000":
+                assert self._backend_client is not None
+                return await self._backend_client.post(url, headers=headers, json=json)
+            raise AssertionError(f"Unexpected POST client base_url: {self.base_url}")
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _FakeHttpClient)
+    monkeypatch.setattr(
+        animation_reconciliation_service,
+        "reconcile_stale_animation_jobs",
+        lambda: (_ for _ in ()).throw(AssertionError("direct service import should not be used")),
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -257,12 +331,34 @@ def test_reconcile_stale_animation_jobs_script_prints_summary(
     assert module.main() == 0
 
     captured = capsys.readouterr()
+    backend_client = next(client for client in created_clients if client.base_url == "http://127.0.0.1:8000")
+    worker_client = next(client for client in created_clients if client.base_url == "http://worker.test")
+    assert backend_client.base_url == "http://127.0.0.1:8000"
+    assert worker_client.base_url == "http://worker.test"
     assert "checked: 2" in captured.out
-    assert "updated: 1" in captured.out
+    assert "updated: 2" in captured.out
     assert "failed_restart: 1" in captured.out
-    assert "completed: 0" in captured.out
+    assert "completed: 1" in captured.out
     assert "cancelled: 0" in captured.out
     assert "skipped_unreachable: 0" in captured.out
+    assert any(
+        request[0] == "GET"
+        and "Bearer worker-token" in request[2].get("Authorization", "")
+        for request in worker_client.requests
+    )
+    assert any(
+        request[0] == "POST"
+        and "Bearer callback-token" in request[2].get("Authorization", "")
+        for request in backend_client.requests
+    )
+
+    completed_row = _fetch_animation_job(temp_db, "anim-job-completed")
+    missing_row = _fetch_animation_job(temp_db, "anim-job-missing")
+    assert completed_row["status"] == "completed"
+    assert completed_row["output_path"] == "outputs/reconciled.mp4"
+    assert not completed_row["error_message"]
+    assert missing_row["status"] == "failed"
+    assert missing_row["error_message"] == "Worker restarted"
 
 
 @pytest.mark.asyncio
