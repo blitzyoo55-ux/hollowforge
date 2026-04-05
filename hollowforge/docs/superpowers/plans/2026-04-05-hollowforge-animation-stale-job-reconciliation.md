@@ -161,6 +161,7 @@ async def test_reconcile_stale_animation_jobs_mirrors_completed_worker_output_pa
     ...
     assert job_row["status"] == "completed"
     assert job_row["output_path"] == "outputs/example.mp4"
+    assert job_row["error_message"] is None
 ```
 
 ```python
@@ -342,6 +343,11 @@ async def test_backend_startup_invokes_animation_reconciliation(...):
 
 ```python
 def test_reconcile_stale_animation_jobs_script_prints_summary(...):
+    ...
+```
+
+```python
+async def test_backend_startup_reconciliation_failure_does_not_abort_boot(...):
     ...
 ```
 
