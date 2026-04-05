@@ -206,6 +206,9 @@ def _normalize_worker_output_path(output_url: str | None) -> str | None:
     ...
 ```
 
+- when worker state resolves to `completed`, explicitly clear stale backend
+  `error_message`
+
 - return a summary object like:
 
 ```python
@@ -281,9 +284,10 @@ cd /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/
 
 Expected: FAIL because terminal-state precedence is not hardened yet.
 
-- [ ] **Step 3: Implement sticky terminal-state behavior**
+- [ ] **Step 3: Implement sticky callback terminal-state behavior**
 
-Modify `_apply_animation_job_update(...)` in `backend/app/routes/animation.py`.
+Modify the callback path in `backend/app/routes/animation.py` without broadening the
+generic PATCH surface.
 
 Required rules:
 
@@ -297,6 +301,9 @@ Use a small helper instead of sprinkling branches inline, for example:
 def _should_preserve_terminal_animation_status(current_status: str, next_status: str) -> bool:
     ...
 ```
+
+Apply it only from `callback_animation_job(...)`, not from the generic `PATCH /jobs/{job_id}`
+update path.
 
 - [ ] **Step 4: Run the backend tests to verify GREEN**
 
@@ -356,6 +363,19 @@ Modify `backend/app/main.py`:
 - import the reconciliation service
 - call it during `lifespan()` after `init_db()` and before yielding
 - log the summary in the same spirit as generation stale cleanup
+- wrap the startup reconciliation in best-effort failure isolation so worker
+  unreachability or HTTP/auth errors do not fail backend boot
+
+Required startup shape:
+
+```python
+try:
+    summary = await reconcile_stale_animation_jobs(...)
+except Exception:
+    logger.exception("Animation stale reconciliation skipped during startup")
+else:
+    logger.info(...)
+```
 
 Create `backend/scripts/reconcile_stale_animation_jobs.py`:
 
