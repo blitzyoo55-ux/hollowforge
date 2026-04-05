@@ -310,7 +310,8 @@ def test_cleanup_stale_worker_jobs_marks_non_terminal_rows_failed(
         _insert_worker_job(conn, worker_job_id="worker-job-processing", status="processing")
         conn.commit()
 
-    asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    count = asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    assert count == 3
 
     with sqlite3.connect(settings.DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -372,7 +373,8 @@ def test_cleanup_stale_worker_jobs_sends_failed_callback_for_rows_with_callback_
 
     monkeypatch.setattr(worker_main, "_notify_hollowforge", _fake_notify)
 
-    asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    count = asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    assert count == 2
 
     assert len(payloads) == 1
     row, payload = payloads[0]
