@@ -440,7 +440,7 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
     }
 
 
-def test_main_reconciles_stale_failure_before_launching_a_new_animation_job_id(
+def test_main_reruns_after_reconciled_stale_failure_precondition_with_new_job_id(
     monkeypatch,
     capsys,
     tmp_path,
@@ -499,6 +499,9 @@ def test_main_reconciles_stale_failure_before_launching_a_new_animation_job_id(
             "output_path": "animations/teaser.mp4",
         }
 
+    # Reconciliation itself is covered in test_animation_reconciliation.py.
+    # This smoke-level test only pins the teaser helper rerun surface after the
+    # stale job has already been terminalized as failed / Worker restarted.
     assert stale_animation_job["status"] == "processing"
     assert stale_animation_job["error_message"] is None
     reconcile_stale_animation_job()
