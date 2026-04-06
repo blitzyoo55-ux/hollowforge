@@ -16,6 +16,7 @@ from app.models import (
     AnimationJobCallbackPayload,
     AnimationJobCreate,
     AnimationJobDispatchResponse,
+    AnimationReconciliationResponse,
     AnimationPresetLaunchRequest,
     AnimationPresetLaunchResponse,
     AnimationPresetResponse,
@@ -26,6 +27,7 @@ from app.services.animation_dispatch_service import (
     AnimationDispatchError,
     dispatch_to_remote_worker,
 )
+from app.services.animation_reconciliation_service import reconcile_stale_animation_jobs
 from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
 router = APIRouter(prefix="/api/v1/animation", tags=["animation"])
@@ -622,6 +624,18 @@ async def get_animation_executor_config() -> AnimationExecutorConfigResponse:
         preferred_flow=preferred_flow,
         supported_target_tools=_SUPPORTED_TARGET_TOOLS,
     )
+
+
+@router.post("/reconcile-stale", response_model=AnimationReconciliationResponse)
+async def reconcile_stale_animation_jobs_route() -> AnimationReconciliationResponse:
+    try:
+        summary = await reconcile_stale_animation_jobs()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reconcile stale animation jobs",
+        ) from exc
+    return AnimationReconciliationResponse(**summary)
 
 
 @router.get("/presets", response_model=list[AnimationPresetResponse])
