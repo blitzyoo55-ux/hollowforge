@@ -120,7 +120,8 @@ teaser ops를 별도 route/page로 분리한다.
 원칙은 아래와 같다.
 
 - `selected panel asset`가 teaser source truth
-- teaser job list는 current selected asset의 `generation_id` 기준으로 조회
+- teaser job list는 selected panel context 안에서 `current selected asset`의
+  `generation_id` 기준으로 조회
 - stale reconcile은 global animation lane action으로 노출
 - rerun은 selected panel 기준 새 animation job 생성으로 고정
 - 과거 job은 우선 `조회 전용`, `run again from this job`는 미룬다
@@ -179,6 +180,16 @@ teaser rerun source는 항상 current selected panel의 `selected + materialized
 - selected asset `storage_path` 존재
 - `generation_id` 존재
 
+generic animation preset launch surface 자체는 `generation_id`만으로도 호출 가능하지만,
+이번 UI action은 `teaser from selected panel` operator flow다. 따라서 readiness는
+generic launch보다 보수적으로 잡는다.
+
+즉 UI rerun은 아래를 전제로 한다.
+
+- operator가 현재 보고 있는 selected asset이 실제 materialized file이어야 함
+- helper/script와 같은 visible truth를 따라야 함
+- 아직 materialize되지 않은 remote placeholder generation으로 teaser를 쏘지 않음
+
 이 조건이 안 되면 rerun 버튼은 disabled 상태여야 한다.
 
 readiness message는 기존 dialogue/page gating과 같은 톤으로 노출한다.
@@ -210,8 +221,21 @@ job list는 selected asset의 `generation_id` 기준으로 조회한다.
 - failure message if present
 - output mp4 link if present
 
-이 panel은 `selected panel-scoped view`다.
-즉 episode 전체 animation registry를 보여주지 않는다.
+이 panel은 `selected panel context 안의 selected-asset-scoped view`다.
+즉 episode 전체 animation registry를 보여주지 않고,
+같은 panel이라도 operator가 다른 selected asset로 바꾸면 visible history도 바뀐다.
+
+이 behavior는 의도된 것이다.
+
+- teaser rerun source truth가 `current selected asset`이기 때문
+- operator가 지금 보고 있는 winning render와 연결된 animation history만 보는 것이
+  1차 ops surface에 더 적합하기 때문
+
+UI copy도 panel-wide history로 오해되지 않게 맞춘다.
+
+recommended title:
+
+- `Teaser Ops For Selected Render`
 
 ## Latest Success Rule
 
