@@ -12,6 +12,8 @@ Production image generation and orchestration console for Lab451.
 - comic backend routes: `backend/app/routes/comic.py`
 - comic manuscript profile API: `GET /api/v1/comic/manuscript-profiles`
 - comic frontend route: `/comic` with `/comic-studio` kept as a compatibility alias
+  - `/comic` now also exposes selected-render teaser ops for recent job history,
+    stale reconcile, and one-click rerun
 - animation execution worker: `lab451-animation-worker/`
 - deploy/runtime assets: `deploy/`
   - launchd templates now include `com.mori.hollowforge.backend` and
@@ -111,7 +113,8 @@ cd backend
 - backend manuscript profile route:
   `GET /api/v1/comic/manuscript-profiles`
 - backend detail route: `GET /api/v1/comic/episodes/{episode_id}`
-- frontend studio route: `/comic` with manuscript profile selection
+- frontend studio route: `/comic` with manuscript profile selection plus
+  selected-render teaser ops
 
 ## Production Hand-off Commands
 

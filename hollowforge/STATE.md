@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-05
+Last updated: 2026-04-06
 
 ## Snapshot
 
@@ -15,6 +15,9 @@ Last updated: 2026-04-05
   and one teaser derivative path from that same source material.
 - `/comic` now carries manuscript profile selection, backed by
   `GET /api/v1/comic/manuscript-profiles`.
+- `/comic` now also exposes selected-render teaser ops for recent animation
+  history, stale reconcile, and one-click rerun against the canonical teaser
+  preset.
 - The local four-panel benchmark helper entry point is
   `backend/scripts/launch_comic_four_panel_benchmark.py`.
 - The local one-panel verification helper entry point is
@@ -56,7 +59,9 @@ Last updated: 2026-04-05
    smoke scripts from `docs/ANIMATION_WORKFLOW_PLAYBOOK_20260313.md`.
 4. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
    compatibility route for existing bookmarks, and manuscript profile selection
-   is now part of the `/comic` workspace.
+   is now part of the `/comic` workspace. Selected-render teaser ops also live
+   there, so operators no longer need shell-only stale reconcile or rerun
+   steps for the bounded teaser flow.
 5. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
    http://127.0.0.1:8000` when you need a bounded end-to-end comic backend
    check against a running local API.
