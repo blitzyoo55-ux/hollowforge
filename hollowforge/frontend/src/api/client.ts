@@ -182,6 +182,15 @@ export interface AnimationPresetLaunchResponse {
   dispatch_error: string | null
 }
 
+export interface AnimationReconciliationResponse {
+  checked: number
+  updated: number
+  failed_restart: number
+  completed: number
+  cancelled: number
+  skipped_unreachable: number
+}
+
 export interface SeedanceJobStatus {
   job_id: string;
   status: string;
@@ -1644,6 +1653,11 @@ export async function launchAnimationPreset(
     `/animation/presets/${presetId}/launch`,
     data,
   )
+  return res.data
+}
+
+export async function reconcileStaleAnimationJobs(): Promise<AnimationReconciliationResponse> {
+  const res = await api.post<AnimationReconciliationResponse>('/animation/reconcile-stale')
   return res.data
 }
 
