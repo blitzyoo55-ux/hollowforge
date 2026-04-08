@@ -1739,6 +1739,52 @@ class AnimationPresetLaunchResponse(BaseModel):
     dispatch_error: Optional[str] = None
 
 
+class AnimationShotResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    source_kind: str
+    episode_id: str
+    scene_panel_id: str
+    selected_render_asset_id: str
+    generation_id: Optional[str] = None
+    is_current: bool
+    created_at: str
+    updated_at: str
+
+
+class AnimationShotVariantResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    animation_shot_id: str
+    animation_job_id: str
+    preset_id: str
+    launch_reason: str
+    status: str
+    output_path: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
+
+class AnimationCurrentShotResponse(BaseModel):
+    shot: Optional[AnimationShotResponse] = None
+    variants: List[AnimationShotVariantResponse] = Field(default_factory=list)
+
+
+def animation_shot_response_from_row(row: Dict[str, Any]) -> AnimationShotResponse:
+    payload = dict(row)
+    payload["is_current"] = bool(payload.get("is_current"))
+    return AnimationShotResponse.model_validate(payload)
+
+
+def animation_shot_variant_response_from_row(
+    row: Dict[str, Any],
+) -> AnimationShotVariantResponse:
+    return AnimationShotVariantResponse.model_validate(dict(row))
+
+
 class ReadyPublishItemResponse(BaseModel):
     generation_id: str
     image_path: Optional[str] = None
