@@ -112,11 +112,22 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_animation_shots_validate_generation_match_update
 BEFORE UPDATE OF generation_id, selected_render_asset_id ON animation_shots
 FOR EACH ROW
-WHEN EXISTS (
-    SELECT 1
-    FROM comic_panel_render_assets AS asset
-    WHERE asset.id = NEW.selected_render_asset_id
-      AND asset.generation_id IS NOT NEW.generation_id
+WHEN (
+    NEW.generation_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM comic_panel_render_assets AS asset
+        WHERE asset.id = NEW.selected_render_asset_id
+          AND asset.generation_id IS NOT NEW.generation_id
+    )
+) OR (
+    NEW.generation_id IS NULL
+    AND OLD.generation_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM generations
+        WHERE id = OLD.generation_id
+    )
 )
 BEGIN
     SELECT RAISE(ABORT, 'animation_shots.generation_id must match selected_render_asset_id.generation_id');
@@ -166,11 +177,22 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_comic_panel_render_assets_block_animation_shot_generation_drift
 BEFORE UPDATE OF generation_id ON comic_panel_render_assets
 FOR EACH ROW
-WHEN EXISTS (
-    SELECT 1
-    FROM animation_shots AS shot
-    WHERE shot.selected_render_asset_id = OLD.id
-      AND shot.generation_id IS NOT NEW.generation_id
+WHEN (
+    NEW.generation_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM animation_shots AS shot
+        WHERE shot.selected_render_asset_id = OLD.id
+          AND shot.generation_id IS NOT NEW.generation_id
+    )
+) OR (
+    NEW.generation_id IS NULL
+    AND OLD.generation_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM generations
+        WHERE id = OLD.generation_id
+    )
 )
 BEGIN
     SELECT RAISE(ABORT, 'comic_panel_render_assets.generation_id would invalidate animation_shots lineage');

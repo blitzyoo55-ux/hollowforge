@@ -580,6 +580,30 @@ async def test_animation_shot_registry_schema_contract(temp_db) -> None:
                 "2026-04-04T00:00:00+00:00",
             ),
         )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_7",
+                "comic_panel_animation_shot_registry_3",
+                "gen-ready-1",
+                "selected",
+                "[]",
+                1,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
         conn.commit()
 
         with pytest.raises(
@@ -700,6 +724,40 @@ async def test_animation_shot_registry_schema_contract(temp_db) -> None:
                     episode_one.id,
                     "comic_panel_animation_shot_registry_1",
                     "comic_asset_animation_shot_registry_6",
+                    "gen-ready-1",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must belong to scene_panel_id"
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_cross_panel_asset_1",
+                    "comic_selected_render",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_7",
                     "gen-ready-1",
                     1,
                     "2026-04-04T00:00:00+00:00",
@@ -1018,6 +1076,30 @@ async def test_animation_shot_registry_schema_contract(temp_db) -> None:
                 ),
             )
             conn.commit()
+
+        conn.execute("DELETE FROM generations WHERE id = ?", ("gen-ready-1",))
+        conn.commit()
+
+        shot_generation = conn.execute(
+            """
+            SELECT generation_id
+            FROM animation_shots
+            WHERE id = ?
+            """,
+            ("animation_shot_registry_valid_1",),
+        ).fetchone()
+        asset_generation = conn.execute(
+            """
+            SELECT generation_id
+            FROM comic_panel_render_assets
+            WHERE id = ?
+            """,
+            ("comic_asset_animation_shot_registry_1",),
+        ).fetchone()
+        assert shot_generation is not None
+        assert asset_generation is not None
+        assert shot_generation[0] is None
+        assert asset_generation[0] is None
 
 
 @pytest.mark.asyncio
