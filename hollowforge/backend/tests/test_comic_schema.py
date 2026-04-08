@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from app.models import (
     ComicManuscriptProfileResponse,
     list_comic_manuscript_profiles,
 )
+from app.services.comic_repository import create_comic_episode
 
 
 @pytest.mark.asyncio
@@ -136,6 +138,886 @@ async def test_non_episode_comic_table_contracts(temp_db) -> None:
     assert page_columns["ordered_panel_ids"]["type"] == "TEXT"
     assert page_columns["export_state"]["notnull"] == 1
     assert next(row for row in page_fks if row[3] == "episode_id")[6] == "CASCADE"
+
+
+@pytest.mark.asyncio
+async def test_animation_shot_registry_schema_contract(temp_db) -> None:
+    await init_db()
+
+    conn = sqlite3.connect(temp_db)
+    try:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                """
+            ).fetchall()
+        }
+        shot_columns = {
+            row[1]: {"type": row[2], "notnull": row[3]}
+            for row in conn.execute("PRAGMA table_info(animation_shots)").fetchall()
+        }
+        shot_fks = conn.execute(
+            "PRAGMA foreign_key_list(animation_shots)"
+        ).fetchall()
+        variant_columns = {
+            row[1]: {"type": row[2], "notnull": row[3]}
+            for row in conn.execute(
+                "PRAGMA table_info(animation_shot_variants)"
+            ).fetchall()
+        }
+        variant_fks = conn.execute(
+            "PRAGMA foreign_key_list(animation_shot_variants)"
+        ).fetchall()
+        index_rows = conn.execute("PRAGMA index_list(animation_shots)").fetchall()
+        index_names = {row[1] for row in index_rows}
+        variant_index_rows = conn.execute(
+            "PRAGMA index_list(animation_shot_variants)"
+        ).fetchall()
+        variant_index_names = {row[1] for row in variant_index_rows}
+        shot_trigger_rows = conn.execute(
+            """
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type = 'trigger'
+              AND (
+                  name LIKE 'trg_animation_shots_%'
+                  OR name LIKE 'trg_comic_episode_scenes_%'
+                  OR name LIKE 'trg_comic_scene_panels_%'
+                  OR name LIKE 'trg_comic_panel_render_assets_%'
+              )
+            """
+        ).fetchall()
+        shot_trigger_names = {row[0] for row in shot_trigger_rows}
+    finally:
+        conn.close()
+
+    assert "animation_shots" in table_names
+    assert "animation_shot_variants" in table_names
+
+    assert {
+        "id",
+        "source_kind",
+        "episode_id",
+        "scene_panel_id",
+        "selected_render_asset_id",
+        "generation_id",
+        "is_current",
+        "created_at",
+        "updated_at",
+    } <= set(shot_columns)
+    assert {
+        "id",
+        "animation_shot_id",
+        "animation_job_id",
+        "preset_id",
+        "launch_reason",
+        "status",
+        "created_at",
+    } <= set(variant_columns)
+
+    assert shot_columns["source_kind"]["notnull"] == 1
+    assert shot_columns["source_kind"]["type"] == "TEXT"
+    assert shot_columns["episode_id"]["notnull"] == 1
+    assert shot_columns["scene_panel_id"]["notnull"] == 1
+    assert shot_columns["selected_render_asset_id"]["notnull"] == 1
+    assert shot_columns["generation_id"]["notnull"] == 0
+    assert shot_columns["is_current"]["notnull"] == 1
+    assert shot_columns["created_at"]["notnull"] == 1
+    assert shot_columns["updated_at"]["notnull"] == 1
+
+    assert next(row for row in shot_fks if row[3] == "episode_id")[6] == "CASCADE"
+    assert next(row for row in shot_fks if row[3] == "scene_panel_id")[6] == "CASCADE"
+    assert (
+        next(row for row in shot_fks if row[3] == "selected_render_asset_id")[6]
+        == "CASCADE"
+    )
+    assert next(row for row in shot_fks if row[3] == "generation_id")[6] == "SET NULL"
+
+    assert variant_columns["animation_shot_id"]["notnull"] == 1
+    assert variant_columns["animation_job_id"]["notnull"] == 1
+    assert variant_columns["preset_id"]["notnull"] == 1
+    assert variant_columns["launch_reason"]["notnull"] == 1
+    assert variant_columns["status"]["notnull"] == 1
+    assert variant_columns["output_path"]["notnull"] == 0
+    assert variant_columns["error_message"]["notnull"] == 0
+    assert variant_columns["created_at"]["notnull"] == 1
+    assert variant_columns["completed_at"]["notnull"] == 0
+
+    assert next(row for row in variant_fks if row[3] == "animation_shot_id")[6] == "CASCADE"
+    assert next(row for row in variant_fks if row[3] == "animation_job_id")[6] == "CASCADE"
+
+    assert "uq_animation_shots_selected_render_asset_id" in index_names
+    assert "uq_animation_shot_variants_animation_job_id" in variant_index_names
+    assert (
+        "idx_animation_shot_variants_animation_shot_id_created_at"
+        in variant_index_names
+    )
+    assert (
+        next(
+            row for row in index_rows if row[1] == "uq_animation_shots_selected_render_asset_id"
+        )[2]
+        == 1
+    )
+    assert (
+        next(
+            row for row in variant_index_rows
+            if row[1] == "uq_animation_shot_variants_animation_job_id"
+        )[2]
+        == 1
+    )
+    assert {
+        "trg_animation_shots_validate_episode_scene_panel_insert",
+        "trg_animation_shots_validate_episode_scene_panel_update",
+        "trg_animation_shots_validate_scene_panel_asset_insert",
+        "trg_animation_shots_validate_scene_panel_asset_update",
+        "trg_animation_shots_validate_selected_asset_insert",
+        "trg_animation_shots_validate_selected_asset_update",
+        "trg_animation_shots_validate_generation_match_insert",
+        "trg_animation_shots_validate_generation_match_update",
+        "trg_comic_episode_scenes_block_animation_shot_reparent",
+        "trg_comic_scene_panels_block_animation_shot_reparent",
+        "trg_comic_panel_render_assets_block_animation_shot_reparent",
+        "trg_comic_panel_render_assets_block_animation_shot_generation_drift",
+    } <= shot_trigger_names
+
+    episode_one = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Animation Shot Registry One",
+            synopsis="Seed comic episode for animation shot validation.",
+            target_output="oneshot_manga",
+        ),
+        episode_id="comic_ep_animation_shot_registry_1",
+    )
+    episode_two = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Animation Shot Registry Two",
+            synopsis="Second comic episode for impossible lineage validation.",
+            target_output="oneshot_manga",
+        ),
+        episode_id="comic_ep_animation_shot_registry_2",
+    )
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO comic_episode_scenes (
+                id,
+                episode_id,
+                scene_no,
+                premise,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_scene_animation_shot_registry_2",
+                episode_one.id,
+                2,
+                "A mismatched lineage source scene.",
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_episode_scenes (
+                id,
+                episode_id,
+                scene_no,
+                premise,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_scene_animation_shot_registry_3",
+                episode_two.id,
+                1,
+                "A safe target scene in the new episode.",
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_scene_panels (
+                id,
+                episode_scene_id,
+                panel_no,
+                panel_type,
+                reading_order,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_panel_animation_shot_registry_3",
+                "comic_scene_animation_shot_registry_3",
+                1,
+                "beat",
+                2,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_scene_panels (
+                id,
+                episode_scene_id,
+                panel_no,
+                panel_type,
+                reading_order,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_panel_animation_shot_registry_2",
+                "comic_scene_animation_shot_registry_2",
+                1,
+                "beat",
+                2,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_2",
+                "comic_panel_animation_shot_registry_3",
+                "gen-ready-2",
+                "candidate",
+                "[]",
+                0,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_3",
+                "comic_panel_animation_shot_registry_3",
+                "gen-ready-1",
+                "candidate",
+                "[]",
+                0,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO comic_episode_scenes (
+                id,
+                episode_id,
+                scene_no,
+                premise,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_scene_animation_shot_registry_1",
+                episode_one.id,
+                1,
+                "A valid lineage source scene.",
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_scene_panels (
+                id,
+                episode_scene_id,
+                panel_no,
+                panel_type,
+                reading_order,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_panel_animation_shot_registry_1",
+                "comic_scene_animation_shot_registry_1",
+                1,
+                "beat",
+                1,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_1",
+                "comic_panel_animation_shot_registry_1",
+                "gen-ready-1",
+                "selected",
+                "[]",
+                1,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_4",
+                "comic_panel_animation_shot_registry_1",
+                "gen-ready-2",
+                "candidate",
+                "[]",
+                0,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_5",
+                "comic_panel_animation_shot_registry_1",
+                "gen-ready-2",
+                "selected",
+                "[]",
+                1,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "comic_asset_animation_shot_registry_6",
+                "comic_panel_animation_shot_registry_1",
+                "gen-ready-1",
+                "candidate",
+                "[]",
+                0,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=r"CHECK constraint failed",
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_source_kind_1",
+                    "comic_selected_preview",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_1",
+                    "gen-ready-1",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        conn.execute(
+            """
+            INSERT INTO animation_shots (
+                id,
+                source_kind,
+                episode_id,
+                scene_panel_id,
+                selected_render_asset_id,
+                generation_id,
+                is_current,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "animation_shot_registry_valid_1",
+                "comic_selected_render",
+                episode_one.id,
+                "comic_panel_animation_shot_registry_1",
+                "comic_asset_animation_shot_registry_1",
+                "gen-ready-1",
+                1,
+                "2026-04-04T00:00:00+00:00",
+                "2026-04-04T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape("animation_shots.scene_panel_id must belong to episode_id"),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_1",
+                    "comic_selected_render",
+                    episode_two.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_1",
+                    "gen-ready-1",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must point to selected render asset"
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_asset_1",
+                    "comic_selected_render",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_6",
+                    "gen-ready-1",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must point to selected render asset"
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_selected_asset_1",
+                    "comic_selected_render",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_4",
+                    "gen-ready-2",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.generation_id must match selected_render_asset_id.generation_id"
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_generation_1",
+                    "comic_selected_render",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_1",
+                    "gen-ready-2",
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.generation_id must match selected_render_asset_id.generation_id"
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO animation_shots (
+                    id,
+                    source_kind,
+                    episode_id,
+                    scene_panel_id,
+                    selected_render_asset_id,
+                    generation_id,
+                    is_current,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "animation_shot_registry_invalid_generation_null_1",
+                    "comic_selected_render",
+                    episode_one.id,
+                    "comic_panel_animation_shot_registry_1",
+                    "comic_asset_animation_shot_registry_1",
+                    None,
+                    1,
+                    "2026-04-04T00:00:00+00:00",
+                    "2026-04-04T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape("animation_shots.scene_panel_id must belong to episode_id"),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET episode_id = ?
+                WHERE id = ?
+                """,
+                (
+                    episode_two.id,
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.generation_id must match selected_render_asset_id.generation_id"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET generation_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "gen-ready-2",
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.generation_id must match selected_render_asset_id.generation_id"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET generation_id = ?
+                WHERE id = ?
+                """,
+                (
+                    None,
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must point to selected render asset"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET selected_render_asset_id = ?,
+                    generation_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_asset_animation_shot_registry_6",
+                    "gen-ready-1",
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.generation_id must match selected_render_asset_id.generation_id"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET selected_render_asset_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_asset_animation_shot_registry_5",
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must belong to scene_panel_id"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET scene_panel_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_panel_animation_shot_registry_2",
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "animation_shots.selected_render_asset_id must point to selected render asset"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE animation_shots
+                SET selected_render_asset_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_asset_animation_shot_registry_6",
+                    "animation_shot_registry_valid_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "comic_scene_panels.episode_scene_id would invalidate animation_shots lineage"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE comic_scene_panels
+                SET episode_scene_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_scene_animation_shot_registry_3",
+                    "comic_panel_animation_shot_registry_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "comic_episode_scenes.episode_id would invalidate animation_shots lineage"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE comic_episode_scenes
+                SET episode_id = ?
+                WHERE id = ?
+                """,
+                (
+                    episode_two.id,
+                    "comic_scene_animation_shot_registry_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "comic_panel_render_assets.scene_panel_id would invalidate animation_shots lineage"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE comic_panel_render_assets
+                SET scene_panel_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "comic_panel_animation_shot_registry_3",
+                    "comic_asset_animation_shot_registry_1",
+                ),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            (sqlite3.IntegrityError, sqlite3.OperationalError),
+            match=re.escape(
+                "comic_panel_render_assets.generation_id would invalidate animation_shots lineage"
+            ),
+        ):
+            conn.execute(
+                """
+                UPDATE comic_panel_render_assets
+                SET generation_id = ?
+                WHERE id = ?
+                """,
+                (
+                    "gen-ready-2",
+                    "comic_asset_animation_shot_registry_1",
+                ),
+            )
+            conn.commit()
 
 
 @pytest.mark.asyncio
