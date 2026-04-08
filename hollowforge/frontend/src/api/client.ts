@@ -165,9 +165,42 @@ export interface AnimationPresetResponse {
   request_json: Record<string, unknown>
 }
 
+export interface AnimationShotResponse {
+  id: string
+  source_kind: string
+  episode_id: string | null
+  scene_panel_id: string
+  selected_render_asset_id: string
+  generation_id: string | null
+  is_current: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AnimationShotVariantResponse {
+  id: string
+  animation_shot_id: string
+  animation_job_id: string
+  preset_id: string
+  launch_reason: string
+  status: AnimationJobResponse['status']
+  output_path: string | null
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface AnimationCurrentShotResponse {
+  shot: AnimationShotResponse | null
+  variants: AnimationShotVariantResponse[]
+}
+
 export interface AnimationPresetLaunchRequest {
   candidate_id?: string | null
   generation_id?: string | null
+  episode_id?: string | null
+  scene_panel_id?: string | null
+  selected_render_asset_id?: string | null
   publish_job_id?: string | null
   executor_mode?: AnimationExecutorMode | null
   executor_key?: string | null
@@ -180,6 +213,8 @@ export interface AnimationPresetLaunchResponse {
   animation_job: AnimationJobResponse
   dispatch: AnimationJobDispatchResponse | null
   dispatch_error: string | null
+  animation_shot_id: string | null
+  animation_shot_variant_id: string | null
 }
 
 export interface AnimationReconciliationResponse {
@@ -1640,6 +1675,17 @@ export async function listAnimationJobs(query: {
   limit?: number
 } = {}): Promise<AnimationJobResponse[]> {
   const res = await api.get<AnimationJobResponse[]>('/animation/jobs', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function getCurrentAnimationShot(query: {
+  scene_panel_id: string
+  selected_render_asset_id: string
+  limit?: number
+}): Promise<AnimationCurrentShotResponse | null> {
+  const res = await api.get<AnimationCurrentShotResponse | null>('/animation/shots/current', {
     params: query,
   })
   return res.data

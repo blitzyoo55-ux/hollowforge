@@ -7,15 +7,16 @@ import {
   generateComicPanelDialogues,
   getComicCharacterVersions,
   getComicCharacters,
+  getCurrentAnimationShot,
   getComicPanelRenderJobs,
   importComicStoryPlan,
   launchAnimationPreset,
-  listAnimationJobs,
   queueComicPanelRenders,
   reconcileStaleAnimationJobs,
   selectComicPanelRenderAsset,
-  type AnimationJobResponse,
+  type AnimationCurrentShotResponse,
   type AnimationReconciliationResponse,
+  type AnimationShotVariantResponse,
   type StoryPlannerPlanResponse,
   type ComicEpisodeDetailResponse,
   type ComicCharacterVersionResponse,
@@ -73,36 +74,34 @@ function countPendingComicRenderJobs(renderJobs: ComicRenderJobResponse[]): numb
   return renderJobs.filter((job) => isPendingComicRenderJob(job)).length
 }
 
-function isPendingAnimationJob(job: AnimationJobResponse): boolean {
-  return ['draft', 'queued', 'submitted', 'processing'].includes(job.status)
+function isPendingAnimationShotVariant(variant: AnimationShotVariantResponse): boolean {
+  return ['draft', 'queued', 'submitted', 'processing'].includes(variant.status)
 }
 
-function getAnimationJobRecency(job: AnimationJobResponse): number {
-  const timestamp = job.completed_at
-    ?? job.updated_at
-    ?? job.submitted_at
-    ?? job.created_at
+function getAnimationShotVariantRecency(variant: AnimationShotVariantResponse): number {
+  const timestamp = variant.completed_at
+    ?? variant.created_at
   const parsed = Date.parse(timestamp)
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-function findLatestAnimationJob(
-  jobs: AnimationJobResponse[],
-  predicate: (job: AnimationJobResponse) => boolean,
-): AnimationJobResponse | null {
-  let latestJob: AnimationJobResponse | null = null
+function findLatestAnimationShotVariant(
+  variants: AnimationShotVariantResponse[],
+  predicate: (variant: AnimationShotVariantResponse) => boolean,
+): AnimationShotVariantResponse | null {
+  let latestVariant: AnimationShotVariantResponse | null = null
   let latestRecency = -1
 
-  for (const job of jobs) {
-    if (!predicate(job)) continue
-    const recency = getAnimationJobRecency(job)
+  for (const variant of variants) {
+    if (!predicate(variant)) continue
+    const recency = getAnimationShotVariantRecency(variant)
     if (recency >= latestRecency) {
-      latestJob = job
+      latestVariant = variant
       latestRecency = recency
     }
   }
 
-  return latestJob
+  return latestVariant
 }
 
 function resolveAnimationOutputHref(outputPath: string | null): string | null {
@@ -507,6 +506,8 @@ export default function ComicStudio() {
   const [latestLaunchedTeaserLaunch, setLatestLaunchedTeaserLaunch] = useState<{
     generationId: string
     jobId: string
+    animationShotId: string | null
+    animationShotVariantId: string | null
   } | null>(null)
   const approvedPlanDraft = useMemo(
     () => parseApprovedPlanJson(approvedPlanJson),
@@ -866,6 +867,7 @@ export default function ComicStudio() {
   const selectedPanelSelectedAsset = selectedPanel
     ? (panelAssets[selectedPanel.id] ?? []).find((asset) => asset.is_selected) ?? null
     : null
+  const selectedPanelSelectedAssetId = selectedPanelSelectedAsset?.id ?? null
   const selectedPanelSelectedGenerationId = selectedPanelSelectedAsset?.generation_id ?? null
   const selectedPanelHasQueuedRenders = selectedPanel ? (panelAssets[selectedPanel.id]?.length ?? 0) > 0 : false
   const allPanelsHaveMaterializedSelectedAssets = allPanels.length > 0
@@ -904,17 +906,18 @@ export default function ComicStudio() {
           : null
   const selectedDialogues = selectedPanel ? panelDialogues[selectedPanel.id] ?? [] : []
 
-  const selectedPanelTeaserJobsQuery = useQuery({
-    queryKey: ['comic-teaser-jobs', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedGenerationId],
-    queryFn: () => listAnimationJobs({
-      generation_id: selectedPanelSelectedGenerationId!,
+  const selectedPanelCurrentShotQuery = useQuery({
+    queryKey: ['comic-current-shot', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedAssetId],
+    queryFn: () => getCurrentAnimationShot({
+      scene_panel_id: selectedPanel!.id,
+      selected_render_asset_id: selectedPanelSelectedAssetId!,
       limit: 8,
     }),
-    enabled: Boolean(selectedPanelSelectedGenerationId && selectedPanelHasMaterializedSelectedAsset),
+    enabled: Boolean(selectedPanelSelectedAssetId && selectedPanelHasMaterializedSelectedAsset),
     refetchOnWindowFocus: false,
     refetchInterval: (query) => {
-      const jobs = (query.state.data as AnimationJobResponse[] | undefined) ?? []
-      return jobs.some((job) => isPendingAnimationJob(job)) ? 2000 : false
+      const variants = (query.state.data as AnimationCurrentShotResponse | null | undefined)?.variants ?? []
+      return variants.some((variant) => isPendingAnimationShotVariant(variant)) ? 2000 : false
     },
   })
 
@@ -923,7 +926,7 @@ export default function ComicStudio() {
     onSuccess: (response) => {
       setLatestAnimationReconciliation(response)
       void queryClient.invalidateQueries({
-        queryKey: ['comic-teaser-jobs'],
+        queryKey: ['comic-current-shot'],
       })
       notify.success('Stale animation jobs reconciled')
     },
@@ -934,11 +937,14 @@ export default function ComicStudio() {
 
   const rerunTeaserMutation = useMutation({
     mutationFn: () => {
-      if (!selectedPanelSelectedGenerationId) {
+      if (!currentEpisode?.episode.id || !selectedPanel?.id || !selectedPanelSelectedAssetId || !selectedPanelSelectedGenerationId) {
         throw new Error('Select a materialized render before launching teaser animation.')
       }
       return launchAnimationPreset(DEFAULT_TEASER_PRESET_ID, {
         generation_id: selectedPanelSelectedGenerationId,
+        episode_id: currentEpisode.episode.id,
+        scene_panel_id: selectedPanel.id,
+        selected_render_asset_id: selectedPanelSelectedAssetId,
         dispatch_immediately: true,
         request_overrides: {},
       })
@@ -948,10 +954,12 @@ export default function ComicStudio() {
         setLatestLaunchedTeaserLaunch({
           generationId: selectedPanelSelectedGenerationId,
           jobId: response.animation_job.id,
+          animationShotId: response.animation_shot_id,
+          animationShotVariantId: response.animation_shot_variant_id,
         })
       }
       void queryClient.invalidateQueries({
-        queryKey: ['comic-teaser-jobs', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedGenerationId],
+        queryKey: ['comic-current-shot', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedAssetId],
       })
       notify.success(`Teaser rerun launched (${response.animation_job.id})`)
     },
@@ -960,28 +968,29 @@ export default function ComicStudio() {
     },
   })
 
-  const selectedPanelTeaserJobs = useMemo(
-    () => [...(selectedPanelTeaserJobsQuery.data ?? [])].sort(
-      (left, right) => getAnimationJobRecency(right) - getAnimationJobRecency(left),
+  const selectedPanelCurrentShot = selectedPanelCurrentShotQuery.data?.shot ?? null
+  const selectedPanelCurrentShotVariants = useMemo(
+    () => [...(selectedPanelCurrentShotQuery.data?.variants ?? [])].sort(
+      (left, right) => getAnimationShotVariantRecency(right) - getAnimationShotVariantRecency(left),
     ),
-    [selectedPanelTeaserJobsQuery.data],
+    [selectedPanelCurrentShotQuery.data],
   )
-  const latestSuccessfulTeaserJob = useMemo(
-    () => findLatestAnimationJob(
-      selectedPanelTeaserJobs,
-      (job) => job.status === 'completed' && isMp4OutputPath(job.output_path),
+  const latestSuccessfulTeaserVariant = useMemo(
+    () => findLatestAnimationShotVariant(
+      selectedPanelCurrentShotVariants,
+      (variant) => variant.status === 'completed' && isMp4OutputPath(variant.output_path),
     ),
-    [selectedPanelTeaserJobs],
+    [selectedPanelCurrentShotVariants],
   )
-  const latestFailedTeaserJob = useMemo(
-    () => findLatestAnimationJob(
-      selectedPanelTeaserJobs,
-      (job) => job.status === 'failed' && Boolean(job.error_message?.trim()),
+  const latestFailedTeaserVariant = useMemo(
+    () => findLatestAnimationShotVariant(
+      selectedPanelCurrentShotVariants,
+      (variant) => variant.status === 'failed' && Boolean(variant.error_message?.trim()),
     ),
-    [selectedPanelTeaserJobs],
+    [selectedPanelCurrentShotVariants],
   )
-  const latestSuccessfulTeaserJobHref = latestSuccessfulTeaserJob
-    ? resolveAnimationOutputHref(latestSuccessfulTeaserJob.output_path)
+  const latestSuccessfulTeaserVariantHref = latestSuccessfulTeaserVariant
+    ? resolveAnimationOutputHref(latestSuccessfulTeaserVariant.output_path)
     : null
   const selectedPanelSelectedAssetHref = selectedPanelSelectedAsset
     ? resolveAnimationOutputHref(selectedPanelSelectedAsset.storage_path)
@@ -989,8 +998,14 @@ export default function ComicStudio() {
   const latestLaunchedTeaserJobId = latestLaunchedTeaserLaunch?.generationId === selectedPanelSelectedGenerationId
     ? latestLaunchedTeaserLaunch.jobId
     : null
-  const teaserJobsErrorMessage = selectedPanelTeaserJobsQuery.error
-    ? getErrorMessage(selectedPanelTeaserJobsQuery.error, 'Failed to load teaser jobs')
+  const latestLaunchedTeaserShotId = latestLaunchedTeaserLaunch?.generationId === selectedPanelSelectedGenerationId
+    ? latestLaunchedTeaserLaunch.animationShotId
+    : null
+  const latestLaunchedTeaserVariantId = latestLaunchedTeaserLaunch?.generationId === selectedPanelSelectedGenerationId
+    ? latestLaunchedTeaserLaunch.animationShotVariantId
+    : null
+  const currentShotErrorMessage = selectedPanelCurrentShotQuery.error
+    ? getErrorMessage(selectedPanelCurrentShotQuery.error, 'Failed to load teaser shot')
     : null
   const panelRenderStatuses = Object.fromEntries(
     allPanels.map((panel) => [
@@ -1125,13 +1140,16 @@ export default function ComicStudio() {
             selectedAssetPath={selectedPanelSelectedAsset?.storage_path ?? null}
             selectedAssetGenerationId={selectedPanelSelectedGenerationId}
             selectedAssetOutputHref={selectedPanelSelectedAssetHref}
-            jobs={selectedPanelTeaserJobs}
-            jobsErrorMessage={teaserJobsErrorMessage}
-            latestFailedJob={latestFailedTeaserJob}
-            latestSuccessfulJob={latestSuccessfulTeaserJob}
-            latestSuccessfulJobHref={latestSuccessfulTeaserJobHref}
+            currentShot={selectedPanelCurrentShot}
+            currentShotErrorMessage={currentShotErrorMessage}
+            currentShotVariants={selectedPanelCurrentShotVariants}
+            latestFailedVariant={latestFailedTeaserVariant}
+            latestSuccessfulVariant={latestSuccessfulTeaserVariant}
+            latestSuccessfulVariantHref={latestSuccessfulTeaserVariantHref}
             latestReconcileSummary={latestAnimationReconciliation}
             latestLaunchedTeaserJobId={latestLaunchedTeaserJobId}
+            latestLaunchedTeaserShotId={latestLaunchedTeaserShotId}
+            latestLaunchedTeaserVariantId={latestLaunchedTeaserVariantId}
             presetId={DEFAULT_TEASER_PRESET_ID}
             readinessMessage={teaserReadinessMessage}
             canRerun={Boolean(!teaserReadinessMessage && selectedPanelSelectedGenerationId)}
