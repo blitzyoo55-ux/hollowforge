@@ -17,6 +17,7 @@ if str(WORKER_ROOT) not in sys.path:
 
 from app import main as worker_main
 from app import config as worker_config
+from app import executors as worker_executors
 from app.config import settings
 from app.db import init_db
 from app.executors import CompletionResult, SubmissionResult
@@ -85,6 +86,20 @@ class FakeHttpxResponse:
         return None
 
 
+class FakeDownloadResponse:
+    def __init__(
+        self,
+        *,
+        content: bytes = b"fake-image-bytes",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.content = content
+        self.headers = headers or {"content-type": "image/png"}
+
+    def raise_for_status(self) -> None:
+        return None
+
+
 class CapturingAsyncClient:
     def __init__(self, calls: list[dict[str, object]], *args, **kwargs) -> None:
         self.calls = calls
@@ -98,6 +113,93 @@ class CapturingAsyncClient:
     async def post(self, url: str, json: dict[str, object], headers: dict[str, str]):
         self.calls.append({"url": url, "json": json, "headers": dict(headers)})
         return FakeHttpxResponse()
+
+
+class DownloadCapturingAsyncClient:
+    def __init__(
+        self,
+        calls: list[dict[str, object]],
+        response: FakeDownloadResponse,
+        *args,
+        **kwargs,
+    ) -> None:
+        self.calls = calls
+        self.response = response
+
+    async def __aenter__(self) -> DownloadCapturingAsyncClient:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    async def get(self, url: str, headers: dict[str, str] | None = None):
+        self.calls.append({"url": url, "headers": dict(headers or {})})
+        return self.response
+
+
+def _insert_worker_job(
+    conn: sqlite3.Connection,
+    *,
+    worker_job_id: str,
+    status: str,
+    callback_url: str | None = None,
+    callback_token: str | None = None,
+    external_job_id: str | None = None,
+    external_job_url: str | None = None,
+) -> None:
+    now = "2026-04-05T00:00:00+00:00"
+    conn.execute(
+        """
+        INSERT INTO worker_jobs (
+            id,
+            hollowforge_job_id,
+            candidate_id,
+            generation_id,
+            publish_job_id,
+            target_tool,
+            executor_mode,
+            executor_key,
+            status,
+            source_image_url,
+            generation_metadata,
+            request_json,
+            callback_url,
+            callback_token,
+            external_job_id,
+            external_job_url,
+            output_url,
+            error_message,
+            submitted_at,
+            completed_at,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            worker_job_id,
+            f"hollowforge-{worker_job_id}",
+            None,
+            f"gen-{worker_job_id}",
+            None,
+            "comic_panel_still",
+            "remote_worker",
+            "default",
+            status,
+            "",
+            None,
+            None,
+            callback_url,
+            callback_token,
+            external_job_id,
+            external_job_url,
+            None,
+            None,
+            None,
+            None,
+            now,
+            now,
+        ),
+    )
 
 
 def test_worker_job_create_accepts_comic_panel_still_without_source_image_url() -> None:
@@ -191,6 +293,342 @@ def test_notify_hollowforge_skips_partial_cloudflare_access_headers(
     }
 
 
+def test_cleanup_stale_worker_jobs_marks_non_terminal_rows_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(conn, worker_job_id="worker-job-queued", status="queued")
+        _insert_worker_job(conn, worker_job_id="worker-job-submitted", status="submitted")
+        _insert_worker_job(conn, worker_job_id="worker-job-processing", status="processing")
+        conn.commit()
+
+    count = asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    assert count == 3
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = {
+            row["id"]: row
+            for row in conn.execute(
+                """
+                SELECT id, status, error_message, completed_at, updated_at
+                FROM worker_jobs
+                ORDER BY id
+                """
+            ).fetchall()
+        }
+
+    for worker_job_id in (
+        "worker-job-queued",
+        "worker-job-submitted",
+        "worker-job-processing",
+    ):
+        row = rows[worker_job_id]
+        assert row["status"] == "failed"
+        assert row["error_message"] == "Worker restarted"
+        assert row["completed_at"] is not None
+        assert row["updated_at"] == row["completed_at"]
+
+
+def test_cleanup_stale_worker_jobs_sends_failed_callback_for_rows_with_callback_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-1",
+            status="processing",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-1/callback",
+            callback_token="callback-secret",
+            external_job_id="remote-1",
+            external_job_url="https://worker.test/history/remote-1",
+        )
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-2",
+            status="queued",
+        )
+        conn.commit()
+
+    payloads: list[tuple[dict[str, object], HollowForgeCallbackPayload]] = []
+
+    async def _fake_notify(row, payload):  # type: ignore[no-untyped-def]
+        payloads.append((dict(row), payload))
+
+    monkeypatch.setattr(worker_main, "_notify_hollowforge", _fake_notify)
+
+    count = asyncio.run(worker_main._cleanup_stale_worker_jobs())
+    assert count == 2
+
+    assert len(payloads) == 1
+    row, payload = payloads[0]
+    assert row["id"] == "worker-job-1"
+    assert payload.status == "failed"
+    assert payload.error_message == "Worker restarted"
+    assert payload.external_job_id == "remote-1"
+    assert payload.external_job_url == "https://worker.test/history/remote-1"
+    assert payload.output_path is None
+
+
+def test_cleanup_stale_worker_jobs_dispatches_failed_callbacks_concurrently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "worker-data"
+    monkeypatch.setattr(settings, "DATA_DIR", data_dir)
+    monkeypatch.setattr(settings, "DB_PATH", data_dir / "animation_worker.db")
+    monkeypatch.setattr(settings, "INPUTS_DIR", data_dir / "inputs")
+    monkeypatch.setattr(settings, "OUTPUTS_DIR", data_dir / "outputs")
+    asyncio.run(init_db())
+
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-1",
+            status="processing",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-1/callback",
+        )
+        _insert_worker_job(
+            conn,
+            worker_job_id="worker-job-2",
+            status="submitted",
+            callback_url="https://hollowforge.test/api/v1/jobs/worker-job-2/callback",
+        )
+        conn.commit()
+
+    started: list[str] = []
+    release = asyncio.Event()
+
+    async def _fake_notify(row, payload):  # type: ignore[no-untyped-def]
+        started.append(row["id"])
+        await release.wait()
+
+    monkeypatch.setattr(worker_main, "_notify_hollowforge", _fake_notify)
+
+    async def _run_cleanup() -> int:
+        cleanup_task = asyncio.create_task(worker_main._cleanup_stale_worker_jobs())
+        for _ in range(50):
+            if len(started) == 2:
+                break
+            await asyncio.sleep(0.01)
+        assert len(started) == 2
+        release.set()
+        return await cleanup_task
+
+    count = asyncio.run(_run_cleanup())
+
+    assert count == 2
+    assert set(started) == {"worker-job-1", "worker-job-2"}
+
+
+def test_lifespan_calls_cleanup_stale_worker_jobs_after_init_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def _fake_init_db() -> None:
+        calls.append("init_db")
+
+    async def _fake_cleanup() -> None:
+        calls.append("cleanup")
+
+    monkeypatch.setattr(worker_main, "init_db", _fake_init_db)
+    monkeypatch.setattr(worker_main, "_cleanup_stale_worker_jobs", _fake_cleanup)
+
+    async def _run() -> None:
+        async with worker_main.lifespan(worker_main.app):
+            calls.append("lifespan_active")
+
+    asyncio.run(_run())
+
+    assert calls == ["init_db", "cleanup", "lifespan_active"]
+
+
+def test_download_source_image_includes_cloudflare_access_headers_for_trusted_hollowforge_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-1",
+            "https://sec.hlfglll.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-1/callback",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://sec.hlfglll.com/data/outputs/source-image.png",
+        "headers": {
+            "CF-Access-Client-Id": "cf-access-id",
+            "CF-Access-Client-Secret": "cf-access-secret",
+        },
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-1.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_skips_partial_cloudflare_access_headers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_SECRET", "", raising=False)
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-2",
+            "https://sec.hlfglll.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-2/callback",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://sec.hlfglll.com/data/outputs/source-image.png",
+        "headers": {},
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-2.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_skips_cloudflare_access_headers_for_untrusted_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse()
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    local_path = asyncio.run(
+        adapter._download_source_image(
+            "worker-job-3",
+            "https://cdn.example.com/data/outputs/source-image.png",
+            callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-3/callback",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == {
+        "url": "https://cdn.example.com/data/outputs/source-image.png",
+        "headers": {},
+    }
+    assert local_path == tmp_path / "inputs" / "worker-job-3.png"
+    assert local_path.read_bytes() == b"fake-image-bytes"
+
+
+def test_download_source_image_rejects_non_image_success_response(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = FakeDownloadResponse(
+        content=b"<!DOCTYPE html>",
+        headers={"content-type": "text/html; charset=utf-8"},
+    )
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+
+    monkeypatch.setattr(settings, "WORKER_CF_ACCESS_CLIENT_ID", "cf-access-id", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "cf-access-secret",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        worker_executors.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: DownloadCapturingAsyncClient(calls, response, *args, **kwargs),
+    )
+
+    with pytest.raises(RuntimeError, match="non-image content-type"):
+        asyncio.run(
+            adapter._download_source_image(
+                "worker-job-4",
+                "https://sec.hlfglll.com/data/outputs/source-image.png",
+                callback_url="https://sec.hlfglll.com/api/v1/animation/jobs/worker-job-4/callback",
+            )
+        )
+
+    assert len(calls) == 1
+    assert not (tmp_path / "inputs" / "worker-job-4.png").exists()
+
+
 def test_worker_job_create_requires_request_json_for_comic_panel_still() -> None:
     with pytest.raises(ValidationError):
         WorkerJobCreate.model_validate(
@@ -280,6 +718,41 @@ def test_build_sdxl_still_workflow_applies_clip_skip_to_clip_path() -> None:
     assert positive_nodes[0]["inputs"]["clip"] == [clip_skip_node_id, 0]
     assert positive_nodes[1]["inputs"]["clip"] == [clip_skip_node_id, 0]
     assert workflow[save_node_id]["class_type"] == "SaveImage"
+
+
+def test_render_video_from_frames_uses_configured_ffmpeg_binary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+    frame_paths = []
+    for index in range(2):
+        frame_path = tmp_path / f"frame_{index:02d}.png"
+        frame_path.write_bytes(b"png")
+        frame_paths.append(frame_path)
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(settings, "WORKER_FFMPEG_BIN", "/opt/homebrew/bin/ffmpeg", raising=False)
+    monkeypatch.setattr(worker_executors.subprocess, "run", fake_run)
+
+    adapter._render_video_from_frames(
+        frame_paths=frame_paths,
+        fps=7,
+        output_path=tmp_path / "outputs" / "worker-job-1.mp4",
+    )
+
+    assert captured["cmd"][0] == "/opt/homebrew/bin/ffmpeg"
 
 
 def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:

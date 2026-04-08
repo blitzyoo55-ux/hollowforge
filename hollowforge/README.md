@@ -51,10 +51,19 @@ cd backend
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_mvp_smoke.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_one_panel_verification.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_four_panel_benchmark.py
+./.venv/bin/python -m pytest -q tests/test_launch_comic_teaser_animation_smoke.py
 ./.venv/bin/python scripts/check_comic_remote_render_preflight.py --backend-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_one_panel_verification.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_four_panel_benchmark.py --base-url http://127.0.0.1:8000
+./.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py \
+  --base-url http://127.0.0.1:8000 \
+  --episode-id 2d696b08-4899-4a3b-b499-adc37dbaa9f5 \
+  --panel-index 0 \
+  --preset-id sdxl_ipadapter_microanim_v2 \
+  --poll-sec 5 \
+  --timeout-sec 1800
+./.venv/bin/python scripts/reconcile_stale_animation_jobs.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_remote_render_smoke.py --base-url http://127.0.0.1:8000
 
 cd frontend
@@ -130,6 +139,14 @@ cd backend
   --layout-template-id jp_2x2_v1 \
   --manuscript-profile-id jp_manga_rightbound_v1
 
+./.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py \
+  --base-url http://127.0.0.1:8000 \
+  --episode-id 2d696b08-4899-4a3b-b499-adc37dbaa9f5 \
+  --panel-index 0 \
+  --preset-id sdxl_ipadapter_microanim_v2 \
+  --poll-sec 5 \
+  --timeout-sec 1800
+
 unzip -l ../data/comics/exports/<episode_id>_jp_2x2_v1_handoff.zip | rg 'smoke_assets|_handoff_readme.md|_production_checklist.json'
 jq '.teaser_handoff_manifest.selected_panel_assets[].storage_path' \
   ../data/comics/reports/<episode_id>_jp_2x2_v1_jp_manga_rightbound_v1_dry_run.json
@@ -151,6 +168,10 @@ enforced. If the public callback hostname is protected by Cloudflare Access,
 plain worker callbacks will be redirected to the Access login flow unless the
 callback path is bypassed or the worker is taught to send Cloudflare Access
 service-token headers.
+The canonical comic teaser helper also stays inside the local backend URL
+boundary, uses the default teaser preset `sdxl_ipadapter_microanim_v2`, and is
+intended for live validation only after the stable launchd backend plus stable
+launchd animation worker are already healthy.
 
 ## Operating Rules
 

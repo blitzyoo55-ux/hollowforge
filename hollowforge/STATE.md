@@ -27,10 +27,19 @@ Last updated: 2026-04-05
   `backend/scripts/launch_comic_remote_one_shot_dry_run.py`.
 - The production dry-run helper entry point is
   `backend/scripts/launch_comic_production_dry_run.py`.
+- The comic teaser animation smoke helper entry point is
+  `backend/scripts/launch_comic_teaser_animation_smoke.py`.
 - The frontend must be rebuilt explicitly with `npm run build` before deploy.
 - The current local animation preview lane is `sdxl_ipadapter_microanim_v2`.
+- The latest validated comic teaser episode id is
+  `2d696b08-4899-4a3b-b499-adc37dbaa9f5`.
 - The stable launchd labels are `com.mori.hollowforge.backend` and
   `com.mori.hollowforge.animation-worker`.
+- The canonical teaser validation path expects the stable launchd backend and
+  stable launchd animation worker to already be healthy.
+- The comic teaser animation smoke helper is local-backend-only for
+  `--base-url`, even when the backend is driving callback-based animation
+  validation.
 - The stable animation worker launchd lane runs `executor_backend=comfyui_pipeline`,
   so the remote comic smoke should use an extended render poll budget such as
   `--render-poll-attempts 360 --render-poll-sec 1.0`.
@@ -78,7 +87,19 @@ Last updated: 2026-04-05
 10. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
    when you need the production handoff validation path with a selected layout
    template and manuscript profile.
-11. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
+11. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
+   --base-url http://127.0.0.1:8000 --episode-id
+   2d696b08-4899-4a3b-b499-adc37dbaa9f5 --panel-index 0 --preset-id
+   sdxl_ipadapter_microanim_v2 --poll-sec 5 --timeout-sec 1800` when you need
+   the canonical teaser derivative validation path. This helper stays inside
+   the local backend URL boundary and assumes the stable launchd backend plus
+   stable launchd animation worker are already healthy.
+12. If a teaser animation job is stuck non-terminal (`queued`, `submitted`, or
+   `processing`), use `backend/.venv/bin/python scripts/reconcile_stale_animation_jobs.py
+   --base-url http://127.0.0.1:8000` to mark it `failed / Worker restarted`.
+   Once it is failed, rerun the existing teaser helper. Recovery is `fail then
+   rerun`, not resume.
+13. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
    this file, and the roadmap do not drift.
 
 ## Active Priorities
@@ -119,6 +140,8 @@ Last updated: 2026-04-05
   `backend/.venv/bin/python scripts/launch_comic_remote_one_shot_dry_run.py`
 - backend comic production dry run:
   `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
+- backend comic teaser animation smoke:
+  `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py`
 - frontend comic route: `/comic`
 - frontend checks: `frontend/package.json`
 - animation worker runtime: `lab451-animation-worker/run_local_animation_worker.sh`

@@ -124,6 +124,39 @@ def _default_still_prompt_from_row(row: dict[str, Any]) -> str:
     return "Single-panel manga still, preserve character identity and panel composition."
 
 
+def _cloudflare_access_headers() -> dict[str, str]:
+    cf_access_client_id = settings.WORKER_CF_ACCESS_CLIENT_ID
+    cf_access_client_secret = settings.WORKER_CF_ACCESS_CLIENT_SECRET
+    if cf_access_client_id and cf_access_client_secret:
+        return {
+            "CF-Access-Client-Id": cf_access_client_id,
+            "CF-Access-Client-Secret": cf_access_client_secret,
+        }
+    return {}
+
+
+def _download_headers_for_source_image(
+    *,
+    source_image_url: str,
+    callback_url: str | None,
+) -> dict[str, str]:
+    headers = _cloudflare_access_headers()
+    if not headers:
+        return {}
+
+    source_netloc = urlparse(source_image_url).netloc.strip().lower()
+    callback_netloc = urlparse(str(callback_url or "")).netloc.strip().lower()
+    if source_netloc and callback_netloc and source_netloc == callback_netloc:
+        return headers
+    return {}
+
+
+def _require_image_response_content_type(content_type: str | None) -> None:
+    clean_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    if clean_type and not clean_type.startswith("image/"):
+        raise RuntimeError(f"source image download returned non-image content-type: {clean_type}")
+
+
 class StubExecutorAdapter:
     """Minimal backend used to verify orchestration and callback flow."""
 
@@ -179,11 +212,24 @@ class ComfyUILTXVExecutorAdapter:
     def _history_url(self, prompt_id: str) -> str:
         return f"{self._comfyui_url}/history/{prompt_id}"
 
-    async def _download_source_image(self, worker_job_id: str, source_image_url: str) -> Path:
+    async def _download_source_image(
+        self,
+        worker_job_id: str,
+        source_image_url: str,
+        *,
+        callback_url: str | None = None,
+    ) -> Path:
         timeout = httpx.Timeout(60.0)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(source_image_url)
+            response = await client.get(
+                source_image_url,
+                headers=_download_headers_for_source_image(
+                    source_image_url=source_image_url,
+                    callback_url=callback_url,
+                ),
+            )
             response.raise_for_status()
+            _require_image_response_content_type(response.headers.get("content-type"))
             suffix = _pick_file_suffix(source_image_url, response.headers.get("content-type"))
             local_path = self._inputs_dir / f"{worker_job_id}{suffix}"
             local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,7 +338,7 @@ class ComfyUILTXVExecutorAdapter:
             shutil.copyfile(frame_paths[frame_index], target)
 
         cmd = [
-            "ffmpeg",
+            settings.WORKER_FFMPEG_BIN,
             "-y",
             "-framerate",
             str(max(1.0, fps)),
@@ -369,7 +415,11 @@ class ComfyUILTXVExecutorAdapter:
         source_image_url = str(row.get("source_image_url") or "").strip()
         if not source_image_url:
             raise RuntimeError("Worker job is missing source_image_url")
-        local_source = await self._download_source_image(worker_job_id, source_image_url)
+        local_source = await self._download_source_image(
+            worker_job_id,
+            source_image_url,
+            callback_url=str(row.get("callback_url") or "").strip(),
+        )
         uploaded_image_name = await self._client.upload_image(
             local_source,
             filename=local_source.name,
