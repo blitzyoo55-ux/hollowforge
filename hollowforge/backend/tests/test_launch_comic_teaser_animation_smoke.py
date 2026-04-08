@@ -14,6 +14,8 @@ REQUIRED_SUMMARY_MARKERS = (
     "generation_id:",
     "preset_id:",
     "animation_job_id:",
+    "animation_shot_id:",
+    "animation_shot_variant_id:",
     "output_path:",
     "teaser_success:",
     "overall_success:",
@@ -410,7 +412,7 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
         launch_kwargs.update(kwargs)
         return "anim-job-3"
 
-    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
+    monkeypatch.setattr(module, "_launch_job", fake_launch_job)
     monkeypatch.setattr(
         module.animation_smoke,
         "_poll_job",
@@ -437,6 +439,13 @@ def test_main_succeeds_with_resolved_source_asset_and_completed_mp4_output(
         "generation_id": "gen-3",
         "request_overrides": {},
         "dispatch_immediately": True,
+        "comic_context": {
+            "episode_id": "episode-3",
+            "scene_panel_id": "panel-3",
+            "selected_render_asset_id": "asset-3",
+            "generation_id": "gen-3",
+            "storage_path": "comics/previews/panel-03.png",
+        },
     }
 
 
@@ -489,6 +498,13 @@ def test_main_reruns_after_reconciled_stale_failure_precondition_with_new_job_id
             "generation_id": "gen-stale",
             "request_overrides": {},
             "dispatch_immediately": True,
+            "comic_context": {
+                "episode_id": "episode-stale-failed",
+                "scene_panel_id": "panel-stale",
+                "selected_render_asset_id": "asset-stale",
+                "generation_id": "gen-stale",
+                "storage_path": "comics/previews/panel-stale.png",
+            },
         }
         return rerun_animation_job_id
 
@@ -506,7 +522,7 @@ def test_main_reruns_after_reconciled_stale_failure_precondition_with_new_job_id
     assert stale_animation_job["error_message"] is None
     reconcile_stale_animation_job()
     monkeypatch.setattr(module, "_resolve_source_asset", fake_resolve_source_asset)
-    monkeypatch.setattr(module.animation_smoke, "_launch_job", fake_launch_job)
+    monkeypatch.setattr(module, "_launch_job", fake_launch_job)
     monkeypatch.setattr(module.animation_smoke, "_poll_job", fake_poll_job)
     monkeypatch.setattr(
         sys,
@@ -565,7 +581,7 @@ def test_main_rejects_completed_animation_output_that_is_not_mp4(
             "storage_path": "comics/previews/panel-cli.png",
         },
     )
-    monkeypatch.setattr(module.animation_smoke, "_launch_job", lambda **_: "anim-job-cli")
+    monkeypatch.setattr(module, "_launch_job", lambda **_: "anim-job-cli")
     monkeypatch.setattr(
         module.animation_smoke,
         "_poll_job",
@@ -617,7 +633,7 @@ def test_main_rejects_missing_local_mp4_output_file(monkeypatch, capsys, tmp_pat
             "storage_path": "comics/previews/panel-missing-file.png",
         },
     )
-    monkeypatch.setattr(module.animation_smoke, "_launch_job", lambda **_: "anim-job-missing")
+    monkeypatch.setattr(module, "_launch_job", lambda **_: "anim-job-missing")
     monkeypatch.setattr(
         module.animation_smoke,
         "_poll_job",

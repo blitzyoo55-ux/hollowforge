@@ -1717,6 +1717,9 @@ class AnimationReconciliationResponse(BaseModel):
 class AnimationPresetLaunchRequest(BaseModel):
     candidate_id: Optional[str] = None
     generation_id: Optional[str] = None
+    episode_id: Optional[str] = None
+    scene_panel_id: Optional[str] = None
+    selected_render_asset_id: Optional[str] = None
     publish_job_id: Optional[str] = None
     executor_mode: Optional[AnimationExecutorMode] = None
     executor_key: Optional[str] = None
@@ -1737,6 +1740,8 @@ class AnimationPresetLaunchResponse(BaseModel):
     animation_job: AnimationJobResponse
     dispatch: Optional[AnimationJobDispatchResponse] = None
     dispatch_error: Optional[str] = None
+    animation_shot_id: Optional[str] = None
+    animation_shot_variant_id: Optional[str] = None
 
 
 class AnimationShotResponse(BaseModel):

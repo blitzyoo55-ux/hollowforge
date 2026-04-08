@@ -11,8 +11,14 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
+from app.models import ComicEpisodeCreate
 from app.routes import animation as animation_routes
 from app.services import animation_reconciliation_service
+from app.services.animation_shot_registry import (
+    create_animation_shot_variant,
+    resolve_or_create_current_animation_shot,
+)
+from app.services.comic_repository import create_comic_episode
 
 
 def _now() -> str:
@@ -39,6 +45,7 @@ def _insert_animation_job(
     external_job_url: str | None = None,
     output_path: str | None = None,
     error_message: str | None = "stale error",
+    generation_id: str = "gen-ready-1",
     executor_mode: str = "remote_worker",
 ) -> None:
     with sqlite3.connect(temp_db) as conn:
@@ -68,7 +75,7 @@ def _insert_animation_job(
             (
                 job_id,
                 None,
-                "gen-ready-1",
+                generation_id,
                 None,
                 "dreamactor",
                 executor_mode,
@@ -99,10 +106,138 @@ def _fetch_animation_job(temp_db: Path, job_id: str) -> dict[str, object]:
     return dict(row)
 
 
+def _fetch_animation_shot_variant(temp_db: Path, job_id: str) -> dict[str, object]:
+    with sqlite3.connect(temp_db) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM animation_shot_variants WHERE animation_job_id = ?",
+            (job_id,),
+        ).fetchone()
+    assert row is not None
+    return dict(row)
+
+
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(animation_routes.router)
     return app
+
+
+async def _seed_comic_shot_context(
+    temp_db: Path,
+    *,
+    episode_id: str,
+    scene_panel_id: str,
+    selected_asset_id: str,
+    generation_id: str = "gen-ready-1",
+    job_id: str = "anim-job-linked",
+    external_job_id: str | None = None,
+    external_job_url: str | None = None,
+    job_status: str = "queued",
+    variant_status: str | None = None,
+) -> tuple[str, str]:
+    episode = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title=f"Shot Link {episode_id}",
+            synopsis="Seed comic shot linkage for animation tests.",
+            target_output="oneshot_manga",
+        ),
+        episode_id=episode_id,
+    )
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO comic_episode_scenes (
+                id,
+                episode_id,
+                scene_no,
+                premise,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"{episode_id}_scene",
+                episode.id,
+                1,
+                "Seeded shot linkage scene.",
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_scene_panels (
+                id,
+                episode_scene_id,
+                panel_no,
+                panel_type,
+                reading_order,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                scene_panel_id,
+                f"{episode_id}_scene",
+                1,
+                "beat",
+                1,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                selected_asset_id,
+                scene_panel_id,
+                generation_id,
+                "selected",
+                "[]",
+                1,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+
+    shot = await resolve_or_create_current_animation_shot(
+        episode_id=episode.id,
+        scene_panel_id=scene_panel_id,
+        selected_render_asset_id=selected_asset_id,
+        generation_id=generation_id,
+    )
+    _insert_animation_job(
+        temp_db,
+        job_id=job_id,
+        status=job_status,
+        external_job_id=external_job_id or f"worker-{job_id}",
+        external_job_url=external_job_url or f"https://worker.test/jobs/{job_id}",
+        generation_id=generation_id,
+    )
+    variant = await create_animation_shot_variant(
+        animation_shot_id=shot.id,
+        animation_job_id=job_id,
+        preset_id="sdxl_ipadapter_microanim_v2",
+        launch_reason="initial",
+        status=variant_status or job_status,
+    )
+    return shot.id, variant.id
 
 
 class _FakeComfyUIClient:
@@ -602,12 +737,15 @@ async def test_reconcile_stale_animation_jobs_marks_failed_worker_rows_failed(
     temp_db: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _insert_animation_job(
+    await _seed_comic_shot_context(
         temp_db,
+        episode_id="comic_ep_shot_registry_reconcile_failed",
+        scene_panel_id="comic_panel_shot_registry_reconcile_failed_1",
+        selected_asset_id="comic_asset_shot_registry_reconcile_failed_1",
         job_id="anim-job-failed",
-        status="processing",
         external_job_id="worker-job-failed",
-        external_job_url="https://worker.test/jobs/worker-job-failed",
+        job_status="processing",
+        variant_status="processing",
     )
     monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
     monkeypatch.setattr(settings, "ANIMATION_WORKER_API_TOKEN", "worker-token")
@@ -637,6 +775,9 @@ async def test_reconcile_stale_animation_jobs_marks_failed_worker_rows_failed(
     row = _fetch_animation_job(temp_db, "anim-job-failed")
     assert row["status"] == "failed"
     assert row["error_message"] == "worker crashed"
+    variant_row = _fetch_animation_shot_variant(temp_db, "anim-job-failed")
+    assert variant_row["status"] == "failed"
+    assert variant_row["error_message"] == "worker crashed"
 
 
 @pytest.mark.asyncio
@@ -644,13 +785,15 @@ async def test_reconcile_stale_animation_jobs_mirrors_completed_worker_output_pa
     temp_db: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _insert_animation_job(
+    await _seed_comic_shot_context(
         temp_db,
+        episode_id="comic_ep_shot_registry_reconcile_completed",
+        scene_panel_id="comic_panel_shot_registry_reconcile_completed_1",
+        selected_asset_id="comic_asset_shot_registry_reconcile_completed_1",
         job_id="anim-job-completed",
-        status="submitted",
         external_job_id="worker-job-completed",
-        external_job_url="https://worker.test/jobs/worker-job-completed",
-        error_message="stale error",
+        job_status="submitted",
+        variant_status="submitted",
     )
     monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
     monkeypatch.setattr(settings, "ANIMATION_WORKER_API_TOKEN", "")
@@ -675,6 +818,10 @@ async def test_reconcile_stale_animation_jobs_mirrors_completed_worker_output_pa
     assert row["status"] == "completed"
     assert row["output_path"] == "outputs/example.mp4"
     assert row["error_message"] is None
+    variant_row = _fetch_animation_shot_variant(temp_db, "anim-job-completed")
+    assert variant_row["status"] == "completed"
+    assert variant_row["output_path"] == "outputs/example.mp4"
+    assert variant_row["error_message"] is None
 
 
 @pytest.mark.asyncio
@@ -822,12 +969,15 @@ async def test_reconcile_stale_animation_jobs_mirrors_cancelled_worker_rows(
     temp_db: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _insert_animation_job(
+    await _seed_comic_shot_context(
         temp_db,
+        episode_id="comic_ep_shot_registry_reconcile_cancelled",
+        scene_panel_id="comic_panel_shot_registry_reconcile_cancelled_1",
+        selected_asset_id="comic_asset_shot_registry_reconcile_cancelled_1",
         job_id="anim-job-cancelled",
-        status="queued",
         external_job_id="worker-job-cancelled",
-        error_message="stale error",
+        job_status="queued",
+        variant_status="queued",
     )
     monkeypatch.setattr(settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
     _install_fake_client(
@@ -846,6 +996,8 @@ async def test_reconcile_stale_animation_jobs_mirrors_cancelled_worker_rows(
     assert result["cancelled"] == 1
     row = _fetch_animation_job(temp_db, "anim-job-cancelled")
     assert row["status"] == "cancelled"
+    variant_row = _fetch_animation_shot_variant(temp_db, "anim-job-cancelled")
+    assert variant_row["status"] == "cancelled"
 
 
 async def _post_animation_callback(
@@ -864,6 +1016,46 @@ async def _post_animation_callback(
             headers={"Authorization": f"Bearer {token}"},
             json=payload,
         )
+
+
+@pytest.mark.asyncio
+async def test_animation_callback_non_terminal_does_not_mutate_linked_variant(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "anim-job-non-terminal"
+    await _seed_comic_shot_context(
+        temp_db,
+        episode_id="comic_ep_shot_registry_callback",
+        scene_panel_id="comic_panel_shot_registry_callback_1",
+        selected_asset_id="comic_asset_shot_registry_callback_1",
+        job_id=job_id,
+        job_status="queued",
+        variant_status="queued",
+    )
+    monkeypatch.setattr(settings, "ANIMATION_CALLBACK_TOKEN", "animation-secret")
+
+    submitted = await _post_animation_callback(
+        job_id,
+        {
+            "status": "submitted",
+            "external_job_id": "worker-job-submitted",
+            "external_job_url": "https://worker.test/jobs/worker-job-submitted",
+            "request_json": {"worker": {"attempt": 1}},
+        },
+        token="animation-secret",
+    )
+
+    assert submitted.status_code == 200
+    body = submitted.json()
+    assert body["status"] == "submitted"
+
+    job_row = _fetch_animation_job(temp_db, job_id)
+    variant_row = _fetch_animation_shot_variant(temp_db, job_id)
+    assert job_row["status"] == "submitted"
+    assert variant_row["status"] == "queued"
+    assert variant_row["output_path"] is None
+    assert variant_row["error_message"] is None
 
 
 @pytest.mark.asyncio
@@ -1167,3 +1359,45 @@ async def test_reconcile_stale_animation_jobs_route_maps_service_failure(
         response = await client.post("/api/v1/animation/reconcile-stale")
 
     assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_launch_animation_preset_creates_shot_variant_for_selected_render(
+    temp_db: Path,
+) -> None:
+    await _seed_comic_shot_context(
+        temp_db,
+        episode_id="comic_ep_shot_registry_launch",
+        scene_panel_id="comic_panel_shot_registry_launch_1",
+        selected_asset_id="comic_asset_shot_registry_launch_1",
+        job_id="anim-job-launch",
+        job_status="queued",
+        variant_status="queued",
+    )
+
+    app = _build_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/animation/presets/sdxl_ipadapter_microanim_v2/launch",
+            json={
+                "generation_id": "gen-ready-1",
+                "dispatch_immediately": False,
+                "episode_id": "comic_ep_shot_registry_launch",
+                "scene_panel_id": "comic_panel_shot_registry_launch_1",
+                "selected_render_asset_id": "comic_asset_shot_registry_launch_1",
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["animation_shot_id"]
+    assert body["animation_shot_variant_id"]
+    assert body["animation_job"]["status"] == "queued"
+
+    variant_row = _fetch_animation_shot_variant(temp_db, body["animation_job"]["id"])
+    assert variant_row["animation_job_id"] == body["animation_job"]["id"]
+    assert variant_row["preset_id"] == "sdxl_ipadapter_microanim_v2"
+    assert variant_row["status"] == "queued"

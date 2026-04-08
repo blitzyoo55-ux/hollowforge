@@ -175,6 +175,26 @@ def _require_source_asset_mapping(payload: Any) -> dict[str, Any]:
     return dict(payload)
 
 
+def _normalize_launch_result(launch_result: Any) -> dict[str, str]:
+    if isinstance(launch_result, Mapping):
+        job_id = str(
+            launch_result.get("animation_job_id") or launch_result.get("job_id") or ""
+        ).strip()
+        return {
+            "animation_job_id": job_id,
+            "animation_shot_id": str(launch_result.get("animation_shot_id") or "").strip(),
+            "animation_shot_variant_id": str(
+                launch_result.get("animation_shot_variant_id") or ""
+            ).strip(),
+        }
+
+    return {
+        "animation_job_id": str(launch_result or "").strip(),
+        "animation_shot_id": "",
+        "animation_shot_variant_id": "",
+    }
+
+
 def _extract_preset_id_from_argv(argv: list[str]) -> str:
     preset_parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
     preset_parser.add_argument("--preset-id", default=DEFAULT_PRESET_ID)
@@ -195,10 +215,59 @@ def _build_summary(*, preset_id: str) -> dict[str, Any]:
         "generation_id": "",
         "preset_id": preset_id,
         "animation_job_id": "",
+        "animation_shot_id": "",
+        "animation_shot_variant_id": "",
         "output_path": "",
         "teaser_success": False,
         "overall_success": False,
         "failed_step": "bootstrap",
+    }
+
+
+def _launch_job(
+    *,
+    base_url: str,
+    preset_id: str,
+    generation_id: str,
+    request_overrides: dict[str, Any],
+    dispatch_immediately: bool,
+    comic_context: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    payload = {
+        "generation_id": generation_id,
+        "dispatch_immediately": dispatch_immediately,
+        "request_overrides": request_overrides,
+    }
+    if comic_context is not None:
+        episode_id = str(comic_context.get("episode_id") or "").strip()
+        scene_panel_id = str(comic_context.get("scene_panel_id") or "").strip()
+        selected_render_asset_id = str(
+            comic_context.get("selected_render_asset_id") or comic_context.get("id") or ""
+        ).strip()
+        if episode_id:
+            payload["episode_id"] = episode_id
+        if scene_panel_id:
+            payload["scene_panel_id"] = scene_panel_id
+        if selected_render_asset_id:
+            payload["selected_render_asset_id"] = selected_render_asset_id
+
+    response = animation_smoke._request_json(
+        "POST",
+        f"{base_url.rstrip('/')}/api/v1/animation/presets/{preset_id}/launch",
+        payload,
+    )
+    preset = response.get("preset") or {}
+    job = response.get("animation_job") or {}
+    print("launch_result:")
+    print(f"preset_id: {preset.get('id')}")
+    animation_smoke._print_job_summary(job)
+    job_id = str(job.get("id") or "").strip()
+    if not job_id:
+        raise RuntimeError("Launch response did not include animation job id")
+    return {
+        "animation_job_id": job_id,
+        "animation_shot_id": str(response.get("animation_shot_id") or "").strip(),
+        "animation_shot_variant_id": str(response.get("animation_shot_variant_id") or "").strip(),
     }
 
 
@@ -261,20 +330,24 @@ def main() -> int:
         _validate_source_asset(source_asset)
         summary["failed_step"] = "launch"
         with contextlib.redirect_stdout(io.StringIO()):
-            animation_job_id = animation_smoke._launch_job(
+            launch_result = _launch_job(
                 base_url=args.base_url,
                 preset_id=args.preset_id,
                 generation_id=summary["generation_id"],
                 request_overrides={},
                 dispatch_immediately=True,
+                comic_context=source_asset,
             )
-        summary["animation_job_id"] = animation_job_id
+        launch_result = _normalize_launch_result(launch_result)
+        summary["animation_job_id"] = launch_result["animation_job_id"]
+        summary["animation_shot_id"] = launch_result["animation_shot_id"]
+        summary["animation_shot_variant_id"] = launch_result["animation_shot_variant_id"]
 
         summary["failed_step"] = "poll"
         with contextlib.redirect_stdout(io.StringIO()):
             final_job = animation_smoke._poll_job(
                 base_url=args.base_url,
-                job_id=animation_job_id,
+                job_id=summary["animation_job_id"],
                 poll_sec=args.poll_sec,
                 timeout_sec=args.timeout_sec,
             )

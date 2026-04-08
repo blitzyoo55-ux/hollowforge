@@ -10,6 +10,7 @@ import httpx
 
 from app.config import settings
 from app.db import get_db
+from app.services.animation_shot_registry import update_animation_shot_variant_from_job
 from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
 _JOB_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
@@ -227,6 +228,7 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                     next_status="failed",
                     next_error_message="Worker restarted",
                 )
+                await update_animation_shot_variant_from_job(current["id"])
                 summary["updated"] += 1
                 summary["failed_restart"] += 1
                 continue
@@ -250,6 +252,7 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                     next_output_path=normalized_output_path,
                     next_error_message=None,
                 )
+                await update_animation_shot_variant_from_job(current["id"])
                 summary["updated"] += 1
                 summary["completed"] += 1
                 continue
@@ -261,6 +264,7 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                     next_status="cancelled",
                     next_error_message=None,
                 )
+                await update_animation_shot_variant_from_job(current["id"])
                 summary["updated"] += 1
                 summary["cancelled"] += 1
                 continue
@@ -275,6 +279,7 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                     next_status="failed",
                     next_error_message=worker_error_message,
                 )
+                await update_animation_shot_variant_from_job(current["id"])
                 summary["updated"] += 1
                 continue
 
@@ -284,6 +289,7 @@ async def reconcile_stale_animation_jobs() -> dict[str, int]:
                 next_status="failed",
                 next_error_message="Worker restarted",
             )
+            await update_animation_shot_variant_from_job(current["id"])
             summary["updated"] += 1
             summary["failed_restart"] += 1
 

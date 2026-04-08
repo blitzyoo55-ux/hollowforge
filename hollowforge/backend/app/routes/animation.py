@@ -27,6 +27,11 @@ from app.services.animation_dispatch_service import (
     AnimationDispatchError,
     dispatch_to_remote_worker,
 )
+from app.services.animation_shot_registry import (
+    create_animation_shot_variant,
+    resolve_or_create_current_animation_shot,
+    update_animation_shot_variant_from_job,
+)
 from app.services.animation_reconciliation_service import reconcile_stale_animation_jobs
 from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
@@ -490,6 +495,79 @@ async def _require_animation_job(job_id: str) -> dict[str, Any]:
     return row
 
 
+def _launch_comic_shot_context_is_present(payload: AnimationPresetLaunchRequest) -> bool:
+    return any(
+        value is not None
+        for value in (
+            payload.episode_id,
+            payload.scene_panel_id,
+            payload.selected_render_asset_id,
+        )
+    )
+
+
+async def _link_launch_to_comic_shot(
+    *,
+    preset_id: str,
+    launch_job: AnimationJobResponse,
+    payload: AnimationPresetLaunchRequest,
+) -> tuple[str | None, str | None]:
+    if not _launch_comic_shot_context_is_present(payload):
+        return None, None
+
+    missing_fields = [
+        field_name
+        for field_name, value in (
+            ("episode_id", payload.episode_id),
+            ("scene_panel_id", payload.scene_panel_id),
+            ("selected_render_asset_id", payload.selected_render_asset_id),
+        )
+        if not value
+    ]
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="episode_id, scene_panel_id, and selected_render_asset_id are required for comic shot linkage",
+        )
+
+    selected_generation_id = str(launch_job.generation_id or payload.generation_id or "").strip()
+    if not selected_generation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="generation_id is required for comic shot linkage",
+        )
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT 1
+            FROM animation_shots
+            WHERE selected_render_asset_id = ?
+            LIMIT 1
+            """,
+            (payload.selected_render_asset_id,),
+        )
+        existing_shot = await cursor.fetchone()
+
+    current_shot = await resolve_or_create_current_animation_shot(
+        episode_id=payload.episode_id,
+        scene_panel_id=payload.scene_panel_id,
+        selected_render_asset_id=payload.selected_render_asset_id,
+        generation_id=selected_generation_id,
+    )
+    variant = await create_animation_shot_variant(
+        animation_shot_id=current_shot.id,
+        animation_job_id=launch_job.id,
+        preset_id=preset_id,
+        launch_reason="rerun" if existing_shot is not None else "initial",
+        status=launch_job.status,
+        output_path=launch_job.output_path,
+        error_message=launch_job.error_message,
+        completed_at=launch_job.completed_at,
+    )
+    return current_shot.id, variant.id
+
+
 async def _apply_animation_job_update(
     db: Any,
     current: dict[str, Any],
@@ -593,6 +671,9 @@ async def _apply_animation_job_update(
             clip_ready_path = next_output_path.strip()
         elif isinstance(next_external_job_url, str) and next_external_job_url.strip():
             clip_ready_path = next_external_job_url.strip()
+    if next_status in {"completed", "failed", "cancelled"}:
+        await update_animation_shot_variant_from_job(current["id"])
+
     if clip_ready_path is not None:
         await mark_shot_clip_ready_for_completed_job(
             animation_job_id=current["id"],
@@ -853,11 +934,30 @@ async def launch_animation_preset(
             detail = exc.detail
             dispatch_error = detail if isinstance(detail, str) else str(detail)
 
+    final_job = dispatch_result.animation_job if dispatch_result else created_job
+    animation_shot_id: str | None = None
+    animation_shot_variant_id: str | None = None
+    try:
+        animation_shot_id, animation_shot_variant_id = await _link_launch_to_comic_shot(
+            preset_id=preset_id,
+            launch_job=final_job,
+            payload=payload,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to link animation launch to comic shot",
+        ) from exc
+
     return AnimationPresetLaunchResponse(
         preset=preset,
-        animation_job=dispatch_result.animation_job if dispatch_result else created_job,
+        animation_job=final_job,
         dispatch=dispatch_result,
         dispatch_error=dispatch_error,
+        animation_shot_id=animation_shot_id,
+        animation_shot_variant_id=animation_shot_variant_id,
     )
 
 
