@@ -506,14 +506,11 @@ def _launch_comic_shot_context_is_present(payload: AnimationPresetLaunchRequest)
     )
 
 
-async def _link_launch_to_comic_shot(
-    *,
-    preset_id: str,
-    launch_job: AnimationJobResponse,
+def _require_comic_shot_launch_context(
     payload: AnimationPresetLaunchRequest,
-) -> tuple[str | None, str | None]:
+) -> tuple[str, str, str, str] | None:
     if not _launch_comic_shot_context_is_present(payload):
-        return None, None
+        return None
 
     missing_fields = [
         field_name
@@ -530,12 +527,36 @@ async def _link_launch_to_comic_shot(
             detail="episode_id, scene_panel_id, and selected_render_asset_id are required for comic shot linkage",
         )
 
-    selected_generation_id = str(launch_job.generation_id or payload.generation_id or "").strip()
+    selected_generation_id = str(payload.generation_id or "").strip()
     if not selected_generation_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="generation_id is required for comic shot linkage",
         )
+
+    return (
+        str(payload.episode_id or "").strip(),
+        str(payload.scene_panel_id or "").strip(),
+        str(payload.selected_render_asset_id or "").strip(),
+        selected_generation_id,
+    )
+
+
+async def _link_launch_to_comic_shot(
+    *,
+    preset_id: str,
+    launch_job: AnimationJobResponse,
+    payload: AnimationPresetLaunchRequest,
+    comic_shot_launch_context: tuple[str, str, str, str] | None = None,
+) -> tuple[str | None, str | None]:
+    if comic_shot_launch_context is None:
+        comic_shot_launch_context = _require_comic_shot_launch_context(payload)
+    if comic_shot_launch_context is None:
+        return None, None
+
+    episode_id, scene_panel_id, selected_render_asset_id, selected_generation_id = (
+        comic_shot_launch_context
+    )
 
     async with get_db() as db:
         cursor = await db.execute(
@@ -545,14 +566,14 @@ async def _link_launch_to_comic_shot(
             WHERE selected_render_asset_id = ?
             LIMIT 1
             """,
-            (payload.selected_render_asset_id,),
+            (selected_render_asset_id,),
         )
         existing_shot = await cursor.fetchone()
 
     current_shot = await resolve_or_create_current_animation_shot(
-        episode_id=payload.episode_id,
-        scene_panel_id=payload.scene_panel_id,
-        selected_render_asset_id=payload.selected_render_asset_id,
+        episode_id=episode_id,
+        scene_panel_id=scene_panel_id,
+        selected_render_asset_id=selected_render_asset_id,
         generation_id=selected_generation_id,
     )
     variant = await create_animation_shot_variant(
@@ -910,6 +931,7 @@ async def launch_animation_preset(
     payload: AnimationPresetLaunchRequest,
 ) -> AnimationPresetLaunchResponse:
     preset = _get_animation_preset_or_404(preset_id)
+    comic_shot_launch_context = _require_comic_shot_launch_context(payload)
     request_json = _build_preset_request_json(preset, payload.request_overrides)
 
     created_job = await create_animation_job(
@@ -942,6 +964,7 @@ async def launch_animation_preset(
             preset_id=preset_id,
             launch_job=final_job,
             payload=payload,
+            comic_shot_launch_context=comic_shot_launch_context,
         )
     except HTTPException:
         raise

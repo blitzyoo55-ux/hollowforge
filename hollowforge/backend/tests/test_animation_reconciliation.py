@@ -117,6 +117,16 @@ def _fetch_animation_shot_variant(temp_db: Path, job_id: str) -> dict[str, objec
     return dict(row)
 
 
+def _count_animation_jobs_by_generation(temp_db: Path, generation_id: str) -> int:
+    with sqlite3.connect(temp_db) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM animation_jobs WHERE generation_id = ?",
+            (generation_id,),
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(animation_routes.router)
@@ -1401,3 +1411,39 @@ async def test_launch_animation_preset_creates_shot_variant_for_selected_render(
     assert variant_row["animation_job_id"] == body["animation_job"]["id"]
     assert variant_row["preset_id"] == "sdxl_ipadapter_microanim_v2"
     assert variant_row["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_launch_animation_preset_rejects_partial_comic_context_without_creating_job(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _build_app()
+    generation_id = "gen-partial-comic-context"
+
+    async def _fail_dispatch(*_: object, **__: object) -> object:
+        raise AssertionError("dispatch should not be called when comic context is invalid")
+
+    monkeypatch.setattr(animation_routes, "dispatch_animation_job", _fail_dispatch)
+
+    before_count = _count_animation_jobs_by_generation(temp_db, generation_id)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/animation/presets/sdxl_ipadapter_microanim_v2/launch",
+            json={
+                "generation_id": generation_id,
+                "dispatch_immediately": True,
+                "episode_id": "comic_ep_partial_context",
+                "scene_panel_id": "comic_panel_partial_context_1",
+            },
+        )
+
+    after_count = _count_animation_jobs_by_generation(temp_db, generation_id)
+
+    assert response.status_code == 400
+    assert before_count == 0
+    assert after_count == 0
+    assert "required for comic shot linkage" in response.json()["detail"]
