@@ -7,6 +7,7 @@ from pathlib import Path
 
 _APP_DIR = Path(__file__).resolve().parent
 _WORKER_DIR = _APP_DIR.parent
+_HOLLOWFORGE_DIR = _WORKER_DIR.parent
 
 
 def _load_env_file(path: Path) -> None:
@@ -28,6 +29,11 @@ _load_env_file(_WORKER_DIR / ".env")
 
 class Settings:
     WORKER_API_TOKEN: str = os.getenv("WORKER_API_TOKEN", "").strip()
+    WORKER_CF_ACCESS_CLIENT_ID: str = os.getenv("WORKER_CF_ACCESS_CLIENT_ID", "").strip()
+    WORKER_CF_ACCESS_CLIENT_SECRET: str = os.getenv(
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "",
+    ).strip()
     WORKER_EXECUTOR_BACKEND: str = os.getenv(
         "WORKER_EXECUTOR_BACKEND",
         "stub",
@@ -82,7 +88,7 @@ class Settings:
     WORKER_COMFYUI_IMAGE_COMPRESSION: int = int(
         os.getenv("WORKER_COMFYUI_IMAGE_COMPRESSION", "35")
     )
-    DATA_DIR: Path = Path(os.getenv("WORKER_DATA_DIR", str(_WORKER_DIR / "data")))
+    DATA_DIR: Path = Path(os.getenv("WORKER_DATA_DIR", str(_HOLLOWFORGE_DIR / "data")))
     DB_PATH: Path = DATA_DIR / "animation_worker.db"
     OUTPUTS_DIR: Path = DATA_DIR / "outputs"
     INPUTS_DIR: Path = DATA_DIR / "inputs"

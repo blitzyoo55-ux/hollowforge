@@ -23,6 +23,7 @@ const BatchImportPage = lazy(() => import('./pages/BatchImportPage'))
 const CurationPage = lazy(() => import('./pages/CurationPage'))
 const DirectionBoard = lazy(() => import('./pages/DirectionBoard'))
 const Marketing = lazy(() => import('./pages/Marketing'))
+const ComicStudio = lazy(() => import('./pages/ComicStudio'))
 const Favorites = lazy(() => import('./pages/Favorites'))
 const ReadyToGo = lazy(() => import('./pages/ReadyToGo'))
 const QualityPage = lazy(() => import('./pages/QualityPage'))
@@ -77,6 +78,7 @@ const navGroups: NavGroup[] = [
       { to: '/direction', label: 'Direction Board', icon: 'compass', leanHidden: true },
       { to: '/seedance', label: 'Seedance', icon: 'video-sparkles' },
       { to: '/sequences', label: 'Sequences', icon: 'layers' },
+      { to: '/comic', label: 'Comic Studio', icon: 'book' },
       { to: '/marketing', label: 'Caption AI', icon: 'wand-sparkles', leanHidden: true },
       { to: '/timeline', label: 'Timeline', icon: 'timeline', leanHidden: true },
       { to: '/settings', label: 'Settings', icon: 'cog' },
@@ -372,6 +374,8 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/seedance" element={<SeedanceStudio />} />
               <Route path="/sequences" element={<SequenceStudio />} />
+              <Route path="/comic" element={<ComicStudio />} />
+              <Route path="/comic-studio" element={<ComicStudio />} />
               <Route path="/quality" element={<QualityPage />} />
               <Route path="/figma-character-board" element={<FigmaCharacterBoard />} />
               <Route path="/marketing" element={<Marketing />} />

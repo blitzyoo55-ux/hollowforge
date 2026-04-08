@@ -18,6 +18,10 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(settings, "IMAGES_DIR", data_dir / "images")
     monkeypatch.setattr(settings, "THUMBS_DIR", data_dir / "thumbs")
     monkeypatch.setattr(settings, "WORKFLOWS_DIR", data_dir / "workflows")
+    monkeypatch.setattr(settings, "COMICS_DIR", data_dir / "comics")
+    monkeypatch.setattr(settings, "COMICS_PREVIEWS_DIR", settings.COMICS_DIR / "previews")
+    monkeypatch.setattr(settings, "COMICS_EXPORTS_DIR", settings.COMICS_DIR / "exports")
+    monkeypatch.setattr(settings, "COMICS_MANIFESTS_DIR", settings.COMICS_DIR / "manifests")
     monkeypatch.setattr(settings, "LEAN_MODE", True)
 
     for path in (
@@ -25,6 +29,10 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         settings.IMAGES_DIR,
         settings.THUMBS_DIR,
         settings.WORKFLOWS_DIR,
+        settings.COMICS_DIR,
+        settings.COMICS_PREVIEWS_DIR,
+        settings.COMICS_EXPORTS_DIR,
+        settings.COMICS_MANIFESTS_DIR,
     ):
         Path(path).mkdir(parents=True, exist_ok=True)
 

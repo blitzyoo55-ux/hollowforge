@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mori.hollowforge.animation-worker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/lab451-animation-worker/run_local_animation_worker.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/lab451-animation-worker</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/lab451-animation-worker/logs/launchd_stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/lab451-animation-worker/logs/launchd_stderr.log</string>
+</dict>
+</plist>

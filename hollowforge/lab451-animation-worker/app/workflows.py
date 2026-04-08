@@ -38,6 +38,15 @@ SDXL_IPADAPTER_REQUIRED_NODES = (
     "VAEDecode",
     "SaveImage",
 )
+SDXL_STILL_REQUIRED_NODES = (
+    "CheckpointLoaderSimple",
+    "CLIPSetLastLayer",
+    "CLIPTextEncode",
+    "EmptyLatentImage",
+    "KSampler",
+    "VAEDecode",
+    "SaveImage",
+)
 
 
 def _normalize_spatial(value: Any, default: int) -> int:
@@ -63,6 +72,13 @@ def _normalize_length(value: Any, default: int) -> int:
 def _float_value(value: Any, default: float) -> float:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_value(value: Any, default: int) -> int:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return default
 
@@ -112,6 +128,26 @@ def _parse_micro_motion_plan(
             ),
         )
         normalized.append((suffix, denoise))
+    return normalized
+
+
+def _parse_loras(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        filename = str(item.get("filename") or item.get("name") or "").strip()
+        if not filename:
+            continue
+        normalized.append(
+            {
+                "filename": filename,
+                "strength": _float_value(item.get("strength"), 1.0),
+            }
+        )
     return normalized
 
 
@@ -271,6 +307,64 @@ class SDXLIPAdapterRequest:
         )
 
 
+@dataclass
+class SDXLStillRequest:
+    prompt: str
+    negative_prompt: str
+    width: int
+    height: int
+    steps: int
+    cfg: float
+    seed: int
+    sampler_name: str
+    scheduler: str
+    checkpoint_name: str
+    clip_skip: int
+    loras: list[dict[str, Any]]
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, Any] | None,
+        *,
+        default_prompt: str,
+        default_checkpoint: str,
+    ) -> "SDXLStillRequest":
+        payload = payload or {}
+        prompt = _compose_prompt(
+            default_prompt=default_prompt,
+            prompt_suffix=str(payload.get("prompt") or ""),
+            inherit_generation_prompt=bool(payload.get("inherit_generation_prompt")),
+        )
+        if not prompt:
+            raise ValueError("Still generation job requires a non-empty prompt")
+        negative_prompt = str(
+            payload.get("negative_prompt") or settings.WORKER_DEFAULT_NEGATIVE_PROMPT
+        ).strip()
+        checkpoint_name = str(
+            payload.get("checkpoint_name") or payload.get("checkpoint") or default_checkpoint
+        ).strip()
+        if not checkpoint_name:
+            raise ValueError("Still generation job requires a checkpoint")
+        return cls(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            width=_normalize_spatial(payload.get("width"), 832),
+            height=_normalize_spatial(payload.get("height"), 1216),
+            steps=max(1, int(payload.get("steps") or 28)),
+            cfg=max(0.0, _float_value(payload.get("cfg"), 5.0)),
+            seed=_int_value(payload.get("seed"), 42),
+            sampler_name=str(
+                payload.get("sampler_name") or payload.get("sampler") or "euler_ancestral"
+            ).strip()
+            or "euler_ancestral",
+            scheduler=str(payload.get("scheduler") or "normal").strip() or "normal",
+            checkpoint_name=checkpoint_name,
+            clip_skip=max(1, _int_value(payload.get("clip_skip"), 1)),
+            loras=_parse_loras(payload.get("loras")),
+        )
+
+
 def build_ltxv_2b_fast_workflow(
     *,
     uploaded_image_name: str,
@@ -417,6 +511,122 @@ def build_ltxv_2b_fast_workflow(
         },
     }
     return workflow, "17"
+
+
+def build_sdxl_still_workflow(
+    *,
+    request: SDXLStillRequest,
+    filename_prefix: str,
+) -> tuple[dict[str, Any], str]:
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {
+                "ckpt_name": request.checkpoint_name,
+            },
+        },
+    }
+
+    model_ref = ["1", 0]
+    clip_ref = ["1", 1]
+    next_node = 2
+
+    for lora in request.loras:
+        node_id = str(next_node)
+        workflow[node_id] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": model_ref,
+                "clip": clip_ref,
+                "lora_name": lora["filename"],
+                "strength_model": lora["strength"],
+                "strength_clip": lora["strength"],
+            },
+        }
+        model_ref = [node_id, 0]
+        clip_ref = [node_id, 1]
+        next_node += 1
+
+    if request.clip_skip > 1:
+        clip_skip_node = str(next_node)
+        workflow[clip_skip_node] = {
+            "class_type": "CLIPSetLastLayer",
+            "inputs": {
+                "stop_at_clip_layer": -request.clip_skip,
+                "clip": clip_ref,
+            },
+        }
+        clip_ref = [clip_skip_node, 0]
+        next_node += 1
+
+    positive_node = str(next_node)
+    workflow[positive_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": request.prompt,
+            "clip": clip_ref,
+        },
+    }
+    next_node += 1
+
+    negative_node = str(next_node)
+    workflow[negative_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": request.negative_prompt,
+            "clip": clip_ref,
+        },
+    }
+    next_node += 1
+
+    latent_node = str(next_node)
+    workflow[latent_node] = {
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+            "width": request.width,
+            "height": request.height,
+            "batch_size": 1,
+        },
+    }
+    next_node += 1
+
+    sampler_node = str(next_node)
+    workflow[sampler_node] = {
+        "class_type": "KSampler",
+        "inputs": {
+            "model": model_ref,
+            "seed": request.seed,
+            "steps": request.steps,
+            "cfg": request.cfg,
+            "sampler_name": request.sampler_name,
+            "scheduler": request.scheduler,
+            "positive": [positive_node, 0],
+            "negative": [negative_node, 0],
+            "latent_image": [latent_node, 0],
+            "denoise": 1.0,
+        },
+    }
+    next_node += 1
+
+    decode_node = str(next_node)
+    workflow[decode_node] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [sampler_node, 0],
+            "vae": ["1", 2],
+        },
+    }
+    next_node += 1
+
+    save_node = str(next_node)
+    workflow[save_node] = {
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": [decode_node, 0],
+            "filename_prefix": filename_prefix,
+        },
+    }
+    return workflow, save_node
 
 
 def build_sdxl_ipadapter_frame_workflow(

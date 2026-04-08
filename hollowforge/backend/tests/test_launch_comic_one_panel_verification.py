@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def _load_module():
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "launch_comic_one_panel_verification.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "launch_comic_one_panel_verification",
+        module_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_main_prints_success_markers_for_one_panel_verification(
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _load_module()
+    base_url = "http://127.0.0.1:8000"
+
+    monkeypatch.setattr(
+        module.comic_smoke,
+        "_resolve_character_and_version",
+        lambda **_: (
+            {
+                "id": "char_kaede_ren",
+                "slug": "kaede-ren",
+                "name": "Kaede Ren",
+            },
+            {
+                "id": "charver_kaede_ren_still_v1",
+                "character_id": "char_kaede_ren",
+                "version_name": "Still v1",
+            },
+            [{"id": "char_kaede_ren"}],
+            [{"id": "charver_kaede_ren_still_v1"}],
+        ),
+    )
+
+    async def fake_create_episode(**_: object) -> dict[str, object]:
+        return {
+            "episode": {
+                "id": "comic-verify-1",
+                "character_id": "char_kaede_ren",
+                "character_version_id": "charver_kaede_ren_still_v1",
+                "title": "Comic One Panel Verification",
+            },
+            "scenes": [
+                {
+                    "scene": {"id": "scene-1", "scene_no": 1},
+                    "panels": [{"id": "panel-1", "panel_no": 1}],
+                }
+            ],
+            "pages": [],
+        }
+
+    monkeypatch.setattr(
+        module,
+        "_create_one_panel_verification_episode",
+        fake_create_episode,
+    )
+    monkeypatch.setattr(
+        module.comic_smoke,
+        "_queue_and_select_panel_asset",
+        lambda **_: (
+            {
+                "requested_count": 3,
+                "queued_generation_count": 3,
+                "render_assets": [
+                    {
+                        "id": "asset-1",
+                        "storage_path": "images/panel-1-a.png",
+                        "is_selected": False,
+                    }
+                ],
+            },
+            {
+                "id": "asset-1",
+                "scene_panel_id": "panel-1",
+                "asset_role": "selected",
+                "storage_path": "images/panel-1-a.png",
+                "is_selected": True,
+            },
+            False,
+        ),
+    )
+
+    responses = {
+        ("POST", f"{base_url}/api/v1/comic/panels/panel-1/dialogues/generate"): {
+            "generated_count": 2,
+            "dialogues": [{"id": "dlg-1"}, {"id": "dlg-2"}],
+        },
+        ("POST", f"{base_url}/api/v1/comic/episodes/comic-verify-1/pages/assemble"): {
+            "episode_id": "comic-verify-1",
+            "layout_template_id": "jp_2x2_v1",
+            "pages": [{"id": "page-1", "page_no": 1}],
+            "teaser_handoff_manifest_path": "comics/manifests/comic-verify-1_teaser.json",
+        },
+        ("POST", f"{base_url}/api/v1/comic/episodes/comic-verify-1/pages/export"): {
+            "episode_id": "comic-verify-1",
+            "layout_template_id": "jp_2x2_v1",
+            "pages": [{"id": "page-1", "page_no": 1, "export_state": "exported"}],
+            "export_zip_path": "comics/exports/comic-verify-1_handoff.zip",
+            "teaser_handoff_manifest_path": "comics/manifests/comic-verify-1_teaser.json",
+        },
+    }
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        key = (method, url.split("?", 1)[0])
+        if key not in responses:
+            raise AssertionError(f"Unexpected request: {key!r} payload={payload!r}")
+        return responses[key]
+
+    monkeypatch.setattr(module.comic_smoke, "_request_json", fake_request_json)
+    monkeypatch.setattr(
+        module,
+        "_run_production_dry_run",
+        lambda **_: {
+            "dry_run_success": True,
+            "report_path": "comics/reports/comic-verify-1_dry_run.json",
+            "page_count": 1,
+            "selected_panel_asset_count": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_one_panel_verification.py",
+            "--base-url",
+            base_url,
+        ],
+    )
+
+    assert module.main() == 0
+
+    captured = capsys.readouterr()
+    assert "episode_create_success: true" in captured.out
+    assert "episode_id: comic-verify-1" in captured.out
+    assert "queue_renders_success: true" in captured.out
+    assert "selected_panel_asset_count: 1" in captured.out
+    assert "dialogues_success: true" in captured.out
+    assert "assemble_success: true" in captured.out
+    assert "export_success: true" in captured.out
+    assert "dry_run_success: true" in captured.out
+    assert "overall_success: true" in captured.out
+
+
+def test_main_rejects_remote_backend_urls_for_local_verification(
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _load_module()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_one_panel_verification.py",
+            "--base-url",
+            "https://remote.example.com",
+        ],
+    )
+
+    assert module.main() == 1
+
+    captured = capsys.readouterr()
+    assert "episode_create_success: false" in captured.out
+    assert "failed_step: bootstrap" in captured.out
+    assert "one-panel verification only supports local backend URLs" in captured.out

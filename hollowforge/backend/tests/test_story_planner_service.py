@@ -161,6 +161,52 @@ def test_plan_story_episode_keeps_unresolved_registry_cast_without_fake_display_
     assert "not found" in lead.resolution_note.lower()
 
 
+def test_plan_story_episode_derives_prompt_only_cast_from_story_prompt() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt=(
+                "Hana Seo meets a quiet messenger in the Moonlit Bathhouse "
+                "corridor after closing."
+            ),
+            lane="adult_nsfw",
+        )
+    )
+
+    lead = next(member for member in preview.resolved_cast if member.role == "lead")
+    support = next(member for member in preview.resolved_cast if member.role == "support")
+
+    assert lead.source_type == "freeform"
+    assert lead.character_id is None
+    assert lead.freeform_description is not None
+    assert "Hana Seo" in lead.freeform_description
+    assert support.source_type == "freeform"
+    assert support.freeform_description is not None
+    assert "messenger" in support.freeform_description.lower()
+
+
+def test_plan_story_episode_uses_story_prompt_details_in_brief_and_shots() -> None:
+    preview = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt=(
+                "Hana Seo pauses in the Moonlit Bathhouse corridor after reading "
+                "a cryptic message."
+            ),
+            lane="adult_nsfw",
+            cast=[
+                StoryPlannerCastInput(
+                    role="lead",
+                    source_type="registry",
+                    character_id="hana_seo",
+                )
+            ],
+        )
+    )
+
+    assert "cryptic message" in preview.episode_brief.premise.lower()
+    assert "cryptic message" in preview.shots[0].action.lower()
+    assert "cryptic message" in preview.shots[2].action.lower()
+
+
 @pytest.mark.asyncio
 async def test_queue_story_planner_anchor_batch_includes_continuity_details_in_anchor_prompt() -> None:
     approved_plan = plan_story_episode(
