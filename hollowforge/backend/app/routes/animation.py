@@ -12,6 +12,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, status
 from app.config import settings
 from app.db import get_db
 from app.models import (
+    AnimationCurrentShotResponse,
     AnimationExecutorConfigResponse,
     AnimationJobCallbackPayload,
     AnimationJobCreate,
@@ -29,6 +30,7 @@ from app.services.animation_dispatch_service import (
 )
 from app.services.animation_shot_registry import (
     create_animation_shot_variant,
+    get_current_animation_shot,
     resolve_or_create_current_animation_shot,
     update_animation_shot_variant_from_job,
 )
@@ -738,6 +740,25 @@ async def reconcile_stale_animation_jobs_route() -> AnimationReconciliationRespo
             detail="Failed to reconcile stale animation jobs",
         ) from exc
     return AnimationReconciliationResponse(**summary)
+
+
+@router.get("/shots/current", response_model=AnimationCurrentShotResponse)
+async def get_current_animation_shot_route(
+    scene_panel_id: str,
+    selected_render_asset_id: str,
+    limit: int = Query(default=8, ge=1, le=20),
+) -> AnimationCurrentShotResponse:
+    current_shot = await get_current_animation_shot(
+        scene_panel_id=scene_panel_id,
+        selected_render_asset_id=selected_render_asset_id,
+        limit=limit,
+    )
+    if current_shot.shot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current animation shot not found",
+        )
+    return current_shot
 
 
 @router.get("/presets", response_model=list[AnimationPresetResponse])

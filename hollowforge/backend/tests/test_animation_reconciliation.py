@@ -250,6 +250,95 @@ async def _seed_comic_shot_context(
     return shot.id, variant.id
 
 
+async def _seed_comic_shot_context_without_shot_registry(
+    temp_db: Path,
+    *,
+    episode_id: str,
+    scene_panel_id: str,
+    selected_asset_id: str,
+    generation_id: str = "gen-ready-1",
+) -> None:
+    episode = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title=f"Shot Link {episode_id}",
+            synopsis="Seed comic shot linkage for animation tests.",
+            target_output="oneshot_manga",
+        ),
+        episode_id=episode_id,
+    )
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            INSERT INTO comic_episode_scenes (
+                id,
+                episode_id,
+                scene_no,
+                premise,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"{episode_id}_scene",
+                episode.id,
+                1,
+                "Seeded shot linkage scene.",
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_scene_panels (
+                id,
+                episode_scene_id,
+                panel_no,
+                panel_type,
+                reading_order,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                scene_panel_id,
+                f"{episode_id}_scene",
+                1,
+                "beat",
+                1,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO comic_panel_render_assets (
+                id,
+                scene_panel_id,
+                generation_id,
+                asset_role,
+                bubble_safe_zones,
+                is_selected,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                selected_asset_id,
+                scene_panel_id,
+                generation_id,
+                "selected",
+                "[]",
+                1,
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+
+
 class _FakeComfyUIClient:
     async def close(self) -> None:
         return None
@@ -1369,6 +1458,100 @@ async def test_reconcile_stale_animation_jobs_route_maps_service_failure(
         response = await client.post("/api/v1/animation/reconcile-stale")
 
     assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_get_current_animation_shot_returns_recent_variants_for_selected_render(
+    temp_db: Path,
+) -> None:
+    shot_id, _ = await _seed_comic_shot_context(
+        temp_db,
+        episode_id="comic_ep_current_shot_route",
+        scene_panel_id="comic_panel_current_shot_route_1",
+        selected_asset_id="comic_asset_current_shot_route_1",
+        job_id="anim-job-current-1",
+        job_status="queued",
+        variant_status="queued",
+    )
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-current-2",
+        status="queued",
+        external_job_id="worker-current-2",
+        generation_id="gen-ready-1",
+    )
+    _insert_animation_job(
+        temp_db,
+        job_id="anim-job-current-3",
+        status="queued",
+        external_job_id="worker-current-3",
+        generation_id="gen-ready-1",
+    )
+    await create_animation_shot_variant(
+        animation_shot_id=shot_id,
+        animation_job_id="anim-job-current-2",
+        preset_id="sdxl_ipadapter_microanim_v2",
+        launch_reason="rerun",
+        status="queued",
+    )
+    await create_animation_shot_variant(
+        animation_shot_id=shot_id,
+        animation_job_id="anim-job-current-3",
+        preset_id="sdxl_ipadapter_microanim_v2",
+        launch_reason="rerun",
+        status="queued",
+    )
+
+    app = _build_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/animation/shots/current",
+            params={
+                "scene_panel_id": "comic_panel_current_shot_route_1",
+                "selected_render_asset_id": "comic_asset_current_shot_route_1",
+                "limit": 2,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["shot"]["id"] == shot_id
+    assert body["shot"]["selected_render_asset_id"] == "comic_asset_current_shot_route_1"
+    assert [variant["animation_job_id"] for variant in body["variants"]] == [
+        "anim-job-current-3",
+        "anim-job-current-2",
+    ]
+    assert len(body["variants"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_current_animation_shot_returns_404_when_registry_row_missing(
+    temp_db: Path,
+) -> None:
+    await _seed_comic_shot_context_without_shot_registry(
+        temp_db,
+        episode_id="comic_ep_current_shot_missing",
+        scene_panel_id="comic_panel_current_shot_missing_1",
+        selected_asset_id="comic_asset_current_shot_missing_1",
+    )
+
+    app = _build_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/animation/shots/current",
+            params={
+                "scene_panel_id": "comic_panel_current_shot_missing_1",
+                "selected_render_asset_id": "comic_asset_current_shot_missing_1",
+            },
+        )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
