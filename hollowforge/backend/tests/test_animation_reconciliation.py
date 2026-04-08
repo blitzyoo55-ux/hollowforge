@@ -1104,3 +1104,66 @@ async def test_animation_callback_cancelled_job_ignores_late_completed(
     assert row["external_job_url"] == "https://worker.test/jobs/worker-job-cancelled"
     assert row["error_message"] == "cancelled by operator"
     assert row["request_json"] == '{"worker": {"attempt": 1}}'
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_route_returns_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _build_app()
+
+    async def _fake_reconcile() -> dict[str, int]:
+        return {
+            "checked": 1,
+            "updated": 1,
+            "failed_restart": 1,
+            "completed": 0,
+            "cancelled": 0,
+            "skipped_unreachable": 0,
+        }
+
+    monkeypatch.setattr(
+        animation_routes,
+        "reconcile_stale_animation_jobs",
+        _fake_reconcile,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/api/v1/animation/reconcile-stale")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "checked": 1,
+        "updated": 1,
+        "failed_restart": 1,
+        "completed": 0,
+        "cancelled": 0,
+        "skipped_unreachable": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stale_animation_jobs_route_maps_service_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _build_app()
+
+    async def _raise() -> dict[str, int]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        animation_routes,
+        "reconcile_stale_animation_jobs",
+        _raise,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/api/v1/animation/reconcile-stale")
+
+    assert response.status_code == 500

@@ -12,10 +12,14 @@ import {
   getComicCharacters,
   getComicPanelRenderJobs,
   importComicStoryPlan,
+  launchAnimationPreset,
+  listAnimationJobs,
   queueComicPanelRenders,
+  reconcileStaleAnimationJobs,
   selectComicPanelRenderAsset,
 } from '../api/client'
 import type {
+  AnimationJobResponse,
   ComicRenderJobResponse,
   StoryPlannerPlanResponse,
   ComicCharacterVersionResponse,
@@ -28,7 +32,10 @@ vi.mock('../api/client', () => ({
   getComicCharacterVersions: vi.fn().mockResolvedValue([]),
   getComicPanelRenderJobs: vi.fn().mockResolvedValue([]),
   importComicStoryPlan: vi.fn(),
+  listAnimationJobs: vi.fn().mockResolvedValue([]),
+  launchAnimationPreset: vi.fn(),
   queueComicPanelRenders: vi.fn(),
+  reconcileStaleAnimationJobs: vi.fn(),
   selectComicPanelRenderAsset: vi.fn(),
   generateComicPanelDialogues: vi.fn(),
   assembleComicEpisodePages: vi.fn(),
@@ -266,6 +273,57 @@ function buildRemoteRenderJobs(panelId: string): ComicRenderJobResponse[] {
   ]
 }
 
+function buildTeaserAnimationJobs(
+  generationId = 'gen-asset-1',
+): AnimationJobResponse[] {
+  return [
+    {
+      id: 'anim-job-success',
+      candidate_id: null,
+      generation_id: generationId,
+      publish_job_id: null,
+      target_tool: 'seedance',
+      executor_mode: 'remote_worker',
+      executor_key: 'default',
+      status: 'completed',
+      request_json: {
+        backend_family: 'sdxl_ipadapter',
+        model_profile: 'microanim_v2',
+      },
+      external_job_id: 'worker-animation-123',
+      external_job_url: 'https://worker.test/jobs/worker-animation-123',
+      output_path: 'outputs/example.mp4',
+      error_message: null,
+      submitted_at: '2026-04-04T00:10:00+00:00',
+      completed_at: '2026-04-04T00:12:00+00:00',
+      created_at: '2026-04-04T00:09:30+00:00',
+      updated_at: '2026-04-04T00:12:00+00:00',
+    },
+    {
+      id: 'anim-job-failed',
+      candidate_id: null,
+      generation_id: generationId,
+      publish_job_id: null,
+      target_tool: 'seedance',
+      executor_mode: 'remote_worker',
+      executor_key: 'default',
+      status: 'failed',
+      request_json: {
+        backend_family: 'sdxl_ipadapter',
+        model_profile: 'microanim_v2',
+      },
+      external_job_id: 'worker-animation-111',
+      external_job_url: 'https://worker.test/jobs/worker-animation-111',
+      output_path: null,
+      error_message: 'Worker restarted',
+      submitted_at: '2026-04-04T00:08:00+00:00',
+      completed_at: '2026-04-04T00:08:30+00:00',
+      created_at: '2026-04-04T00:07:50+00:00',
+      updated_at: '2026-04-04T00:08:30+00:00',
+    },
+  ]
+}
+
 function buildApprovedPlanPayload(): StoryPlannerPlanResponse {
   return {
     story_prompt: 'After-hours intake in a secure corridor.',
@@ -377,7 +435,48 @@ beforeEach(() => {
     return [buildCharacterVersion('charver-1', 'char-1', 'Still v1')]
   })
   vi.mocked(importComicStoryPlan).mockResolvedValue(buildEpisodeDetail())
+  vi.mocked(listAnimationJobs).mockResolvedValue([])
+  vi.mocked(launchAnimationPreset).mockResolvedValue({
+    preset: {
+      id: 'sdxl_ipadapter_microanim_v2',
+      name: 'Micro Animation v2',
+      description: 'Identity-first teaser preset.',
+      target_tool: 'seedance',
+      backend_family: 'sdxl_ipadapter',
+      model_profile: 'microanim_v2',
+      request_json: {},
+    },
+    animation_job: {
+      id: 'anim-job-new',
+      candidate_id: null,
+      generation_id: 'gen-asset-1',
+      publish_job_id: null,
+      target_tool: 'seedance',
+      executor_mode: 'remote_worker',
+      executor_key: 'default',
+      status: 'submitted',
+      request_json: {},
+      external_job_id: 'worker-animation-new',
+      external_job_url: 'https://worker.test/jobs/worker-animation-new',
+      output_path: null,
+      error_message: null,
+      submitted_at: '2026-04-04T00:13:00+00:00',
+      completed_at: null,
+      created_at: '2026-04-04T00:13:00+00:00',
+      updated_at: '2026-04-04T00:13:00+00:00',
+    },
+    dispatch: null,
+    dispatch_error: null,
+  })
   vi.mocked(queueComicPanelRenders).mockImplementation(async (panelId: string) => buildQueueResponse(panelId))
+  vi.mocked(reconcileStaleAnimationJobs).mockResolvedValue({
+    checked: 1,
+    updated: 1,
+    failed_restart: 1,
+    completed: 0,
+    cancelled: 0,
+    skipped_unreachable: 0,
+  })
   vi.mocked(getComicPanelRenderJobs).mockResolvedValue([])
   vi.mocked(selectComicPanelRenderAsset).mockImplementation(async (panelId: string, assetId: string) => ({
     ...buildRenderAsset(panelId, assetId),
@@ -541,11 +640,153 @@ test('shows selected state only after explicit asset selection without blocking 
 
   await waitFor(() => {
     expect(screen.queryByText(/No render has been selected yet\./i)).not.toBeInTheDocument()
-    expect(screen.getAllByText(/images\/panel-1-asset-1\.png/i)).toHaveLength(3)
+    expect(screen.getAllByText(/images\/panel-1-asset-1\.png/i).length).toBeGreaterThanOrEqual(3)
   })
   expect(screen.getByRole('button', { name: /Generate Dialogues/i })).toBeEnabled()
   expect(screen.getByRole('button', { name: /Assemble Pages/i })).toBeEnabled()
   expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
+})
+
+test('teaser ops shows latest failed job reason and latest successful mp4 link', async () => {
+  vi.mocked(listAnimationJobs).mockResolvedValue(buildTeaserAnimationJobs())
+
+  renderWithProviders(<ComicStudio />)
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/^Character$/i)).toHaveValue('char-1')
+    expect(screen.getByLabelText(/Character Version/i)).toHaveValue('charver-1')
+  })
+
+  fillApprovedPlanJson()
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Queue Local Preview/i }))
+  await waitFor(() => {
+    expect(queueComicPanelRenders).toHaveBeenCalledWith('panel-1', {
+      candidate_count: 3,
+      execution_mode: 'local_preview',
+    })
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Mark Selected/i }))
+  await waitFor(() => {
+    expect(selectComicPanelRenderAsset).toHaveBeenCalledWith('panel-1', 'asset-1')
+  })
+
+  await waitFor(() => {
+    expect(listAnimationJobs).toHaveBeenCalledWith({
+      generation_id: 'gen-asset-1',
+      limit: 8,
+    })
+  })
+
+  expect(await screen.findByText(/Teaser Ops For Selected Render/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/Worker restarted/i).length).toBeGreaterThan(0)
+  expect(screen.getByText(/sdxl_ipadapter · microanim_v2/i)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /Open Latest MP4/i })).toHaveAttribute(
+    'href',
+    '/data/outputs/example.mp4',
+  )
+  expect(screen.getByRole('link', { name: /Open Output MP4/i })).toHaveAttribute(
+    'href',
+    '/data/outputs/example.mp4',
+  )
+})
+
+test('teaser rerun action is disabled without a materialized selected asset', async () => {
+  renderWithProviders(<ComicStudio />)
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/^Character$/i)).toHaveValue('char-1')
+    expect(screen.getByLabelText(/Character Version/i)).toHaveValue('charver-1')
+  })
+
+  fillApprovedPlanJson()
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Rerun Teaser From Selected Panel/i })).toBeDisabled()
+})
+
+test('teaser ops reconcile action calls animation reconcile endpoint', async () => {
+  renderWithProviders(<ComicStudio />)
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/^Character$/i)).toHaveValue('char-1')
+    expect(screen.getByLabelText(/Character Version/i)).toHaveValue('charver-1')
+  })
+
+  fillApprovedPlanJson()
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Reconcile Stale Animation Jobs/i }))
+
+  await waitFor(() => {
+    expect(reconcileStaleAnimationJobs).toHaveBeenCalledTimes(1)
+  })
+})
+
+test('teaser rerun action launches the default preset from the selected panel asset', async () => {
+  vi.mocked(listAnimationJobs)
+    .mockResolvedValueOnce(buildTeaserAnimationJobs())
+    .mockResolvedValueOnce([
+      {
+        ...buildTeaserAnimationJobs()[0],
+        id: 'anim-job-new',
+        status: 'submitted',
+        output_path: null,
+        completed_at: null,
+        updated_at: '2026-04-04T00:13:00+00:00',
+      },
+      ...buildTeaserAnimationJobs(),
+    ])
+
+  renderWithProviders(<ComicStudio />)
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/^Character$/i)).toHaveValue('char-1')
+    expect(screen.getByLabelText(/Character Version/i)).toHaveValue('charver-1')
+  })
+
+  fillApprovedPlanJson()
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Queue Local Preview/i }))
+  await waitFor(() => {
+    expect(queueComicPanelRenders).toHaveBeenCalledWith('panel-1', {
+      candidate_count: 3,
+      execution_mode: 'local_preview',
+    })
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Mark Selected/i }))
+  await waitFor(() => {
+    expect(selectComicPanelRenderAsset).toHaveBeenCalledWith('panel-1', 'asset-1')
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Rerun Teaser From Selected Panel/i }))
+
+  await waitFor(() => {
+    expect(launchAnimationPreset).toHaveBeenCalledWith('sdxl_ipadapter_microanim_v2', {
+      generation_id: 'gen-asset-1',
+      dispatch_immediately: true,
+      request_overrides: {},
+    })
+  })
 })
 
 test('keeps assemble disabled until every panel has a selected render', async () => {

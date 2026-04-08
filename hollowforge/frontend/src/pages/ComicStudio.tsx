@@ -9,8 +9,13 @@ import {
   getComicCharacters,
   getComicPanelRenderJobs,
   importComicStoryPlan,
+  launchAnimationPreset,
+  listAnimationJobs,
   queueComicPanelRenders,
+  reconcileStaleAnimationJobs,
   selectComicPanelRenderAsset,
+  type AnimationJobResponse,
+  type AnimationReconciliationResponse,
   type StoryPlannerPlanResponse,
   type ComicEpisodeDetailResponse,
   type ComicCharacterVersionResponse,
@@ -27,7 +32,10 @@ import ComicDialogueEditor from '../components/comic/ComicDialogueEditor'
 import ComicEpisodeDraftPanel from '../components/comic/ComicEpisodeDraftPanel'
 import ComicPageAssemblyPanel from '../components/comic/ComicPageAssemblyPanel'
 import ComicPanelBoard, { type ComicPanelRenderStatusSummary } from '../components/comic/ComicPanelBoard'
+import ComicTeaserOpsPanel from '../components/comic/ComicTeaserOpsPanel'
 import { notify } from '../lib/toast'
+
+const DEFAULT_TEASER_PRESET_ID = 'sdxl_ipadapter_microanim_v2'
 
 function getErrorMessage(error: unknown, fallback: string): string {
   const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
@@ -63,6 +71,52 @@ function getComicRenderJobRecency(job: ComicRenderJobResponse): number {
 
 function countPendingComicRenderJobs(renderJobs: ComicRenderJobResponse[]): number {
   return renderJobs.filter((job) => isPendingComicRenderJob(job)).length
+}
+
+function isPendingAnimationJob(job: AnimationJobResponse): boolean {
+  return ['draft', 'queued', 'submitted', 'processing'].includes(job.status)
+}
+
+function getAnimationJobRecency(job: AnimationJobResponse): number {
+  const timestamp = job.completed_at
+    ?? job.updated_at
+    ?? job.submitted_at
+    ?? job.created_at
+  const parsed = Date.parse(timestamp)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function findLatestAnimationJob(
+  jobs: AnimationJobResponse[],
+  predicate: (job: AnimationJobResponse) => boolean,
+): AnimationJobResponse | null {
+  let latestJob: AnimationJobResponse | null = null
+  let latestRecency = -1
+
+  for (const job of jobs) {
+    if (!predicate(job)) continue
+    const recency = getAnimationJobRecency(job)
+    if (recency >= latestRecency) {
+      latestJob = job
+      latestRecency = recency
+    }
+  }
+
+  return latestJob
+}
+
+function resolveAnimationOutputHref(outputPath: string | null): string | null {
+  const trimmed = outputPath?.trim()
+  if (!trimmed) return null
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (trimmed.startsWith('/data/')) return trimmed
+  if (trimmed.startsWith('/')) return `/data${trimmed}`
+  return `/data/${trimmed}`
+}
+
+function isMp4OutputPath(outputPath: string | null): boolean {
+  const trimmed = outputPath?.trim()
+  return Boolean(trimmed && /\.mp4(?:$|\?)/i.test(trimmed))
 }
 
 function sameComicPanelRemoteJobHint(
@@ -449,6 +503,11 @@ export default function ComicStudio() {
   const [layoutTemplateId, setLayoutTemplateId] = useState<ComicPageLayoutTemplateId>('jp_2x2_v1')
   const [manuscriptProfileId, setManuscriptProfileId] = useState<ComicManuscriptProfileId>('jp_manga_rightbound_v1')
   const [exportResult, setExportResult] = useState<ComicPageExportResponse | null>(null)
+  const [latestAnimationReconciliation, setLatestAnimationReconciliation] = useState<AnimationReconciliationResponse | null>(null)
+  const [latestLaunchedTeaserLaunch, setLatestLaunchedTeaserLaunch] = useState<{
+    generationId: string
+    jobId: string
+  } | null>(null)
   const approvedPlanDraft = useMemo(
     () => parseApprovedPlanJson(approvedPlanJson),
     [approvedPlanJson],
@@ -804,6 +863,10 @@ export default function ComicStudio() {
   const selectedPanelHasMaterializedSelectedAsset = selectedPanel
     ? panelHasMaterializedSelectedAsset(selectedPanel.id)
     : false
+  const selectedPanelSelectedAsset = selectedPanel
+    ? (panelAssets[selectedPanel.id] ?? []).find((asset) => asset.is_selected) ?? null
+    : null
+  const selectedPanelSelectedGenerationId = selectedPanelSelectedAsset?.generation_id ?? null
   const selectedPanelHasQueuedRenders = selectedPanel ? (panelAssets[selectedPanel.id]?.length ?? 0) > 0 : false
   const allPanelsHaveMaterializedSelectedAssets = allPanels.length > 0
     && allPanels.every((panel) => panelHasMaterializedSelectedAsset(panel.id))
@@ -830,7 +893,105 @@ export default function ComicStudio() {
       : currentEpisode.pages.length === 0
         ? 'Run page assembly before exporting the handoff ZIP. Layout template = page composition. Manuscript profile = print/handoff intent.'
         : null
+  const teaserReadinessMessage = !selectedPanel
+    ? null
+    : !selectedPanelHasSelectedAsset
+      ? 'Select a winning render for this panel before launching teaser animation.'
+      : !selectedPanelHasMaterializedSelectedAsset
+        ? 'Wait for the selected render file to finish materializing before launching teaser animation.'
+        : !selectedPanelSelectedGenerationId
+          ? 'Selected render is missing a generation id, so teaser rerun is unavailable.'
+          : null
   const selectedDialogues = selectedPanel ? panelDialogues[selectedPanel.id] ?? [] : []
+
+  const selectedPanelTeaserJobsQuery = useQuery({
+    queryKey: ['comic-teaser-jobs', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedGenerationId],
+    queryFn: () => listAnimationJobs({
+      generation_id: selectedPanelSelectedGenerationId!,
+      limit: 8,
+    }),
+    enabled: Boolean(selectedPanelSelectedGenerationId && selectedPanelHasMaterializedSelectedAsset),
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const jobs = (query.state.data as AnimationJobResponse[] | undefined) ?? []
+      return jobs.some((job) => isPendingAnimationJob(job)) ? 2000 : false
+    },
+  })
+
+  const reconcileAnimationMutation = useMutation({
+    mutationFn: () => reconcileStaleAnimationJobs(),
+    onSuccess: (response) => {
+      setLatestAnimationReconciliation(response)
+      void queryClient.invalidateQueries({
+        queryKey: ['comic-teaser-jobs'],
+      })
+      notify.success('Stale animation jobs reconciled')
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to reconcile stale animation jobs'))
+    },
+  })
+
+  const rerunTeaserMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedPanelSelectedGenerationId) {
+        throw new Error('Select a materialized render before launching teaser animation.')
+      }
+      return launchAnimationPreset(DEFAULT_TEASER_PRESET_ID, {
+        generation_id: selectedPanelSelectedGenerationId,
+        dispatch_immediately: true,
+        request_overrides: {},
+      })
+    },
+    onSuccess: (response) => {
+      if (selectedPanelSelectedGenerationId) {
+        setLatestLaunchedTeaserLaunch({
+          generationId: selectedPanelSelectedGenerationId,
+          jobId: response.animation_job.id,
+        })
+      }
+      void queryClient.invalidateQueries({
+        queryKey: ['comic-teaser-jobs', currentEpisodeId, selectedPanel?.id ?? null, selectedPanelSelectedGenerationId],
+      })
+      notify.success(`Teaser rerun launched (${response.animation_job.id})`)
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to launch teaser animation'))
+    },
+  })
+
+  const selectedPanelTeaserJobs = useMemo(
+    () => [...(selectedPanelTeaserJobsQuery.data ?? [])].sort(
+      (left, right) => getAnimationJobRecency(right) - getAnimationJobRecency(left),
+    ),
+    [selectedPanelTeaserJobsQuery.data],
+  )
+  const latestSuccessfulTeaserJob = useMemo(
+    () => findLatestAnimationJob(
+      selectedPanelTeaserJobs,
+      (job) => job.status === 'completed' && isMp4OutputPath(job.output_path),
+    ),
+    [selectedPanelTeaserJobs],
+  )
+  const latestFailedTeaserJob = useMemo(
+    () => findLatestAnimationJob(
+      selectedPanelTeaserJobs,
+      (job) => job.status === 'failed' && Boolean(job.error_message?.trim()),
+    ),
+    [selectedPanelTeaserJobs],
+  )
+  const latestSuccessfulTeaserJobHref = latestSuccessfulTeaserJob
+    ? resolveAnimationOutputHref(latestSuccessfulTeaserJob.output_path)
+    : null
+  const selectedPanelSelectedAssetHref = selectedPanelSelectedAsset
+    ? resolveAnimationOutputHref(selectedPanelSelectedAsset.storage_path)
+    : null
+  const latestLaunchedTeaserJobId = latestLaunchedTeaserLaunch?.generationId === selectedPanelSelectedGenerationId
+    ? latestLaunchedTeaserLaunch.jobId
+    : null
+  const teaserJobsErrorMessage = selectedPanelTeaserJobsQuery.error
+    ? getErrorMessage(selectedPanelTeaserJobsQuery.error, 'Failed to load teaser jobs')
+    : null
   const panelRenderStatuses = Object.fromEntries(
     allPanels.map((panel) => [
       panel.id,
@@ -942,22 +1103,44 @@ export default function ComicStudio() {
           isGenerating={dialogueMutation.isPending}
           onGenerate={(panelId) => dialogueMutation.mutate(panelId)}
         />
+        <div className="space-y-6">
+          <ComicPageAssemblyPanel
+            episode={currentEpisode}
+            layoutTemplateId={layoutTemplateId}
+            manuscriptProfileId={manuscriptProfileId}
+            exportResult={exportResult}
+            canAssemble={canAssemblePages}
+            canExport={canExportPages}
+            readinessMessage={pageAssemblyReadinessMessage}
+            isAssembling={assembleMutation.isPending}
+            isExporting={exportMutation.isPending}
+            onLayoutTemplateChange={setLayoutTemplateId}
+            onManuscriptProfileChange={setManuscriptProfileId}
+            onAssemble={(episodeId) => assembleMutation.mutate(episodeId)}
+            onExport={(episodeId) => exportMutation.mutate(episodeId)}
+          />
 
-        <ComicPageAssemblyPanel
-          episode={currentEpisode}
-          layoutTemplateId={layoutTemplateId}
-          manuscriptProfileId={manuscriptProfileId}
-          exportResult={exportResult}
-          canAssemble={canAssemblePages}
-          canExport={canExportPages}
-          readinessMessage={pageAssemblyReadinessMessage}
-          isAssembling={assembleMutation.isPending}
-          isExporting={exportMutation.isPending}
-          onLayoutTemplateChange={setLayoutTemplateId}
-          onManuscriptProfileChange={setManuscriptProfileId}
-          onAssemble={(episodeId) => assembleMutation.mutate(episodeId)}
-          onExport={(episodeId) => exportMutation.mutate(episodeId)}
-        />
+          <ComicTeaserOpsPanel
+            selectedPanel={selectedPanel}
+            selectedAssetPath={selectedPanelSelectedAsset?.storage_path ?? null}
+            selectedAssetGenerationId={selectedPanelSelectedGenerationId}
+            selectedAssetOutputHref={selectedPanelSelectedAssetHref}
+            jobs={selectedPanelTeaserJobs}
+            jobsErrorMessage={teaserJobsErrorMessage}
+            latestFailedJob={latestFailedTeaserJob}
+            latestSuccessfulJob={latestSuccessfulTeaserJob}
+            latestSuccessfulJobHref={latestSuccessfulTeaserJobHref}
+            latestReconcileSummary={latestAnimationReconciliation}
+            latestLaunchedTeaserJobId={latestLaunchedTeaserJobId}
+            presetId={DEFAULT_TEASER_PRESET_ID}
+            readinessMessage={teaserReadinessMessage}
+            canRerun={Boolean(!teaserReadinessMessage && selectedPanelSelectedGenerationId)}
+            isReconciling={reconcileAnimationMutation.isPending}
+            isRerunning={rerunTeaserMutation.isPending}
+            onReconcile={() => reconcileAnimationMutation.mutate()}
+            onRerun={() => rerunTeaserMutation.mutate()}
+          />
+        </div>
       </div>
     </div>
   )

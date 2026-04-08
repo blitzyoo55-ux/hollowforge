@@ -1705,6 +1705,15 @@ class AnimationPresetResponse(BaseModel):
     request_json: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AnimationReconciliationResponse(BaseModel):
+    checked: int
+    updated: int
+    failed_restart: int
+    completed: int
+    cancelled: int
+    skipped_unreachable: int
+
+
 class AnimationPresetLaunchRequest(BaseModel):
     candidate_id: Optional[str] = None
     generation_id: Optional[str] = None
