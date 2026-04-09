@@ -37,8 +37,8 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
 }
 
 
-def get_character_canon_v2(character_canon_v2_id: str) -> CharacterCanonV2Entry:
-    entry = _CHARACTER_CANON_V2_REGISTRY.get(character_canon_v2_id)
+def get_character_canon_v2(character_id: str) -> CharacterCanonV2Entry:
+    entry = _CHARACTER_CANON_V2_REGISTRY.get(character_id)
     if entry is None:
-        raise ValueError(f"Unknown character canon V2: {character_canon_v2_id}")
+        raise ValueError(f"Unknown character canon V2: {character_id}")
     return entry.model_copy(deep=True)

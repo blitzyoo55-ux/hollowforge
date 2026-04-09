@@ -33,8 +33,8 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
 }
 
 
-def get_series_style_canon(series_style_canon_id: str) -> SeriesStyleCanonEntry:
-    entry = _SERIES_STYLE_CANON_REGISTRY.get(series_style_canon_id)
+def get_series_style_canon(series_style_id: str) -> SeriesStyleCanonEntry:
+    entry = _SERIES_STYLE_CANON_REGISTRY.get(series_style_id)
     if entry is None:
-        raise ValueError(f"Unknown series style canon: {series_style_canon_id}")
+        raise ValueError(f"Unknown series style canon: {series_style_id}")
     return entry.model_copy(deep=True)
