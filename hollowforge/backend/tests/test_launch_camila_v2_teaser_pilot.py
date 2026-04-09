@@ -132,6 +132,36 @@ def test_main_maps_execution_from_series_style_motion_policy(
     ) in requests
 
 
+def test_resolve_selected_render_context_preserves_explicit_selected_render_values() -> None:
+    module = _load_module()
+    episode_detail = {
+        "episode": {
+            "id": "comic-ep-v2-teaser-1",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        }
+    }
+
+    resolved = module._resolve_selected_render_context(
+        episode_detail=episode_detail,
+        selected_scene_panel_id="panel-1",
+        selected_render_asset_id="asset-selected-1",
+        selected_render_generation_id="gen-selected-1",
+        selected_render_asset_storage_path="images/comics/panel-selected-1.png",
+    )
+
+    assert resolved == {
+        "episode_id": "comic-ep-v2-teaser-1",
+        "series_style_id": "camila_pilot_v1",
+        "character_series_binding_id": "camila_pilot_binding_v1",
+        "selected_scene_panel_id": "panel-1",
+        "selected_render_asset_id": "asset-selected-1",
+        "selected_render_generation_id": "gen-selected-1",
+        "selected_render_asset_storage_path": "images/comics/panel-selected-1.png",
+    }
+
+
 def test_main_requires_completed_selected_render_from_v2_episode(
     monkeypatch,
     capsys,
