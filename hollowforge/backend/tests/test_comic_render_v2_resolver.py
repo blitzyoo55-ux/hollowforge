@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
+import pytest
+
 from app.services.comic_render_profiles import ComicPanelRenderProfile
-from app.services.comic_render_v2_resolver import resolve_comic_render_v2_contract
+from app.services.comic_render_v2_resolver import (
+    _BINDING_EXECUTION_REGISTRY,
+    _STYLE_EXECUTION_REGISTRY,
+    resolve_comic_render_v2_contract,
+)
 
 
 def _make_role_profile() -> ComicPanelRenderProfile:
@@ -75,6 +83,19 @@ def test_resolve_comic_render_v2_contract_keeps_positive_and_negative_order_stab
         "Location: artist loft morning",
         "Continuity: Carry over the wet brush on the easel from prior panel.",
     )
+    assert contract.execution_params["positive_merge_sequence"] == (
+        "role",
+        "identity",
+        "style",
+        "binding",
+        "continuity_location",
+    )
+    assert contract.execution_params["negative_merge_sequence"] == (
+        "style_artifacts",
+        "identity_drift",
+        "binding_drift",
+        "role_quality",
+    )
     assert contract.negative_rules == (
         "Avoid style artifacts: over-sharpened outlines, posterized gradients, muddy midtones.",
         (
@@ -109,3 +130,133 @@ def test_resolve_comic_render_v2_contract_applies_execution_precedence() -> None
     assert contract.execution_params["width"] == 960
     assert contract.execution_params["height"] == 1216
     assert contract.execution_params["framing_profile"] == "beat_dialogue_v1"
+
+
+def test_resolve_comic_render_v2_contract_execution_precedence_with_overlapping_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        _STYLE_EXECUTION_REGISTRY,
+        "camila_pilot_v1",
+        {
+            "checkpoint": "custom_checkpoint.safetensors",
+            "loras": (
+                {"filename": "style_lora.safetensors", "strength": 0.11},
+            ),
+            "steps": 99,
+            "cfg": 6.8,
+            "sampler": "ddim",
+            "identity_lock_strength": 0.31,
+            "style_lock_strength": 0.33,
+            "width": 640,
+            "height": 640,
+            "framing_profile": "style_frame",
+            "style_artifact_negative": "Avoid style artifacts: test style value.",
+        },
+    )
+    monkeypatch.setitem(
+        _BINDING_EXECUTION_REGISTRY,
+        "camila_pilot_binding_v1",
+        {
+            "identity_lock_strength": 0.92,
+            "style_lock_strength": 0.88,
+            "width": 1024,
+            "height": 1024,
+            "framing_profile": "binding_frame",
+        },
+    )
+
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="beat",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_role_profile(),
+    )
+
+    # style values stay for style-owned knobs
+    assert contract.execution_params["checkpoint"] == "custom_checkpoint.safetensors"
+    assert contract.execution_params["loras"] == (
+        {"filename": "style_lora.safetensors", "strength": 0.11},
+    )
+    assert contract.execution_params["steps"] == 99
+    assert contract.execution_params["cfg"] == 6.8
+    assert contract.execution_params["sampler"] == "ddim"
+    # binding overrides style on lock strengths
+    assert contract.execution_params["identity_lock_strength"] == 0.92
+    assert contract.execution_params["style_lock_strength"] == 0.88
+    # role profile still overrides for role-owned framing dimensions
+    assert contract.execution_params["width"] == 960
+    assert contract.execution_params["height"] == 1216
+    assert contract.execution_params["framing_profile"] == "beat_dialogue_v1"
+
+
+def test_resolve_comic_render_v2_contract_rejects_panel_type_not_in_role_profile() -> None:
+    with pytest.raises(ValueError, match="panel_type"):
+        resolve_comic_render_v2_contract(
+            character_id="camila_v2",
+            series_style_id="camila_pilot_v1",
+            binding_id="camila_pilot_binding_v1",
+            panel_type="action",
+            location_label=None,
+            continuity_notes=None,
+            role_profile=_make_role_profile(),
+        )
+
+
+def test_resolve_comic_render_v2_contract_fails_without_style_execution_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delitem(_STYLE_EXECUTION_REGISTRY, "camila_pilot_v1", raising=False)
+
+    with pytest.raises(ValueError, match="execution template"):
+        resolve_comic_render_v2_contract(
+            character_id="camila_v2",
+            series_style_id="camila_pilot_v1",
+            binding_id="camila_pilot_binding_v1",
+            panel_type="beat",
+            location_label=None,
+            continuity_notes=None,
+            role_profile=_make_role_profile(),
+        )
+
+
+def test_resolve_comic_render_v2_contract_execution_params_are_deep_immutable_and_copied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    style_payload = {
+        "checkpoint": "immutable_test.safetensors",
+        "loras": [
+            {"filename": "lora_a.safetensors", "strength": 0.5},
+        ],
+        "steps": 30,
+        "cfg": 5.4,
+        "sampler": "euler_a",
+        "style_artifact_negative": "Avoid style artifacts: immutable test.",
+    }
+    monkeypatch.setitem(_STYLE_EXECUTION_REGISTRY, "camila_pilot_v1", style_payload)
+
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="beat",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_role_profile(),
+    )
+
+    assert isinstance(contract.execution_params, MappingProxyType)
+    assert isinstance(contract.execution_params["loras"][0], MappingProxyType)
+
+    style_payload["loras"][0]["strength"] = 0.9
+    style_payload["checkpoint"] = "changed.safetensors"
+    assert contract.execution_params["loras"][0]["strength"] == 0.5
+    assert contract.execution_params["checkpoint"] == "immutable_test.safetensors"
+
+    with pytest.raises(TypeError):
+        contract.execution_params["cfg"] = 7.0
+    with pytest.raises(TypeError):
+        contract.execution_params["loras"][0]["strength"] = 0.7

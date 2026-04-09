@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from types import MappingProxyType
 from typing import Any
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
@@ -19,7 +22,7 @@ class ComicRenderV2Contract(BaseModel):
     style_block: tuple[str, ...]
     binding_block: tuple[str, ...]
     role_block: tuple[str, ...]
-    execution_params: dict[str, Any] = Field(default_factory=dict)
+    execution_params: Any = Field(default_factory=dict)
     negative_rules: tuple[str, ...]
 
 
@@ -70,23 +73,56 @@ _DEFAULT_BINDING_LOCK_STRENGTHS: dict[str, float] = {
     "style_lock_strength": 0.85,
 }
 
-_DEFAULT_STYLE_EXECUTION_TEMPLATE: dict[str, Any] = {
-    "checkpoint": "waiIllustriousSDXL_v160.safetensors",
-    "loras": (),
-    "steps": 30,
-    "cfg": 5.4,
-    "sampler": "euler_a",
-    "style_artifact_negative": (
-        "Avoid style artifacts: over-sharpened outlines, posterized gradients, "
-        "muddy midtones."
-    ),
-}
+_POSITIVE_MERGE_SEQUENCE: tuple[str, ...] = (
+    "role",
+    "identity",
+    "style",
+    "binding",
+    "continuity_location",
+)
+
+_NEGATIVE_MERGE_SEQUENCE: tuple[str, ...] = (
+    "style_artifacts",
+    "identity_drift",
+    "binding_drift",
+    "role_quality",
+)
+
+_REQUIRED_STYLE_EXECUTION_KEYS: tuple[str, ...] = (
+    "checkpoint",
+    "loras",
+    "steps",
+    "cfg",
+    "sampler",
+    "style_artifact_negative",
+)
 
 
 def _resolve_style_execution_params(series_style_id: str) -> dict[str, Any]:
-    resolved = dict(_DEFAULT_STYLE_EXECUTION_TEMPLATE)
-    resolved.update(_STYLE_EXECUTION_REGISTRY.get(series_style_id, {}))
-    return resolved
+    style_execution = _STYLE_EXECUTION_REGISTRY.get(series_style_id)
+    if style_execution is None:
+        raise ValueError(
+            f"Missing style execution template for series style {series_style_id}"
+        )
+
+    missing_keys = [
+        key for key in _REQUIRED_STYLE_EXECUTION_KEYS if key not in style_execution
+    ]
+    if missing_keys:
+        raise ValueError(
+            "Incomplete style execution template for "
+            f"{series_style_id}; missing: {', '.join(missing_keys)}"
+        )
+
+    return deepcopy(style_execution)
+
+
+def _deep_freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _deep_freeze(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_deep_freeze(item) for item in value)
+    return deepcopy(value)
 
 
 def resolve_comic_render_v2_contract(
@@ -99,6 +135,12 @@ def resolve_comic_render_v2_contract(
     continuity_notes: str | None,
     role_profile: ComicPanelRenderProfile,
 ) -> ComicRenderV2Contract:
+    if panel_type not in role_profile.panel_types:
+        raise ValueError(
+            f"panel_type {panel_type} is not allowed for role_profile "
+            f"{role_profile.profile_id}"
+        )
+
     character = get_character_canon_v2(character_id)
     style = get_series_style_canon(series_style_id)
     binding = get_character_series_binding(binding_id)
@@ -135,20 +177,22 @@ def resolve_comic_render_v2_contract(
 
     style_execution = _resolve_style_execution_params(series_style_id)
 
-    # Precedence: style execution params -> binding lock strengths -> role defaults.
+    # Precedence: style execution params -> binding lock strengths -> role constraints.
     execution_params: dict[str, Any] = {
         "checkpoint": style_execution["checkpoint"],
         "loras": style_execution["loras"],
         "steps": style_execution["steps"],
         "cfg": style_execution["cfg"],
         "sampler": style_execution["sampler"],
+        "positive_merge_sequence": _POSITIVE_MERGE_SEQUENCE,
+        "negative_merge_sequence": _NEGATIVE_MERGE_SEQUENCE,
     }
     execution_params.update(
         _BINDING_EXECUTION_REGISTRY.get(binding_id, _DEFAULT_BINDING_LOCK_STRENGTHS)
     )
-    execution_params.setdefault("width", role_profile.width)
-    execution_params.setdefault("height", role_profile.height)
-    execution_params.setdefault("framing_profile", role_profile.profile_id)
+    execution_params["width"] = role_profile.width
+    execution_params["height"] = role_profile.height
+    execution_params["framing_profile"] = role_profile.profile_id
 
     negative_rules = (
         style_execution["style_artifact_negative"],
@@ -157,11 +201,13 @@ def resolve_comic_render_v2_contract(
         f"Role negative: {role_profile.negative_prompt_append}",
     )
 
+    immutable_execution_params = _deep_freeze(execution_params)
+
     return ComicRenderV2Contract(
         identity_block=identity_block,
         style_block=style_block,
         binding_block=binding_block,
         role_block=role_block,
-        execution_params=execution_params,
+        execution_params=immutable_execution_params,
         negative_rules=negative_rules,
     )
