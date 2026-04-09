@@ -57,11 +57,9 @@ def test_filter_anchor_fragments_drops_portrait_bias() -> None:
     fragments = [
         "masterpiece",
         "best quality",
-        "glamorous adult woman",
-        "high-response beauty editorial",
-        "Artist Loft Morning",
-        "room depth",
-        "luminous skin",
+        "brazilian glamour beauty",
+        "warm hazel eyes",
+        "elegant proportions",
     ]
 
     filtered = filter_anchor_fragments(
@@ -69,12 +67,7 @@ def test_filter_anchor_fragments_drops_portrait_bias() -> None:
         anchor_filter_mode="drop_portrait_bias",
     )
 
-    assert filtered == [
-        "masterpiece",
-        "best quality",
-        "Artist Loft Morning",
-        "room depth",
-    ]
+    assert filtered == ["masterpiece", "best quality", "warm hazel eyes"]
 
 
 def test_filter_profile_loras_keeps_non_enhancers_in_mixed_filter_mode() -> None:

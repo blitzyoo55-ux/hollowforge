@@ -81,10 +81,37 @@ def _should_drop_anchor_fragment(fragment: str, *, anchor_filter_mode: str) -> b
     if not markers:
         return False
     normalized_fragment = _normalize_anchor_fragment(fragment)
-    return any(
+    if any(
         _normalize_anchor_fragment(marker) in normalized_fragment
         for marker in markers
-    )
+    ):
+        return True
+
+    if anchor_filter_mode == "drop_portrait_bias":
+        glamour_terms = ("glamour", "glamorous")
+        bias_modifiers = (
+            "beauty",
+            "editorial",
+            "fashion",
+            "shoot",
+            "shooting",
+            "portrait",
+            "pose",
+            "headshot",
+            "closeup",
+            "closeup",
+        )
+        if any(term in normalized_fragment for term in glamour_terms) and any(
+            modifier in normalized_fragment for modifier in bias_modifiers
+        ):
+            return True
+        if "beauty" in normalized_fragment and any(
+            modifier in normalized_fragment
+            for modifier in ("editorial", "fashion", "shoot", "portrait", "pose")
+        ):
+            return True
+
+    return False
 
 
 def filter_anchor_fragments(
