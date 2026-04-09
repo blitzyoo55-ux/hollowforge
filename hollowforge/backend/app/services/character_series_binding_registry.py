@@ -13,10 +13,6 @@ class CharacterSeriesBindingEntry(BaseModel):
     series_style_id: str = Field(min_length=1, max_length=120)
     notes: str = Field(min_length=1, max_length=1000)
 
-    @property
-    def series_style_canon_id(self) -> str:
-        return self.series_style_id
-
 
 _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
     "camila_pilot_binding_v1": CharacterSeriesBindingEntry(
@@ -26,6 +22,21 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         notes="Camila-only pilot binding for the V2 registry pilot.",
     )
 }
+
+
+def _validate_binding_registry_pairs() -> None:
+    seen_pairs: set[tuple[str, str]] = set()
+    for binding in _CHARACTER_SERIES_BINDING_REGISTRY.values():
+        pair = (binding.character_id, binding.series_style_id)
+        if pair in seen_pairs:
+            raise RuntimeError(
+                "Duplicate character-series binding pair in registry: "
+                f"{binding.character_id} + {binding.series_style_id}"
+            )
+        seen_pairs.add(pair)
+
+
+_validate_binding_registry_pairs()
 
 
 def _get_binding_by_character_and_style(
