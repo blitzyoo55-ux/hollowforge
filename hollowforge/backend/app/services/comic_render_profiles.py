@@ -27,8 +27,83 @@ _BEAUTY_ENHANCER_MARKERS = (
     "eyeenhancer",
 )
 
+
+_ANCHOR_FILTER_MARKERS: dict[str, tuple[str, ...]] = {
+    "drop_portrait_bias": (
+        "glamorous adult woman",
+        "high-response beauty editorial",
+        "beauty editorial",
+        "strong eye contact",
+        "luminous skin",
+        "refined facial features",
+        "refined facial structure",
+        "high-fashion poise",
+        "elegant proportions",
+        "glamour shoot",
+        "glamour pose",
+        "fashion shoot",
+        "fashion editorial",
+        "close portrait",
+        "airbrushed skin",
+        "copy-paste framing",
+        "copy-paste composition",
+    ),
+    "drop_face_gloss_bias": (
+        "glamorous adult woman",
+        "high-response beauty editorial",
+        "beauty editorial",
+        "strong eye contact",
+        "luminous skin",
+        "refined facial features",
+        "refined facial structure",
+        "high-fashion poise",
+        "elegant proportions",
+        "glossy face",
+        "waxy skin",
+        "waxy face",
+        "plastic skin",
+        "dead eyes",
+        "airbrushed skin",
+    ),
+}
+
+
 def _normalize_filename(filename: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", filename.lower())
+
+
+def _normalize_anchor_fragment(fragment: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", fragment.lower())
+
+
+def _should_drop_anchor_fragment(fragment: str, *, anchor_filter_mode: str) -> bool:
+    markers = _ANCHOR_FILTER_MARKERS.get(anchor_filter_mode)
+    if not markers:
+        return False
+    normalized_fragment = _normalize_anchor_fragment(fragment)
+    return any(
+        _normalize_anchor_fragment(marker) in normalized_fragment
+        for marker in markers
+    )
+
+
+def filter_anchor_fragments(
+    fragments: list[str],
+    *,
+    anchor_filter_mode: str,
+) -> list[str]:
+    if anchor_filter_mode not in _ANCHOR_FILTER_MARKERS:
+        return [fragment for fragment in fragments if fragment.strip()]
+
+    filtered: list[str] = []
+    for fragment in fragments:
+        cleaned = fragment.strip()
+        if not cleaned:
+            continue
+        if _should_drop_anchor_fragment(cleaned, anchor_filter_mode=anchor_filter_mode):
+            continue
+        filtered.append(cleaned)
+    return filtered
 
 
 def _make_profile(
@@ -59,7 +134,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="filter_beauty_enhancers",
         width=1216,
         height=832,
-        negative_prompt_append="close portrait, fashion shoot, glamour pose, airbrushed skin, copy-paste framing",
+        negative_prompt_append="glamour shoot, fashion editorial, close portrait, airbrushed skin, copy-paste composition",
         anchor_filter_mode="drop_portrait_bias",
     ),
     _make_profile(
@@ -77,7 +152,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="filter_beauty_enhancers",
         width=1024,
         height=1024,
-        negative_prompt_append="close portrait, fashion shoot, glamour pose, airbrushed skin, copy-paste framing",
+        negative_prompt_append="glamour shoot, fashion editorial, close portrait, airbrushed skin, copy-paste composition",
         anchor_filter_mode="drop_portrait_bias",
     ),
     _make_profile(
@@ -86,7 +161,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="inherit_all",
         width=832,
         height=1216,
-        negative_prompt_append="dead eyes, waxy skin, plastic skin, glossy face",
+        negative_prompt_append="plastic skin, waxy face, dead eyes",
         anchor_filter_mode="drop_face_gloss_bias",
     ),
 )

@@ -249,10 +249,9 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
     assert seed_increment == 1
     assert generation_payload["prompt"] == (
         "masterpiece, best quality, original character, adult woman, solo, "
-        "high-response beauty editorial, fully clothed, tasteful adult allure, "
-        "strong eye contact, luminous skin, Kaede Ren, elegant east asian beauty, "
-        "sleek black bob, cool brown eyes, porcelain skin, refined facial "
-        "features, slim toned figure, high-fashion poise. "
+        "fully clothed, tasteful adult allure, Kaede Ren, elegant east asian "
+        "beauty, sleek black bob, cool brown eyes, porcelain skin, slim toned "
+        "figure. "
         "Setting: inside Private Lounge. "
         "Action: Kaede turns the invitation over in her hand. "
         "Emotion: measured curiosity with a faint edge of heat. "
@@ -315,7 +314,7 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
     assert generation_source_id == source_id
 
 
-async def test_build_prompt_frontloads_setting_for_establish_panels() -> None:
+async def test_build_prompt_frontloads_setting_for_establish_panels_without_glamour_bias() -> None:
     prompt = comic_render_service._build_prompt(
         {
             "prompt_prefix": "masterpiece, best quality, high-response beauty editorial, strong eye contact",
@@ -336,6 +335,7 @@ async def test_build_prompt_frontloads_setting_for_establish_panels() -> None:
     assert "environment-first framing" in prompt
     assert "high-response beauty editorial" not in prompt
     assert "strong eye contact" not in prompt
+    assert "glamorous adult woman" not in prompt
     assert "luminous skin" not in prompt
 
 
@@ -360,8 +360,8 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
     assert payload["negative_prompt"] == (
         "child, teen, underage, school uniform, text, logo, watermark, blurry, "
         "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
-        "hands, explicit nudity, graphic sexual content, close portrait, "
-        "fashion shoot, glamour pose, airbrushed skin, copy-paste framing"
+        "hands, explicit nudity, graphic sexual content, glamour shoot, "
+        "fashion editorial, close portrait, airbrushed skin, copy-paste composition"
     )
     assert payload["source_id"] == source_id
 

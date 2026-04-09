@@ -26,6 +26,7 @@ from app.services.comic_render_dispatch_service import (
     dispatch_comic_render_job,
 )
 from app.services.comic_render_profiles import (
+    filter_anchor_fragments,
     filter_profile_loras,
     resolve_comic_panel_render_profile,
 )
@@ -425,6 +426,7 @@ def _build_prompt(context: dict[str, Any]) -> str:
     scene_continuity_notes = str(context.get("scene_continuity_notes") or "").strip()
     panel_type = str(context.get("panel_type") or "").strip()
     continuity_lock = str(context.get("continuity_lock") or "").strip()
+    profile = resolve_comic_panel_render_profile(context)
 
     panel_type_lower = panel_type.lower()
 
@@ -458,22 +460,10 @@ def _build_prompt(context: dict[str, Any]) -> str:
             if fragment.strip()
         )
 
-    if panel_type_lower in {"establish", "insert"}:
-        portrait_bias_fragments = {
-            "high-response beauty editorial",
-            "strong eye contact",
-            "luminous skin",
-            "refined facial features",
-            "refined facial structure",
-            "high-fashion poise",
-            "elegant proportions",
-        }
-        style_subject_fragments = [
-            fragment
-            for fragment in style_subject_fragments
-            if fragment.lower() not in portrait_bias_fragments
-        ]
-
+    style_subject_fragments = filter_anchor_fragments(
+        style_subject_fragments,
+        anchor_filter_mode=profile.anchor_filter_mode,
+    )
     style_and_subject = ", ".join(style_subject_fragments)
     continuity_fragments: list[str | None] = [_clean_fragment(scene_continuity_notes)]
     cleaned_continuity_lock = _clean_fragment(continuity_lock)

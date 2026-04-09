@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.comic_render_profiles import (
+    filter_anchor_fragments,
     filter_profile_loras,
     resolve_comic_panel_render_profile,
 )
@@ -50,6 +51,30 @@ def test_establish_profile_filters_beauty_enhancers() -> None:
     )
 
     assert filtered == []
+
+
+def test_filter_anchor_fragments_drops_portrait_bias() -> None:
+    fragments = [
+        "masterpiece",
+        "best quality",
+        "glamorous adult woman",
+        "high-response beauty editorial",
+        "Artist Loft Morning",
+        "room depth",
+        "luminous skin",
+    ]
+
+    filtered = filter_anchor_fragments(
+        fragments,
+        anchor_filter_mode="drop_portrait_bias",
+    )
+
+    assert filtered == [
+        "masterpiece",
+        "best quality",
+        "Artist Loft Morning",
+        "room depth",
+    ]
 
 
 def test_filter_profile_loras_keeps_non_enhancers_in_mixed_filter_mode() -> None:
