@@ -12,8 +12,13 @@ Production image generation and orchestration console for Lab451.
 - comic backend routes: `backend/app/routes/comic.py`
 - comic manuscript profile API: `GET /api/v1/comic/manuscript-profiles`
 - comic frontend route: `/comic` with `/comic-studio` kept as a compatibility alias
-  - `/comic` now also exposes selected-render teaser ops for recent job history,
-    stale reconcile, and one-click rerun
+  - `/comic` now also exposes selected-render teaser ops for `Current Teaser Shot`
+    plus recent variants, stale reconcile, and one-click rerun
+  - comic panel roles now resolve different render profiles; `establish` now
+    uses a scene-first prompt recipe that biases toward room readability before
+    portrait glamour, while `insert` continues to suppress glamour bias
+  - if establish candidates still vary too widely in storytelling quality, tune
+    panel profile values before revisiting story import
 - animation execution worker: `lab451-animation-worker/`
 - deploy/runtime assets: `deploy/`
   - launchd templates now include `com.mori.hollowforge.backend` and
@@ -70,7 +75,7 @@ cd backend
 
 cd frontend
 npm run lint
-npm test -- src/pages/ComicStudio.test.tsx
+npx vitest run src/pages/ComicStudio.test.tsx
 npm run build
 
 cd lab451-animation-worker
@@ -94,6 +99,9 @@ cd backend
   - sequence-stage workflow specifics
 - `docs/HOLLOWFORGE_COMIC_LOCAL_BENCHMARK_20260404.md`
   - local 4-panel throughput benchmark, fail-fast cutoff, and remote-worker recommendation guidance
+- `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md`
+  - current `/comic` operator flow for import, remote render, handoff export,
+    current teaser shot and recent variants, teaser rerun, and stale recovery
 - `docs/cloudflare_zero_trust_setup.md`
   - access and tunnel setup context
 - `docs/remote_access_google_oauth.md`
