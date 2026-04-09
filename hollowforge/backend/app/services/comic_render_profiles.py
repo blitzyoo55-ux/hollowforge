@@ -234,6 +234,10 @@ def select_scene_cues(
     if scene_cue_mode != "artist_loft_scene_cues" or not location:
         return []
 
+    location_id = str(location.get("id") or "").strip()
+    if location_id != "artist_loft_morning":
+        return []
+
     raw_scene_cues = location.get("scene_cues")
     if not isinstance(raw_scene_cues, list):
         return []

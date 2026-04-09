@@ -342,6 +342,39 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert "luminous skin" not in prompt
 
 
+async def test_non_establish_prompt_path_does_not_touch_catalog_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("catalog lookup should not run for non-establish prompts")
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "_resolve_story_planner_location_metadata",
+        _boom,
+    )
+
+    prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character",
+            "canonical_prompt_anchor": "Kaede Ren, elegant east asian beauty",
+            "location_label": "Private Lounge",
+            "scene_continuity_notes": "Keep the scene controlled and intimate.",
+            "action_intent": "Kaede studies the invitation.",
+            "expression_intent": "Measured curiosity",
+            "camera_intent": "Tight waist-up portrait",
+            "panel_type": "beat",
+            "framing": "Portrait framing",
+            "continuity_lock": "Stay on brand for the character version.",
+        }
+    )
+
+    assert prompt.startswith(
+        "masterpiece, best quality, original character, Kaede Ren, elegant east asian beauty."
+    )
+    assert "Setting: inside Private Lounge." in prompt
+
+
 async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
     prompt = comic_render_service._build_prompt(
         {

@@ -451,8 +451,6 @@ def _build_prompt(context: dict[str, Any]) -> str:
     panel_type = str(context.get("panel_type") or "").strip()
     continuity_lock = str(context.get("continuity_lock") or "").strip()
     profile = resolve_comic_panel_render_profile(context)
-    location = _resolve_story_planner_location_metadata(location_label)
-    scene_cues = select_scene_cues(location, scene_cue_mode=profile.scene_cue_mode)
 
     panel_type_lower = panel_type.lower()
 
@@ -554,10 +552,6 @@ def _build_prompt(context: dict[str, Any]) -> str:
         "Emotion",
         [_clean_fragment(context.get("expression_intent"))],
     )
-    scene_cues_sentence = _build_labeled_sentence(
-        "Scene cues",
-        scene_cues,
-    )
     subject_prominence_sentence = _build_labeled_sentence(
         "Subject prominence",
         (
@@ -585,6 +579,15 @@ def _build_prompt(context: dict[str, Any]) -> str:
     )
 
     if panel_type_lower == "establish":
+        location = _resolve_story_planner_location_metadata(location_label)
+        scene_cues = select_scene_cues(
+            location,
+            scene_cue_mode=profile.scene_cue_mode,
+        )
+        scene_cues_sentence = _build_labeled_sentence(
+            "Scene cues",
+            scene_cues,
+        )
         prompt_sentences = [
             setting_sentence,
             scene_cues_sentence,

@@ -45,6 +45,16 @@ def test_select_scene_cues_returns_empty_list_when_location_has_no_scene_cues() 
     ) == []
 
 
+def test_select_scene_cues_returns_empty_list_for_non_loft_locations() -> None:
+    assert select_scene_cues(
+        {
+            "id": "moonlit_bathhouse",
+            "scene_cues": ["polished stone", "steam-softened light"],
+        },
+        scene_cue_mode="artist_loft_scene_cues",
+    ) == []
+
+
 def test_resolve_profile_returns_beat_dialogue_profile_for_beat_panel() -> None:
     profile = resolve_comic_panel_render_profile({"panel_type": "beat"})
 
