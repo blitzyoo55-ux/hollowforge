@@ -188,6 +188,7 @@ Panel role은 별도 계층으로 유지한다.
 실행 파라미터 우선순위는 아래로 고정한다.
 
 - checkpoint / LoRA family: `series style canon`
+- step / cfg / sampler family: `series style canon`
 - identity lock strength: `character-series binding`
 - aspect ratio / framing defaults: `panel render profile`
 - continuity context: current episode / panel context

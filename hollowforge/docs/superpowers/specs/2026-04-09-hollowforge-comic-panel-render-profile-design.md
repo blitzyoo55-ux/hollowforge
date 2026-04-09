@@ -181,6 +181,14 @@ comic용 캐릭터 버전, comic용 benchmark, comic용 checkpoint league를 별
 - profile은 `panel_type`를 기본 키로 선택
 - same character + same scene라도 panel role에 따라 recipe가 달라진다
 
+주의:
+
+- 이 문서는 `legacy comic lane` 기준의 panel-role profile 설계다.
+- 이후 `Character Canon 2.0 + Series Style Canon` V2 pilot에서는
+  checkpoint / LoRA family의 최종 소유권이 `series style canon`으로 이동한다.
+- 그 V2 구조에서는 `comic_panel_render_profile`이 모델 계열을 결정하지 않고,
+  role별 shot grammar만 담당한다.
+
 즉 앞으로의 결정 구조는 아래와 같다.
 
 - character identity:
@@ -200,6 +208,10 @@ comic용 캐릭터 버전, comic용 benchmark, comic용 checkpoint league를 별
 - panel role별 `checkpoint / LoRA / width / height / negative additions / anchor filtering` 제어
 - live re-generation으로 `4컷 role separation` 확인
 - tests update
+
+이 범위는 `legacy lane`에만 적용된다.
+
+- V2 pilot이 시작되면 panel profile의 책임은 `role framing / aspect ratio / prompt order / role negatives`로 축소된다.
 
 ## Out Of Scope
 
