@@ -24,6 +24,10 @@ from app.services.comic_render_dispatch_service import (
     ComicRenderDispatchError,
     dispatch_comic_render_job,
 )
+from app.services.comic_render_profiles import (
+    filter_profile_loras,
+    resolve_comic_panel_render_profile,
+)
 from app.services.generation_service import GenerationService
 
 _RENDER_ASSET_SELECT_COLUMNS = """
@@ -164,6 +168,8 @@ async def _load_panel_render_context(panel_id: str) -> dict[str, Any]:
             SELECT
                 p.*,
                 s.episode_id AS episode_id,
+                s.location_label AS location_label,
+                s.continuity_notes AS scene_continuity_notes,
                 e.character_id AS character_id,
                 e.character_version_id AS character_version_id,
                 c.canonical_prompt_anchor AS canonical_prompt_anchor,
@@ -357,39 +363,167 @@ async def _load_reusable_render_assets_for_request(
 
 
 def _build_prompt(context: dict[str, Any]) -> str:
-    parts = [
-        context.get("prompt_prefix"),
-        context.get("canonical_prompt_anchor"),
-        context.get("action_intent"),
-        context.get("expression_intent"),
-        context.get("framing"),
-    ]
-    cleaned = [part.strip() for part in parts if isinstance(part, str) and part.strip()]
+    location_label = str(context.get("location_label") or "").strip()
+    scene_continuity_notes = str(context.get("scene_continuity_notes") or "").strip()
+    panel_type = str(context.get("panel_type") or "").strip()
+    continuity_lock = str(context.get("continuity_lock") or "").strip()
+
+    panel_type_lower = panel_type.lower()
+
+    def _clean_fragment(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip().rstrip(" .,!?:;")
+        return cleaned or None
+
+    def _build_labeled_sentence(
+        label: str,
+        fragments: list[str | None],
+        *,
+        separator: str = ", ",
+    ) -> str | None:
+        cleaned_fragments = [fragment for fragment in fragments if fragment]
+        if not cleaned_fragments:
+            return None
+        return f"{label}: {separator.join(cleaned_fragments)}."
+
+    style_subject_fragments: list[str] = []
+    for raw_value in (
+        _clean_fragment(context.get("prompt_prefix")),
+        _clean_fragment(context.get("canonical_prompt_anchor")),
+    ):
+        if raw_value is None:
+            continue
+        style_subject_fragments.extend(
+            fragment.strip()
+            for fragment in raw_value.split(",")
+            if fragment.strip()
+        )
+
+    if panel_type_lower in {"establish", "insert"}:
+        portrait_bias_fragments = {
+            "high-response beauty editorial",
+            "strong eye contact",
+            "luminous skin",
+            "refined facial features",
+            "refined facial structure",
+            "high-fashion poise",
+            "elegant proportions",
+        }
+        style_subject_fragments = [
+            fragment
+            for fragment in style_subject_fragments
+            if fragment.lower() not in portrait_bias_fragments
+        ]
+
+    style_and_subject = ", ".join(style_subject_fragments)
+    continuity_fragments: list[str | None] = [_clean_fragment(scene_continuity_notes)]
+    cleaned_continuity_lock = _clean_fragment(continuity_lock)
+    if cleaned_continuity_lock:
+        primary_continuity = continuity_fragments[0]
+        if primary_continuity is None or cleaned_continuity_lock not in primary_continuity:
+            continuity_fragments.append(cleaned_continuity_lock)
+    composition_priority_hint = {
+        "establish": "environment-first framing, subject smaller in frame, room and props clearly readable",
+        "beat": "subject and prop both readable in frame",
+        "insert": "object-led framing, hands and invitation prioritized over a full-face portrait",
+        "closeup": "emotional reaction framing with face and hands dominating the panel",
+    }.get(panel_type_lower)
+    setting_sentence = _build_labeled_sentence(
+        "Setting",
+        [f"inside {location_label}" if location_label else None],
+    )
+    action_sentence = _build_labeled_sentence(
+        "Action",
+        [_clean_fragment(context.get("action_intent"))],
+    )
+    emotion_sentence = _build_labeled_sentence(
+        "Emotion",
+        [_clean_fragment(context.get("expression_intent"))],
+    )
+    composition_sentence = _build_labeled_sentence(
+        "Composition",
+        [
+            f"{panel_type_lower} manga panel" if panel_type_lower else None,
+            composition_priority_hint,
+            _clean_fragment(context.get("camera_intent")),
+            _clean_fragment(context.get("framing")),
+        ],
+    )
+    continuity_sentence = _build_labeled_sentence(
+        "Continuity",
+        continuity_fragments,
+        separator=". ",
+    )
+
+    if panel_type_lower in {"establish", "insert"}:
+        prompt_sentences = [
+            setting_sentence,
+            action_sentence,
+            composition_sentence,
+            f"{style_and_subject}." if style_and_subject else None,
+            emotion_sentence,
+            continuity_sentence,
+        ]
+    else:
+        prompt_sentences = [
+            f"{style_and_subject}." if style_and_subject else None,
+            setting_sentence,
+            action_sentence,
+            emotion_sentence,
+            composition_sentence,
+            continuity_sentence,
+        ]
+    cleaned = [sentence for sentence in prompt_sentences if sentence]
     if not cleaned:
         raise ValueError("Comic panel render prompt has no content")
-    return ", ".join(cleaned)
+    return " ".join(cleaned)
+
+
+def merge_negative_prompt(
+    base_negative_prompt: str | None,
+    negative_prompt_append: str,
+) -> str | None:
+    base = base_negative_prompt.strip() if isinstance(base_negative_prompt, str) else ""
+    append = negative_prompt_append.strip()
+    if base and append:
+        return f"{base}, {append}"
+    if base:
+        return base
+    if append:
+        return append
+    return None
 
 
 def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
+    profile = resolve_comic_panel_render_profile(context)
     negative_prompt = context.get("negative_prompt")
-    preserve_blank_negative_prompt = not (
-        isinstance(negative_prompt, str) and negative_prompt.strip()
-    )
-    loras = [
-        LoraInput.model_validate(item)
+    raw_loras = [
+        cast(dict[str, Any], item)
         for item in _decode_json_list(cast(str | None, context.get("loras")))
     ]
+    filtered_loras = filter_profile_loras(raw_loras, lora_mode=profile.lora_mode)
+    merged_negative_prompt = merge_negative_prompt(
+        cast(str | None, negative_prompt),
+        profile.negative_prompt_append,
+    )
     return GenerationCreate(
         prompt=_build_prompt(context),
-        negative_prompt=None if preserve_blank_negative_prompt else cast(str, negative_prompt),
-        preserve_blank_negative_prompt=preserve_blank_negative_prompt,
+        negative_prompt=merged_negative_prompt,
+        preserve_blank_negative_prompt=(
+            not isinstance(merged_negative_prompt, str)
+            or not merged_negative_prompt.strip()
+        ),
         checkpoint=cast(str, context["checkpoint"]),
         workflow_lane=cast(str, context["workflow_lane"]),
-        loras=loras,
+        loras=[
+            LoraInput.model_validate(item)
+            for item in filtered_loras
+        ],
         steps=int(context["steps"]),
         cfg=float(context["cfg"]),
-        width=int(context["width"]),
-        height=int(context["height"]),
+        width=profile.width,
+        height=profile.height,
         sampler=cast(str, context["sampler"]),
         scheduler=cast(str, context["scheduler"]),
         clip_skip=int(context["clip_skip"]),
@@ -456,6 +590,7 @@ def _build_remote_render_job_request_json(
             "negative_prompt": generation_row.get("negative_prompt"),
             "checkpoint": generation_row.get("checkpoint"),
             "loras": parsed_loras,
+            "seed": generation_row.get("seed"),
             "steps": generation_row.get("steps"),
             "cfg": generation_row.get("cfg"),
             "width": generation_row.get("width"),

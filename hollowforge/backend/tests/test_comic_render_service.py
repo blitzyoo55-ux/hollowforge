@@ -29,7 +29,13 @@ def _now() -> str:
     return "2026-04-04T00:00:00+00:00"
 
 
-async def _create_panel_fixture(temp_db: Path) -> str:
+async def _create_panel_fixture(
+    temp_db: Path,
+    *,
+    panel_type: str = "beat",
+    panel_id: str = "comic_panel_render_queue_1",
+    scene_id: str = "comic_scene_render_queue_1",
+) -> str:
     episode = await create_comic_episode(
         ComicEpisodeCreate(
             character_id="char_kaede_ren",
@@ -58,7 +64,7 @@ async def _create_panel_fixture(temp_db: Path) -> str:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "comic_scene_render_queue_1",
+                scene_id,
                 episode.id,
                 1,
                 "Kaede studies the invitation.",
@@ -89,10 +95,10 @@ async def _create_panel_fixture(temp_db: Path) -> str:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "comic_panel_render_queue_1",
-                "comic_scene_render_queue_1",
+                panel_id,
+                scene_id,
                 1,
-                "beat",
+                panel_type,
                 "tight waist-up portrait",
                 "slightly low camera",
                 "Kaede turns the invitation over in her hand.",
@@ -107,7 +113,7 @@ async def _create_panel_fixture(temp_db: Path) -> str:
         )
         conn.commit()
 
-    return "comic_panel_render_queue_1"
+    return panel_id
 
 
 class _StubGenerationService:
@@ -222,9 +228,13 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         "high-response beauty editorial, fully clothed, tasteful adult allure, "
         "strong eye contact, luminous skin, Kaede Ren, elegant east asian beauty, "
         "sleek black bob, cool brown eyes, porcelain skin, refined facial "
-        "features, slim toned figure, high-fashion poise, Kaede turns the "
-        "invitation over in her hand., measured curiosity with a faint edge of "
-        "heat, tight waist-up portrait"
+        "features, slim toned figure, high-fashion poise. "
+        "Setting: inside Private Lounge. "
+        "Action: Kaede turns the invitation over in her hand. "
+        "Emotion: measured curiosity with a faint edge of heat. "
+        "Composition: beat manga panel, subject and prop both readable in frame, "
+        "slightly low camera, tight waist-up portrait. "
+        "Continuity: Keep the scene controlled and intimate. Stay on brand for the character version."
     )
     assert generation_payload["negative_prompt"] == (
         "child, teen, underage, school uniform, text, logo, watermark, blurry, "
@@ -235,7 +245,7 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
     assert generation_payload["workflow_lane"] == "sdxl_illustrious"
     assert generation_payload["steps"] == 34
     assert generation_payload["cfg"] == 5.5
-    assert generation_payload["width"] == 832
+    assert generation_payload["width"] == 960
     assert generation_payload["height"] == 1216
     assert generation_payload["sampler"] == "euler_ancestral"
     assert generation_payload["scheduler"] == "normal"
@@ -278,6 +288,79 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         ).fetchone()[0]
 
     assert generation_source_id == f"comic-panel-render:{panel_id}:3:local_preview"
+
+
+async def test_build_prompt_frontloads_setting_for_establish_panels() -> None:
+    prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, high-response beauty editorial, strong eye contact",
+            "canonical_prompt_anchor": "Camila Duarte, glamorous adult woman, luminous skin",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep tall windows and the worktable visible.",
+            "action_intent": "The lead enters the room and clocks a black invitation on the worktable from across the space.",
+            "expression_intent": "Measured alertness",
+            "camera_intent": "Wide establishing shot inside Artist Loft Morning, with the room and its key props clearly visible.",
+            "panel_type": "establish",
+            "framing": "Wide establishing composition with room depth and key props visible.",
+            "continuity_lock": "Hold Artist Loft Morning's visual rules and keep the lead silhouette consistent.",
+        }
+    )
+
+    assert prompt.startswith("Setting: inside Artist Loft Morning.")
+    assert "Composition: establish manga panel" in prompt
+    assert "environment-first framing" in prompt
+    assert "high-response beauty editorial" not in prompt
+    assert "strong eye contact" not in prompt
+    assert "luminous skin" not in prompt
+
+
+async def test_build_generation_request_uses_establish_profile_dimensions(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db, panel_type="establish")
+    generation_service = _StubGenerationService(temp_db)
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert payload["width"] == 1216
+    assert payload["height"] == 832
+
+
+async def test_establish_generation_filters_beauty_enhancer_loras(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db, panel_type="establish")
+    generation_service = _StubGenerationService(temp_db)
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert payload["loras"] == []
+
+
+async def test_closeup_generation_keeps_character_version_loras(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db, panel_type="closeup")
+    generation_service = _StubGenerationService(temp_db)
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert payload["loras"] != []
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(
@@ -330,7 +413,7 @@ async def test_queue_panel_render_candidates_remote_creates_generation_shells_an
     with sqlite3.connect(temp_db) as conn:
         generation_rows = conn.execute(
             """
-            SELECT id, status, source_id, prompt, checkpoint, width, height, error_message
+            SELECT id, status, source_id, prompt, checkpoint, width, height, error_message, seed
             FROM generations
             WHERE source_id = ?
             ORDER BY seed ASC, created_at ASC, id ASC
@@ -369,13 +452,19 @@ async def test_queue_panel_render_candidates_remote_creates_generation_shells_an
     assert [row[2] for row in job_rows] == ["submitted", "submitted", "submitted"]
     assert [row[3] for row in job_rows] == ["comic_panel_still"] * 3
     assert [row[4] for row in job_rows] == ["remote_worker"] * 3
-    assert [row[5] for row in job_rows] == ["default"] * 3
+    assert [row[5] for row in job_rows] == [
+        comic_render_service.settings.ANIMATION_EXECUTOR_KEY
+    ] * 3
     assert all(row[7] is not None for row in job_rows)
     assert all(row[8] is not None for row in job_rows)
     assert all(row[9] is not None for row in job_rows)
 
     first_request_json = json.loads(job_rows[0][6])
+    second_request_json = json.loads(job_rows[1][6])
     assert first_request_json["still_generation"]["source_id"] == source_id
+    assert first_request_json["still_generation"]["seed"] == generation_rows[0][8]
+    assert second_request_json["still_generation"]["seed"] == generation_rows[1][8]
+    assert first_request_json["still_generation"]["seed"] != second_request_json["still_generation"]["seed"]
     assert first_request_json["comic"]["scene_panel_id"] == panel_id
     assert first_request_json["comic"]["render_asset_id"] == render_asset_rows[0][0]
 
