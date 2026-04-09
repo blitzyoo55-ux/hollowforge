@@ -23,6 +23,12 @@ from app.models import (
     ComicSceneDetailResponse,
     ComicScenePanelResponse,
 )
+from app.services.character_series_binding_registry import get_character_series_binding
+from app.services.series_style_canon_registry import get_series_style_canon
+
+
+_CAMILA_DUARTE_CHARACTER_ID = "char_camila_duarte"
+_CAMILA_V2_CHARACTER_CANON_ID = "camila_v2"
 
 
 def _now_iso() -> str:
@@ -82,6 +88,38 @@ async def _validate_episode_references(
     if cast(str, version_row["character_id"]) != character_id:
         raise ValueError(
             f"Comic character version {character_version_id} does not belong to character {character_id}"
+        )
+
+
+def _validate_episode_render_lane_metadata(
+    *,
+    character_id: str,
+    render_lane: str,
+    series_style_id: str | None,
+    character_series_binding_id: str | None,
+) -> None:
+    if render_lane != "character_canon_v2":
+        return
+
+    if character_id != _CAMILA_DUARTE_CHARACTER_ID:
+        raise ValueError(
+            "render_lane=character_canon_v2 is only allowed for Camila Duarte"
+        )
+
+    if not series_style_id or not character_series_binding_id:
+        raise ValueError(
+            "render_lane=character_canon_v2 requires series_style_id and character_series_binding_id"
+        )
+
+    get_series_style_canon(series_style_id)
+    binding = get_character_series_binding(character_series_binding_id)
+    if binding.character_id != _CAMILA_V2_CHARACTER_CANON_ID:
+        raise ValueError(
+            "character_series_binding_id must belong to Camila V2 character canon"
+        )
+    if binding.series_style_id != series_style_id:
+        raise ValueError(
+            f"Binding {character_series_binding_id} does not match series style {series_style_id}"
         )
 
 
@@ -222,6 +260,12 @@ async def create_comic_episode(
             character_id=payload.character_id,
             character_version_id=payload.character_version_id,
         )
+        _validate_episode_render_lane_metadata(
+            character_id=payload.character_id,
+            render_lane=payload.render_lane,
+            series_style_id=payload.series_style_id,
+            character_series_binding_id=payload.character_series_binding_id,
+        )
         await db.execute(
             """
             INSERT INTO comic_episodes (
@@ -235,9 +279,12 @@ async def create_comic_episode(
                 continuity_summary,
                 canon_delta,
                 target_output,
+                render_lane,
+                series_style_id,
+                character_series_binding_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_id,
@@ -250,6 +297,9 @@ async def create_comic_episode(
                 payload.continuity_summary,
                 payload.canon_delta,
                 payload.target_output,
+                payload.render_lane,
+                payload.series_style_id,
+                payload.character_series_binding_id,
                 now,
                 now,
             ),
@@ -296,6 +346,12 @@ async def create_comic_episode_from_draft(
             character_id=character_id,
             character_version_id=draft.character_version_id,
         )
+        _validate_episode_render_lane_metadata(
+            character_id=character_id,
+            render_lane=draft.render_lane,
+            series_style_id=draft.series_style_id,
+            character_series_binding_id=draft.character_series_binding_id,
+        )
         await db.execute(
             """
             INSERT INTO comic_episodes (
@@ -309,9 +365,12 @@ async def create_comic_episode_from_draft(
                 continuity_summary,
                 canon_delta,
                 target_output,
+                render_lane,
+                series_style_id,
+                character_series_binding_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_id,
@@ -324,6 +383,9 @@ async def create_comic_episode_from_draft(
                 draft.continuity_summary,
                 draft.canon_delta,
                 draft.target_output,
+                draft.render_lane,
+                draft.series_style_id,
+                draft.character_series_binding_id,
                 now,
                 now,
             ),

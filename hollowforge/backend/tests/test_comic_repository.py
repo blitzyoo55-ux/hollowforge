@@ -623,3 +623,42 @@ async def test_get_comic_episode_detail_includes_panel_remote_job_counts(
     assert detail is not None
     assert detail.scenes[0].panels[0].remote_job_count == 2
     assert detail.scenes[0].panels[0].pending_remote_job_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_comic_episode_defaults_render_lane_to_legacy(temp_db) -> None:
+    created = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Legacy Lane Default",
+            synopsis="Episode should remain on legacy lane when fields are omitted.",
+            target_output="oneshot_manga",
+        ),
+        episode_id="comic_ep_lane_default_legacy",
+    )
+
+    assert created.render_lane == "legacy"
+    assert created.series_style_id is None
+    assert created.character_series_binding_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_comic_episode_persists_explicit_v2_episode_fields(temp_db) -> None:
+    created = await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_camila_duarte",
+            character_version_id="charver_camila_duarte_still_v1",
+            title="Camila V2 Episode",
+            synopsis="Explicit Camila V2 metadata should persist on create.",
+            target_output="oneshot_manga",
+            render_lane="character_canon_v2",
+            series_style_id="camila_pilot_v1",
+            character_series_binding_id="camila_pilot_binding_v1",
+        ),
+        episode_id="comic_ep_lane_v2_explicit",
+    )
+
+    assert created.render_lane == "character_canon_v2"
+    assert created.series_style_id == "camila_pilot_v1"
+    assert created.character_series_binding_id == "camila_pilot_binding_v1"

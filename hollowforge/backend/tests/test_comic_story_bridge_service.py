@@ -47,3 +47,19 @@ def test_story_plan_bridge_drops_non_core_planner_ids_from_scene_involvement() -
     assert detail.panels[0].reading_order == 1
     assert detail.panels[1].reading_order == 2
     assert detail.panels[0].dialogue_intent
+
+
+def test_story_plan_bridge_preserves_explicit_v2_metadata() -> None:
+    detail = build_comic_draft_from_story_plan(
+        approved_plan=_build_registry_led_approved_plan(),
+        character_version_id="charver_camila_duarte_still_v1",
+        title="Camila Pilot Intake",
+        panel_multiplier=2,
+        render_lane="character_canon_v2",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+
+    assert detail.render_lane == "character_canon_v2"
+    assert detail.series_style_id == "camila_pilot_v1"
+    assert detail.character_series_binding_id == "camila_pilot_binding_v1"

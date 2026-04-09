@@ -10,11 +10,14 @@ from pydantic import ValidationError
 from app.db import init_db
 from app.models import (
     ComicEpisodeCreate,
+    ComicStoryPlanImportRequest,
+    StoryPlannerPlanRequest,
     comic_render_job_response_from_row,
     ComicManuscriptProfileResponse,
     list_comic_manuscript_profiles,
 )
 from app.services.comic_repository import create_comic_episode
+from app.services.story_planner_service import plan_story_episode
 
 
 @pytest.mark.asyncio
@@ -63,6 +66,10 @@ async def test_comic_episode_schema_contract(temp_db) -> None:
     assert columns["synopsis"]["type"] == "TEXT"
     assert columns["synopsis"]["notnull"] == 1
     assert columns["source_story_plan_json"]["type"] == "TEXT"
+    assert columns["render_lane"]["type"] == "TEXT"
+    assert columns["render_lane"]["notnull"] == 1
+    assert columns["series_style_id"]["type"] == "TEXT"
+    assert columns["character_series_binding_id"]["type"] == "TEXT"
     assert "notes" not in columns
 
     character_version_fk = next(
@@ -70,6 +77,47 @@ async def test_comic_episode_schema_contract(temp_db) -> None:
     )
     assert character_version_fk[2] == "character_versions"
     assert character_version_fk[6] == "CASCADE"
+
+
+def test_comic_episode_create_schema_requires_complete_explicit_v2_fields() -> None:
+    with pytest.raises(ValidationError, match="requires series_style_id"):
+        ComicEpisodeCreate(
+            character_id="char_camila_duarte",
+            character_version_id="charver_camila_duarte_still_v1",
+            title="Camila V2 Missing Style",
+            synopsis="Should reject missing style when lane is explicit V2.",
+            target_output="oneshot_manga",
+            render_lane="character_canon_v2",
+            character_series_binding_id="camila_pilot_binding_v1",
+        )
+
+    with pytest.raises(ValidationError, match="requires character_series_binding_id"):
+        ComicEpisodeCreate(
+            character_id="char_camila_duarte",
+            character_version_id="charver_camila_duarte_still_v1",
+            title="Camila V2 Missing Binding",
+            synopsis="Should reject missing binding when lane is explicit V2.",
+            target_output="oneshot_manga",
+            render_lane="character_canon_v2",
+            series_style_id="camila_pilot_v1",
+        )
+
+
+def test_story_plan_import_schema_requires_complete_explicit_v2_fields() -> None:
+    approved_plan = plan_story_episode(
+        StoryPlannerPlanRequest(
+            story_prompt="Camila receives a quiet briefing in a closed lounge.",
+            lane="adult_nsfw",
+        )
+    )
+    with pytest.raises(ValidationError, match="requires series_style_id"):
+        ComicStoryPlanImportRequest(
+            approved_plan=approved_plan,
+            character_version_id="charver_camila_duarte_still_v1",
+            title="Camila V2 Import Missing Style",
+            render_lane="character_canon_v2",
+            character_series_binding_id="camila_pilot_binding_v1",
+        )
 
 
 @pytest.mark.asyncio

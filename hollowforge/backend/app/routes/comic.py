@@ -192,6 +192,9 @@ async def import_story_plan(
             character_version_id=payload.character_version_id,
             title=payload.title,
             panel_multiplier=payload.panel_multiplier,
+            render_lane=payload.render_lane,
+            series_style_id=payload.series_style_id,
+            character_series_binding_id=payload.character_series_binding_id,
         )
         _bind_selected_character_to_draft(
             draft=draft,

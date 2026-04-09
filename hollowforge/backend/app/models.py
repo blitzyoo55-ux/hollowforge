@@ -49,6 +49,7 @@ ComicRenderExecutionMode = Literal["local_preview", "remote_worker"]
 ComicPageExportState = Literal["draft", "preview_ready", "exported"]
 ComicPageLayoutTemplateId = Literal["jp_2x2_v1", "jp_3row_v1"]
 ComicManuscriptProfileId = Literal["jp_manga_rightbound_v1"]
+ComicRenderLane = Literal["legacy", "character_canon_v2"]
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +315,23 @@ class ComicEpisodeBase(BaseModel):
     continuity_summary: Optional[str] = Field(default=None, max_length=4000)
     canon_delta: Optional[str] = Field(default=None, max_length=4000)
     target_output: ComicTargetOutput = "oneshot_manga"
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicEpisodeBase":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
 
 
 class ComicEpisodeCreate(ComicEpisodeBase):
@@ -492,8 +510,25 @@ class ComicEpisodeDraft(BaseModel):
     continuity_summary: Optional[str] = Field(default=None, max_length=4000)
     canon_delta: Optional[str] = Field(default=None, max_length=4000)
     target_output: ComicTargetOutput = "oneshot_manga"
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
     scenes: List[ComicEpisodeSceneDraft] = Field(default_factory=list)
     panels: List[ComicScenePanelDraft] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicEpisodeDraft":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
 
 
 class ComicStoryPlanImportRequest(BaseModel):
@@ -503,6 +538,23 @@ class ComicStoryPlanImportRequest(BaseModel):
     character_version_id: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     panel_multiplier: int = Field(default=2, ge=1, le=8)
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicStoryPlanImportRequest":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
 
 
 class SequenceBlueprintBase(BaseModel):

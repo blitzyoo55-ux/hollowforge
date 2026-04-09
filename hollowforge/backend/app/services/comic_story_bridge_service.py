@@ -108,6 +108,9 @@ def build_comic_draft_from_story_plan(
     character_version_id: str,
     title: str,
     panel_multiplier: int = 2,
+    render_lane: str = "legacy",
+    series_style_id: str | None = None,
+    character_series_binding_id: str | None = None,
 ) -> ComicEpisodeDraft:
     _validate_story_planner_approval_token(approved_plan)
 
@@ -176,6 +179,9 @@ def build_comic_draft_from_story_plan(
             ensure_ascii=False,
         ),
         continuity_summary=continuity_summary or None,
+        render_lane=render_lane,
+        series_style_id=series_style_id,
+        character_series_binding_id=character_series_binding_id,
         scenes=scenes,
         panels=panels,
     )

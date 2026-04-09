@@ -1043,6 +1043,51 @@ def test_post_comic_episode_returns_201_with_empty_scenes_and_pages(temp_db) -> 
     assert body["pages"] == []
 
 
+def test_post_comic_episode_persists_explicit_v2_episode_fields(temp_db) -> None:
+    client = _build_client()
+
+    response = client.post(
+        "/api/v1/comic/episodes",
+        json={
+            "character_id": "char_camila_duarte",
+            "character_version_id": "charver_camila_duarte_still_v1",
+            "title": "Camila V2 Create",
+            "synopsis": "Explicit V2 metadata should persist from create endpoint.",
+            "target_output": "oneshot_manga",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["episode"]["render_lane"] == "character_canon_v2"
+    assert body["episode"]["series_style_id"] == "camila_pilot_v1"
+    assert body["episode"]["character_series_binding_id"] == "camila_pilot_binding_v1"
+
+
+def test_post_comic_episode_rejects_explicit_v2_for_non_camila_character(temp_db) -> None:
+    client = _build_client()
+
+    response = client.post(
+        "/api/v1/comic/episodes",
+        json={
+            "character_id": "char_kaede_ren",
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Kaede V2 Rejected",
+            "synopsis": "Only Camila should be allowed on explicit V2 lane.",
+            "target_output": "oneshot_manga",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Camila Duarte" in response.json()["detail"]
+
+
 def test_get_comic_episode_detail_returns_created_episode(temp_db) -> None:
     created = asyncio.run(
         create_comic_episode(
@@ -1161,8 +1206,8 @@ def test_queue_comic_panel_renders_accepts_remote_execution_mode(temp_db, monkey
 
     with sqlite3.connect(temp_db) as conn:
         generation_count = conn.execute(
-            "SELECT COUNT(*) FROM generations WHERE source_id = ?",
-            (f"comic-panel-render:{panel_id}:3:remote_worker",),
+            "SELECT COUNT(*) FROM generations WHERE source_id LIKE ?",
+            (f"comic-panel-render:{panel_id}:3:remote_worker%",),
         ).fetchone()[0]
         asset_count = conn.execute(
             "SELECT COUNT(*) FROM comic_panel_render_assets WHERE scene_panel_id = ?",
@@ -1269,6 +1314,95 @@ def test_import_story_plan_route_persists_episode(temp_db) -> None:
     assert body["episode"]["title"] == "Night Intake"
     assert body["episode"]["character_id"] == "char_kaede_ren"
     assert body["episode"]["character_version_id"] == "charver_kaede_ren_still_v1"
+
+
+def test_import_story_plan_route_persists_explicit_v2_episode_fields(temp_db) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_camila_duarte_still_v1",
+            "title": "Camila Pilot Intake",
+            "panel_multiplier": 2,
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["episode"]["render_lane"] == "character_canon_v2"
+    assert body["episode"]["series_style_id"] == "camila_pilot_v1"
+    assert body["episode"]["character_series_binding_id"] == "camila_pilot_binding_v1"
+
+
+def test_import_story_plan_route_rejects_explicit_v2_missing_required_fields(
+    temp_db,
+) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_camila_duarte_still_v1",
+            "title": "Camila V2 Missing Style",
+            "render_lane": "character_canon_v2",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "requires series_style_id" in response.text
+
+
+def test_import_story_plan_route_rejects_explicit_v2_for_non_camila_character(
+    temp_db,
+) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Kaede V2 Rejected",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Camila Duarte" in response.json()["detail"]
+
+
+def test_import_story_plan_route_rejects_binding_style_mismatch_for_explicit_v2(
+    temp_db,
+) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_camila_duarte_still_v1",
+            "title": "Camila V2 Binding Mismatch",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_motion_test_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "does not match series style" in response.json()["detail"]
 
 
 def test_import_story_plan_route_returns_four_scenes_and_two_panels_per_scene(
