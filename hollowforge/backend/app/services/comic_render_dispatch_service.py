@@ -96,6 +96,7 @@ def build_comic_remote_worker_payload(
         "prompt": generation.get("prompt"),
         "negative_prompt": generation.get("negative_prompt"),
         "checkpoint": generation.get("checkpoint"),
+        "seed": generation.get("seed"),
         "loras": _parse_loras(generation.get("loras")),
         "steps": generation.get("steps"),
         "cfg": generation.get("cfg"),

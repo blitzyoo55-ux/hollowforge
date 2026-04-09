@@ -29,6 +29,7 @@ def test_build_comic_remote_worker_payload_includes_generation_and_comic_lineage
             "prompt": "panel prompt",
             "negative_prompt": "bad anatomy",
             "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+            "seed": 123456789,
             "loras": json.dumps(
                 [{"filename": "kaede_face.safetensors", "strength": 0.85}]
             ),
@@ -55,6 +56,7 @@ def test_build_comic_remote_worker_payload_includes_generation_and_comic_lineage
     assert payload["target_tool"] == "comic_panel_still"
     assert payload["generation_id"] == "gen-1"
     assert payload["request_json"]["still_generation"]["prompt"] == "panel prompt"
+    assert payload["request_json"]["still_generation"]["seed"] == 123456789
     assert (
         payload["request_json"]["still_generation"]["source_id"]
         == "comic-panel-render:panel-1:3:remote_worker"
