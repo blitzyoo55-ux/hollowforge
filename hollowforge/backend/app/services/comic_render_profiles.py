@@ -18,6 +18,7 @@ class ComicPanelRenderProfile:
     prompt_order_mode: str = "default_subject_first"
     subject_prominence_mode: str = "default"
     scene_cue_mode: str = "none"
+    quality_selector_hints: tuple[str, ...] = ()
 
 
 _BEAUTY_ENHANCER_MARKERS = (
@@ -144,6 +145,7 @@ def _make_profile(
     width: int,
     height: int,
     negative_prompt_append: str,
+    quality_selector_hints: tuple[str, ...] = (),
     anchor_filter_mode: str,
     prompt_order_mode: str = "default_subject_first",
     subject_prominence_mode: str = "default",
@@ -156,6 +158,7 @@ def _make_profile(
         width=width,
         height=height,
         negative_prompt_append=negative_prompt_append,
+        quality_selector_hints=quality_selector_hints,
         anchor_filter_mode=anchor_filter_mode,
         prompt_order_mode=prompt_order_mode,
         subject_prominence_mode=subject_prominence_mode,
@@ -175,6 +178,11 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
             "copy-paste composition, single-subject glamour poster, pinup composition, "
             "beauty key visual, empty background, minimal room detail, subject filling frame"
         ),
+        quality_selector_hints=(
+            "room readability",
+            "reduced subject occupancy",
+            "environment depth",
+        ),
         anchor_filter_mode="drop_portrait_bias",
         prompt_order_mode="scene_first",
         subject_prominence_mode="reduced",
@@ -186,7 +194,15 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="inherit_all",
         width=960,
         height=1216,
-        negative_prompt_append="",
+        negative_prompt_append=(
+            "single-subject glamour poster, beauty key visual, pinup composition, "
+            "close portrait, fashion editorial, waxy skin, dead eyes"
+        ),
+        quality_selector_hints=(
+            "expression readability",
+            "natural body pose",
+            "clear hand acting",
+        ),
         anchor_filter_mode="drop_face_gloss_bias",
     ),
     _make_profile(
@@ -195,7 +211,16 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="filter_beauty_enhancers",
         width=1024,
         height=1024,
-        negative_prompt_append="glamour shoot, fashion editorial, close portrait, airbrushed skin, copy-paste composition",
+        negative_prompt_append=(
+            "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
+            "copy-paste composition, single-subject glamour poster, beauty key visual, "
+            "floating props, portrait pull"
+        ),
+        quality_selector_hints=(
+            "prop readability",
+            "action readability",
+            "hand-prop contact",
+        ),
         anchor_filter_mode="drop_portrait_bias",
     ),
     _make_profile(
@@ -204,7 +229,12 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="inherit_all",
         width=832,
         height=1216,
-        negative_prompt_append="plastic skin, waxy face, dead eyes",
+        negative_prompt_append="plastic skin, waxy face, dead eyes, malformed hands",
+        quality_selector_hints=(
+            "emotion clarity",
+            "alive eyes",
+            "artifact suppression",
+        ),
         anchor_filter_mode="drop_face_gloss_bias",
     ),
 )

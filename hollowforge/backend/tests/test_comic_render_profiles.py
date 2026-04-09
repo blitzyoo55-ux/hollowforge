@@ -138,3 +138,46 @@ def test_filter_profile_loras_passthrough_preserves_inherit_all_loras() -> None:
     filtered = filter_profile_loras(loras, lora_mode="inherit_all")
 
     assert filtered == loras
+
+
+def test_profiles_expose_role_quality_selector_hints() -> None:
+    establish = resolve_comic_panel_render_profile({"panel_type": "establish"})
+    beat = resolve_comic_panel_render_profile({"panel_type": "beat"})
+    insert = resolve_comic_panel_render_profile({"panel_type": "insert"})
+    closeup = resolve_comic_panel_render_profile({"panel_type": "closeup"})
+
+    assert establish.quality_selector_hints == (
+        "room readability",
+        "reduced subject occupancy",
+        "environment depth",
+    )
+    assert beat.quality_selector_hints == (
+        "expression readability",
+        "natural body pose",
+        "clear hand acting",
+    )
+    assert insert.quality_selector_hints == (
+        "prop readability",
+        "action readability",
+        "hand-prop contact",
+    )
+    assert closeup.quality_selector_hints == (
+        "emotion clarity",
+        "alive eyes",
+        "artifact suppression",
+    )
+
+
+def test_role_negatives_penalize_glamour_poster_failure_patterns() -> None:
+    establish = resolve_comic_panel_render_profile({"panel_type": "establish"})
+    beat = resolve_comic_panel_render_profile({"panel_type": "beat"})
+    insert = resolve_comic_panel_render_profile({"panel_type": "insert"})
+    closeup = resolve_comic_panel_render_profile({"panel_type": "closeup"})
+
+    assert "single-subject glamour poster" in establish.negative_prompt_append
+    assert "beauty key visual" in establish.negative_prompt_append
+    assert "single-subject glamour poster" in beat.negative_prompt_append
+    assert "beauty key visual" in beat.negative_prompt_append
+    assert "single-subject glamour poster" in insert.negative_prompt_append
+    assert "beauty key visual" in insert.negative_prompt_append
+    assert "dead eyes" in closeup.negative_prompt_append

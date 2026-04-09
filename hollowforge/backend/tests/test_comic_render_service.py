@@ -260,12 +260,15 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         "Emotion: measured curiosity with a faint edge of heat. "
         "Composition: beat manga panel, subject and prop both readable in frame, "
         "slightly low camera, tight waist-up portrait. "
+        "Quality focus: expression readability, natural body pose, clear hand acting. "
         "Continuity: Keep the scene controlled and intimate. Stay on brand for the character version."
     )
     assert generation_payload["negative_prompt"] == (
         "child, teen, underage, school uniform, text, logo, watermark, blurry, "
         "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
-        "hands, explicit nudity, graphic sexual content"
+        "hands, explicit nudity, graphic sexual content, single-subject glamour "
+        "poster, beauty key visual, pinup composition, close portrait, fashion "
+        "editorial, waxy skin, dead eyes"
     )
     assert generation_payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
     assert generation_payload["workflow_lane"] == "sdxl_illustrious"
@@ -336,6 +339,10 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert prompt.startswith("Setting: inside Artist Loft Morning.")
     assert "Composition: establish manga panel" in prompt
     assert "environment-first framing" in prompt
+    assert (
+        "Quality focus: room readability, reduced subject occupancy, environment depth."
+        in prompt
+    )
     assert "high-response beauty editorial" not in prompt
     assert "strong eye contact" not in prompt
     assert "glamorous adult woman" not in prompt
@@ -395,6 +402,10 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
         "Setting: inside Artist Loft Morning. Scene cues: tall factory windows, easel."
     )
     assert "Composition: establish manga panel" in prompt
+    assert (
+        "Quality focus: room readability, reduced subject occupancy, environment depth."
+        in prompt
+    )
     assert "Subject prominence:" in prompt
     assert "tasteful adult allure" not in prompt
     assert "glamorous adult woman" not in prompt
@@ -568,6 +579,169 @@ async def test_closeup_generation_keeps_character_version_loras(
     assert payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
     assert payload["workflow_lane"] == "sdxl_illustrious"
     assert payload["loras"] == json.loads(expected_loras_json)
+
+
+async def test_build_prompt_adds_role_quality_focus_for_beat_insert_and_closeup() -> None:
+    beat_prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character",
+            "canonical_prompt_anchor": "Camila Duarte, calm grounded presence",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep the easel and brush tray in play.",
+            "action_intent": "Camila studies the note pinned near the easel.",
+            "expression_intent": "narrowed focus",
+            "camera_intent": "eye-level view",
+            "panel_type": "beat",
+            "framing": "waist-up with workspace context",
+            "continuity_lock": "Hold the brush tray and note placement.",
+        }
+    )
+    insert_prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character",
+            "canonical_prompt_anchor": "Camila Duarte, calm grounded presence",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep the note and thumb contact readable.",
+            "action_intent": "Camila turns the black invitation under the light.",
+            "expression_intent": "measured scrutiny",
+            "camera_intent": "tight insert framing",
+            "panel_type": "insert",
+            "framing": "invitation and fingers dominate the frame",
+            "continuity_lock": "Do not lose the invitation seal.",
+        }
+    )
+    closeup_prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character",
+            "canonical_prompt_anchor": "Camila Duarte, calm grounded presence",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep the studio light natural.",
+            "action_intent": "Camila realizes who sent the invitation.",
+            "expression_intent": "contained shock with immediate control",
+            "camera_intent": "intimate close camera",
+            "panel_type": "closeup",
+            "framing": "tight face and hand framing",
+            "continuity_lock": "Keep her features stable and grounded.",
+        }
+    )
+
+    assert (
+        "Quality focus: expression readability, natural body pose, clear hand acting."
+        in beat_prompt
+    )
+    assert (
+        "Quality focus: prop readability, action readability, hand-prop contact."
+        in insert_prompt
+    )
+    assert (
+        "Quality focus: emotion clarity, alive eyes, artifact suppression."
+        in closeup_prompt
+    )
+
+
+async def test_build_generation_request_v2_merges_role_quality_focus_and_negatives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = comic_render_service.resolve_comic_panel_render_profile({"panel_type": "beat"})
+
+    class _Contract:
+        execution_params = {
+            "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+            "loras": (
+                {"filename": "camila_pilot_line_treatment_v1.safetensors", "strength": 0.65},
+            ),
+            "steps": 30,
+            "cfg": 5.4,
+            "sampler": "euler_a",
+        }
+        identity_block = ("Camila identity anchor.",)
+        style_block = ("Camila style anchor.",)
+        binding_block = ("Camila binding anchor.",)
+        role_block = ("Panel type: beat", "Role profile: beat_dialogue_v1")
+        negative_rules = ("Role negative: single-subject glamour poster, beauty key visual",)
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "resolve_comic_render_v2_contract",
+        lambda **_: _Contract(),
+    )
+
+    generation = comic_render_service._build_generation_request(
+        {
+            "render_lane": "character_canon_v2",
+            "panel_type": "beat",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "scheduler": "normal",
+            "clip_skip": 2,
+        }
+    )
+
+    assert "Quality focus: expression readability, natural body pose, clear hand acting." in generation.prompt
+    assert (
+        generation.negative_prompt
+        == "Role negative: single-subject glamour poster, beauty key visual"
+    )
+    assert generation.width == profile.width
+    assert generation.height == profile.height
+
+
+async def test_assess_panel_candidate_quality_is_selection_aware_by_role() -> None:
+    establish_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "establish"}
+    )
+    beat_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "beat"}
+    )
+    insert_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "insert"}
+    )
+    closeup_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "closeup"}
+    )
+
+    establish_score, establish_notes = comic_render_service._assess_panel_candidate_quality(
+        profile=establish_profile,
+        assessment_payload={
+            "strengths": ["room readability", "reduced subject occupancy"],
+            "issues": ["empty establish room", "single-subject glamour poster"],
+        },
+    )
+    beat_score, beat_notes = comic_render_service._assess_panel_candidate_quality(
+        profile=beat_profile,
+        assessment_payload={
+            "strengths": ["expression readability", "natural body pose"],
+            "issues": ["dead eyes"],
+        },
+    )
+    insert_score, insert_notes = comic_render_service._assess_panel_candidate_quality(
+        profile=insert_profile,
+        assessment_payload={
+            "strengths": ["prop readability", "action readability"],
+            "issues": ["floating props"],
+        },
+    )
+    closeup_score, closeup_notes = comic_render_service._assess_panel_candidate_quality(
+        profile=closeup_profile,
+        assessment_payload={
+            "strengths": ["emotion clarity", "alive eyes"],
+            "issues": ["waxy skin", "malformed hands"],
+        },
+    )
+
+    assert establish_score < beat_score
+    assert "penalty: empty establish room" in establish_notes
+    assert "penalty: portrait pull on non-closeup role" in establish_notes
+    assert beat_score > 0.5
+    assert "reward: expression readability" in beat_notes
+    assert "penalty: dead eyes" in beat_notes
+    assert insert_score > 0.4
+    assert "reward: prop readability" in insert_notes
+    assert "penalty: floating props" in insert_notes
+    assert closeup_score < 0.5
+    assert "reward: emotion clarity" in closeup_notes
+    assert "penalty: waxy skin" in closeup_notes
+    assert "penalty: malformed hands" in closeup_notes
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(

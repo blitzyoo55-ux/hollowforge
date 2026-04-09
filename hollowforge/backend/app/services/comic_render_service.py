@@ -126,6 +126,7 @@ def _profile_signature(profile: Any) -> str:
         "width": profile.width,
         "height": profile.height,
         "negative_prompt_append": profile.negative_prompt_append,
+        "quality_selector_hints": list(getattr(profile, "quality_selector_hints", ())),
         "anchor_filter_mode": profile.anchor_filter_mode,
     }
     digest = hashlib.sha1(
@@ -477,6 +478,16 @@ def _build_prompt(context: dict[str, Any]) -> str:
             return None
         return f"{label}: {separator.join(cleaned_fragments)}."
 
+    def _build_quality_focus_sentence() -> str | None:
+        hints = [
+            str(hint).strip()
+            for hint in getattr(profile, "quality_selector_hints", ())
+            if str(hint).strip()
+        ]
+        if not hints:
+            return None
+        return _build_labeled_sentence("Quality focus", hints)
+
     style_subject_fragments: list[str] = []
     for raw_value in (
         _clean_fragment(context.get("prompt_prefix")),
@@ -569,6 +580,7 @@ def _build_prompt(context: dict[str, Any]) -> str:
             else []
         ),
     )
+    quality_focus_sentence = _build_quality_focus_sentence()
     composition_sentence = _build_labeled_sentence(
         "Composition",
         [
@@ -598,6 +610,7 @@ def _build_prompt(context: dict[str, Any]) -> str:
             setting_sentence,
             scene_cues_sentence,
             composition_sentence,
+            quality_focus_sentence,
             subject_prominence_sentence,
             action_sentence,
             f"{style_and_subject}." if style_and_subject else None,
@@ -608,6 +621,7 @@ def _build_prompt(context: dict[str, Any]) -> str:
             setting_sentence,
             action_sentence,
             composition_sentence,
+            quality_focus_sentence,
             f"{style_and_subject}." if style_and_subject else None,
             emotion_sentence,
             continuity_sentence,
@@ -619,6 +633,7 @@ def _build_prompt(context: dict[str, Any]) -> str:
             action_sentence,
             emotion_sentence,
             composition_sentence,
+            quality_focus_sentence,
             continuity_sentence,
         ]
     cleaned = [sentence for sentence in prompt_sentences if sentence]
@@ -640,6 +655,133 @@ def merge_negative_prompt(
     if append:
         return append
     return None
+
+
+_QUALITY_HINT_MARKERS: dict[str, tuple[str, ...]] = {
+    "room readability": ("room readability", "room and props readable"),
+    "reduced subject occupancy": (
+        "reduced subject occupancy",
+        "subject smaller in frame",
+        "subject kept secondary to the room",
+    ),
+    "environment depth": ("environment depth", "room depth"),
+    "expression readability": ("expression readability", "expression reads clearly"),
+    "natural body pose": ("natural body pose", "natural pose", "believable pose"),
+    "clear hand acting": ("clear hand acting", "clear hand pose", "hands read clearly"),
+    "prop readability": ("prop readability", "prop reads clearly"),
+    "action readability": ("action readability", "action reads clearly"),
+    "hand-prop contact": ("hand-prop contact", "hand touching prop", "thumb contact"),
+    "emotion clarity": ("emotion clarity", "emotion reads clearly"),
+    "alive eyes": ("alive eyes", "eyes feel alive"),
+    "artifact suppression": ("artifact suppression", "artifact free", "artifact control"),
+}
+
+_QUALITY_PENALTY_MARKERS: dict[str, tuple[str, ...]] = {
+    "waxy skin": ("waxy skin", "waxy face", "plastic skin", "airbrushed skin"),
+    "dead eyes": ("dead eyes", "lifeless eyes", "empty stare"),
+    "malformed hands": (
+        "malformed hands",
+        "bad hands",
+        "poorly drawn hands",
+        "extra fingers",
+        "fused fingers",
+    ),
+    "floating props": ("floating props", "floating prop", "detached prop", "prop floating"),
+    "empty establish room": (
+        "empty establish room",
+        "empty room",
+        "minimal room detail",
+        "empty background",
+    ),
+    "portrait pull on non-closeup role": (
+        "portrait pull",
+        "single-subject glamour poster",
+        "beauty key visual",
+        "pinup composition",
+        "close portrait",
+        "fashion editorial",
+        "beauty editorial",
+        "glamour poster",
+    ),
+}
+
+_QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
+    "waxy skin": 0.18,
+    "dead eyes": 0.14,
+    "malformed hands": 0.20,
+    "floating props": 0.18,
+    "empty establish room": 0.22,
+    "portrait pull on non-closeup role": 0.20,
+}
+
+
+def _collect_quality_strings(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(value, dict):
+        collected: list[str] = []
+        for item in value.values():
+            collected.extend(_collect_quality_strings(item))
+        return collected
+    if isinstance(value, list | tuple | set):
+        collected: list[str] = []
+        for item in value:
+            collected.extend(_collect_quality_strings(item))
+        return collected
+    return []
+
+
+def _extract_quality_assessment_payload(request_json: dict[str, Any]) -> dict[str, Any] | None:
+    if not request_json:
+        return None
+
+    for key in (
+        "quality_assessment",
+        "assessment",
+        "candidate_assessment",
+        "vision_assessment",
+    ):
+        value = request_json.get(key)
+        if isinstance(value, dict):
+            return value
+
+    for nested_key in ("comic", "worker", "result", "output"):
+        nested = request_json.get(nested_key)
+        if isinstance(nested, dict):
+            nested_payload = _extract_quality_assessment_payload(nested)
+            if nested_payload is not None:
+                return nested_payload
+    return None
+
+
+def _assess_panel_candidate_quality(
+    *,
+    profile: Any,
+    assessment_payload: dict[str, Any] | None,
+) -> tuple[float, list[str]]:
+    flattened = " ".join(_collect_quality_strings(assessment_payload)).lower()
+    score = 0.5
+    notes: list[str] = []
+
+    for hint in getattr(profile, "quality_selector_hints", ()):
+        markers = _QUALITY_HINT_MARKERS.get(str(hint), (str(hint),))
+        if any(marker in flattened for marker in markers):
+            score += 0.12
+            notes.append(f"reward: {hint}")
+
+    for label, markers in _QUALITY_PENALTY_MARKERS.items():
+        if label == "empty establish room" and "establish" not in profile.panel_types:
+            continue
+        if label == "portrait pull on non-closeup role" and "closeup" in profile.panel_types:
+            continue
+        if any(marker in flattened for marker in markers):
+            score -= _QUALITY_PENALTY_WEIGHTS[label]
+            notes.append(f"penalty: {label}")
+
+    return round(max(0.0, min(1.0, score)), 4), notes
 
 
 def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
@@ -685,6 +827,13 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
         }
         prompt_fragments = [
             *resolver_sections["role_block"],
+            *(
+                [
+                    f"Quality focus: {', '.join(profile.quality_selector_hints)}."
+                ]
+                if profile.quality_selector_hints
+                else []
+            ),
             *resolver_sections["identity_block"],
             *resolver_sections["style_block"],
             *resolver_sections["binding_block"],
@@ -1355,9 +1504,33 @@ async def materialize_remote_render_job_callback(
                 if next_status == "completed"
                 else current.get("output_path")
             )
+            asset_quality_score: float | None = None
             asset_render_notes = (
                 next_error_message if next_status in {"failed", "cancelled"} else None
             )
+            if next_status == "completed" and isinstance(next_request_json, str):
+                panel_cursor = await db.execute(
+                    """
+                    SELECT p.panel_type
+                    FROM comic_scene_panels p
+                    WHERE p.id = ?
+                    """,
+                    (current["scene_panel_id"],),
+                )
+                panel_row = await panel_cursor.fetchone()
+                if panel_row is not None:
+                    assessment_payload = _extract_quality_assessment_payload(
+                        _parse_json_object(next_request_json)
+                    )
+                    if assessment_payload is not None:
+                        profile = resolve_comic_panel_render_profile(
+                            cast(dict[str, Any], panel_row)
+                        )
+                        asset_quality_score, quality_notes = _assess_panel_candidate_quality(
+                            profile=profile,
+                            assessment_payload=assessment_payload,
+                        )
+                        asset_render_notes = "; ".join(quality_notes) or None
 
             await db.execute(
                 """
@@ -1409,12 +1582,14 @@ async def materialize_remote_render_job_callback(
                 """
                 UPDATE comic_panel_render_assets
                 SET storage_path = ?,
+                    quality_score = ?,
                     render_notes = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     asset_storage_path,
+                    asset_quality_score,
                     asset_render_notes,
                     now,
                     current["render_asset_id"],
