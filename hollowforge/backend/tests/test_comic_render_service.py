@@ -12,6 +12,8 @@ from app.models import (
     AnimationJobCallbackPayload,
     ComicEpisodeCreate,
     ComicPanelRenderQueueResponse,
+    StoryPlannerCatalog,
+    StoryPlannerLocationCatalogEntry,
 )
 from app.services.comic_repository import create_comic_episode
 from app.services import comic_render_service
@@ -53,6 +55,7 @@ async def _create_panel_fixture(
     panel_type: str = "beat",
     panel_id: str = "comic_panel_render_queue_1",
     scene_id: str = "comic_scene_render_queue_1",
+    location_label: str = "Private Lounge",
 ) -> str:
     episode = await create_comic_episode(
         ComicEpisodeCreate(
@@ -86,7 +89,7 @@ async def _create_panel_fixture(
                 episode.id,
                 1,
                 "Kaede studies the invitation.",
-                "Private Lounge",
+                location_label,
                 "Keep the scene controlled and intimate.",
                 '["char_kaede_ren"]',
                 _now(),
@@ -339,6 +342,128 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert "luminous skin" not in prompt
 
 
+async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
+    prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character, adult woman, solo, fully clothed, tasteful adult allure",
+            "canonical_prompt_anchor": "Kaede Ren, elegant east asian beauty, sleek black bob",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep tall windows and the worktable visible.",
+            "action_intent": "The lead enters the room and clocks a black invitation on the worktable from across the space.",
+            "expression_intent": "Measured alertness",
+            "camera_intent": "Wide establishing shot inside Artist Loft Morning, with the room and its key props clearly visible.",
+            "panel_type": "establish",
+            "framing": "Wide establishing composition with room depth and key props visible.",
+            "continuity_lock": "Hold Artist Loft Morning's visual rules and keep the lead silhouette consistent.",
+        }
+    )
+
+    assert prompt.startswith(
+        "Setting: inside Artist Loft Morning. Scene cues: tall factory windows, easel."
+    )
+    assert "Composition: establish manga panel" in prompt
+    assert "Subject prominence:" in prompt
+    assert "tasteful adult allure" not in prompt
+    assert "glamorous adult woman" not in prompt
+    assert "high-response beauty editorial" not in prompt
+    assert "strong eye contact" not in prompt
+    assert "luminous skin" not in prompt
+
+
+async def test_establish_generation_request_keeps_same_checkpoint(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_type="establish",
+        location_label="Artist Loft Morning",
+    )
+    generation_service = _StubGenerationService(temp_db)
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
+
+
+async def test_establish_negative_prompt_appends_single_subject_glamour_poster_and_subject_filling_frame(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_type="establish",
+        location_label="Artist Loft Morning",
+    )
+    generation_service = _StubGenerationService(temp_db)
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert payload["negative_prompt"] == (
+        "child, teen, underage, school uniform, text, logo, watermark, blurry, "
+        "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
+        "hands, explicit nudity, graphic sexual content, glamour shoot, "
+        "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
+        "single-subject glamour poster, pinup composition, beauty key visual, "
+        "empty background, minimal room detail, subject filling frame"
+    )
+
+
+async def test_establish_generation_request_loads_artist_loft_scene_cues_from_story_planner_catalog_via_location_label(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_type="establish",
+        location_label="Artist Loft Morning",
+    )
+    generation_service = _StubGenerationService(temp_db)
+    catalog = StoryPlannerCatalog(
+        locations=[
+            StoryPlannerLocationCatalogEntry(
+                id="artist_loft_morning",
+                name="Artist Loft Morning",
+                setting_anchor="Catalog-only artist loft anchor",
+                visual_rules=["Keep the loft airy and sunlit."],
+                restricted_elements=["nightclub lighting"],
+                scene_cues=["north wall easel", "coffee mug"],
+            )
+        ]
+    )
+    load_calls: list[int] = []
+
+    def _fake_load_story_planner_catalog() -> StoryPlannerCatalog:
+        load_calls.append(1)
+        return catalog
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "load_story_planner_catalog",
+        _fake_load_story_planner_catalog,
+    )
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=1,
+    )
+
+    payload = generation_service.batch_calls[0][0]
+    assert load_calls == [1]
+    assert payload["prompt"].startswith(
+        "Setting: inside Artist Loft Morning. Scene cues: north wall easel, coffee mug."
+    )
+
+
 async def test_build_generation_request_uses_establish_profile_dimensions(
     temp_db: Path,
 ) -> None:
@@ -361,7 +486,9 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
         "child, teen, underage, school uniform, text, logo, watermark, blurry, "
         "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
         "hands, explicit nudity, graphic sexual content, glamour shoot, "
-        "fashion editorial, close portrait, airbrushed skin, copy-paste composition"
+        "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
+        "single-subject glamour poster, pinup composition, beauty key visual, "
+        "empty background, minimal room detail, subject filling frame"
     )
     assert payload["source_id"] == source_id
 

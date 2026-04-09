@@ -28,9 +28,11 @@ from app.services.comic_render_dispatch_service import (
 from app.services.comic_render_profiles import (
     filter_anchor_fragments,
     filter_profile_loras,
+    select_scene_cues,
     resolve_comic_panel_render_profile,
 )
 from app.services.generation_service import GenerationService
+from app.services.story_planner_catalog import load_story_planner_catalog
 
 _RENDER_ASSET_SELECT_COLUMNS = """
     a.id,
@@ -179,6 +181,28 @@ def _is_pending_remote_render_job(job: dict[str, Any]) -> bool:
 
 def _has_queued_remote_render_job(jobs: list[dict[str, Any]]) -> bool:
     return any(job.get("status") == "queued" for job in jobs)
+
+
+def _normalize_story_planner_location_label(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _resolve_story_planner_location_metadata(
+    location_label: str,
+) -> dict[str, Any] | None:
+    label = location_label.strip()
+    if not label:
+        return None
+
+    normalized_label = _normalize_story_planner_location_label(label)
+    catalog = load_story_planner_catalog()
+    for location in catalog.locations:
+        if normalized_label in {
+            _normalize_story_planner_location_label(location.id),
+            _normalize_story_planner_location_label(location.name),
+        }:
+            return location.model_dump()
+    return None
 
 
 async def _load_panel_render_context(panel_id: str) -> dict[str, Any]:
@@ -427,6 +451,8 @@ def _build_prompt(context: dict[str, Any]) -> str:
     panel_type = str(context.get("panel_type") or "").strip()
     continuity_lock = str(context.get("continuity_lock") or "").strip()
     profile = resolve_comic_panel_render_profile(context)
+    location = _resolve_story_planner_location_metadata(location_label)
+    scene_cues = select_scene_cues(location, scene_cue_mode=profile.scene_cue_mode)
 
     panel_type_lower = panel_type.lower()
 
@@ -464,6 +490,45 @@ def _build_prompt(context: dict[str, Any]) -> str:
         style_subject_fragments,
         anchor_filter_mode=profile.anchor_filter_mode,
     )
+    if profile.subject_prominence_mode == "reduced":
+        reduced_subject_markers = (
+            "tasteful adult allure",
+            "high-response beauty editorial",
+            "beauty editorial",
+            "strong eye contact",
+            "luminous skin",
+            "refined facial features",
+            "refined facial structure",
+            "high-fashion poise",
+            "elegant proportions",
+            "glamour shoot",
+            "glamour pose",
+            "fashion shoot",
+            "fashion editorial",
+            "close portrait",
+            "airbrushed skin",
+            "copy-paste framing",
+            "copy-paste composition",
+            "beauty key visual",
+            "single-subject glamour poster",
+            "pinup composition",
+            "subject filling frame",
+            "allure",
+            "beauty",
+            "editorial",
+            "glamour",
+            "portrait",
+        )
+
+        def _is_reduced_subject_fragment(fragment: str) -> bool:
+            normalized_fragment = fragment.lower()
+            return any(marker in normalized_fragment for marker in reduced_subject_markers)
+
+        style_subject_fragments = [
+            fragment
+            for fragment in style_subject_fragments
+            if not _is_reduced_subject_fragment(fragment)
+        ]
     style_and_subject = ", ".join(style_subject_fragments)
     continuity_fragments: list[str | None] = [_clean_fragment(scene_continuity_notes)]
     cleaned_continuity_lock = _clean_fragment(continuity_lock)
@@ -489,6 +554,21 @@ def _build_prompt(context: dict[str, Any]) -> str:
         "Emotion",
         [_clean_fragment(context.get("expression_intent"))],
     )
+    scene_cues_sentence = _build_labeled_sentence(
+        "Scene cues",
+        scene_cues,
+    )
+    subject_prominence_sentence = _build_labeled_sentence(
+        "Subject prominence",
+        (
+            [
+                "keep the lead secondary to the room",
+                "favor the environment over a glamour portrait",
+            ]
+            if profile.subject_prominence_mode == "reduced"
+            else []
+        ),
+    )
     composition_sentence = _build_labeled_sentence(
         "Composition",
         [
@@ -504,7 +584,17 @@ def _build_prompt(context: dict[str, Any]) -> str:
         separator=". ",
     )
 
-    if panel_type_lower in {"establish", "insert"}:
+    if panel_type_lower == "establish":
+        prompt_sentences = [
+            setting_sentence,
+            scene_cues_sentence,
+            composition_sentence,
+            subject_prominence_sentence,
+            action_sentence,
+            f"{style_and_subject}." if style_and_subject else None,
+            continuity_sentence,
+        ]
+    elif panel_type_lower == "insert":
         prompt_sentences = [
             setting_sentence,
             action_sentence,
