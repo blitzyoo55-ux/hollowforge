@@ -911,7 +911,287 @@ async def test_queue_panel_render_candidates_reuses_legacy_local_preview_batch(
         "legacy-asset-3",
     ]
     assert len(generation_service.batch_calls) == 0
-    assert legacy_source_id == f"comic-panel-render:{panel_id}:3"
+
+
+async def test_queue_panel_render_candidates_reuses_pre_profile_remote_worker_batch(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db)
+    legacy_source_id = f"comic-panel-render:{panel_id}:3:remote_worker"
+    current_source_id = _panel_render_source_id(panel_id, 3, "remote_worker")
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        for index in range(3):
+            generation_id = f"remote-legacy-generation-{index + 1}"
+            conn.execute(
+                """
+                INSERT INTO generations (
+                    id,
+                    prompt,
+                    checkpoint,
+                    loras,
+                    seed,
+                    steps,
+                    cfg,
+                    width,
+                    height,
+                    sampler,
+                    scheduler,
+                    status,
+                    source_id,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    generation_id,
+                    "legacy remote prompt",
+                    "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+                    "[]",
+                    400 + index,
+                    34,
+                    5.5,
+                    832,
+                    1216,
+                    "euler_ancestral",
+                    "normal",
+                    "submitted",
+                    legacy_source_id,
+                    _now(),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO comic_panel_render_assets (
+                    id,
+                    scene_panel_id,
+                    generation_id,
+                    asset_role,
+                    storage_path,
+                    prompt_snapshot,
+                    quality_score,
+                    bubble_safe_zones,
+                    crop_metadata,
+                    render_notes,
+                    is_selected,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"remote-legacy-asset-{index + 1}",
+                    panel_id,
+                    generation_id,
+                    "candidate",
+                    None,
+                    None,
+                    None,
+                    "[]",
+                    None,
+                    None,
+                    0,
+                    _now(),
+                    _now(),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO comic_render_jobs (
+                    id,
+                    scene_panel_id,
+                    render_asset_id,
+                    generation_id,
+                    request_index,
+                    source_id,
+                    target_tool,
+                    executor_mode,
+                    executor_key,
+                    status,
+                    request_json,
+                    external_job_id,
+                    external_job_url,
+                    output_path,
+                    error_message,
+                    submitted_at,
+                    completed_at,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"remote-legacy-job-{index + 1}",
+                    panel_id,
+                    f"remote-legacy-asset-{index + 1}",
+                    generation_id,
+                    index,
+                    legacy_source_id,
+                    "comic_panel_still",
+                    "remote_worker",
+                    comic_render_service.settings.ANIMATION_EXECUTOR_KEY,
+                    "submitted",
+                    json.dumps({"still_generation": {"source_id": legacy_source_id}}),
+                    f"remote-legacy-external-{index + 1}",
+                    f"https://worker.test/jobs/remote-legacy-job-{index + 1}",
+                    None,
+                    None,
+                    _now(),
+                    None,
+                    _now(),
+                    _now(),
+                ),
+            )
+        conn.commit()
+
+    generation_service = GenerationService()
+
+    result = await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=3,
+        execution_mode="remote_worker",
+    )
+
+    assert result.execution_mode == "remote_worker"
+    assert result.remote_job_count == 3
+    assert result.pending_render_job_count == 3
+    assert [asset.generation_id for asset in result.render_assets] == [
+        "remote-legacy-generation-1",
+        "remote-legacy-generation-2",
+        "remote-legacy-generation-3",
+    ]
+
+    with sqlite3.connect(temp_db) as conn:
+        current_generation_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM generations
+            WHERE source_id = ?
+            """,
+            (current_source_id,),
+        ).fetchone()[0]
+        legacy_job_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM comic_render_jobs
+            WHERE source_id = ?
+            """,
+            (legacy_source_id,),
+        ).fetchone()[0]
+
+    assert current_generation_count == 0
+    assert legacy_job_count == 3
+
+
+async def test_queue_panel_render_candidates_refuses_stale_oldest_legacy_local_preview_batch(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db)
+    legacy_source_id = f"comic-panel-render:{panel_id}:3"
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        for index in range(3):
+            generation_id = f"stale-legacy-generation-{index + 1}"
+            conn.execute(
+                """
+                INSERT INTO generations (
+                    id,
+                    prompt,
+                    checkpoint,
+                    loras,
+                    seed,
+                    steps,
+                    cfg,
+                    width,
+                    height,
+                    sampler,
+                    scheduler,
+                    status,
+                    source_id,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    generation_id,
+                    "stale legacy prompt",
+                    "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+                    "[]",
+                    500 + index,
+                    34,
+                    5.5,
+                    832,
+                    1216,
+                    "euler_ancestral",
+                    "normal",
+                    "queued",
+                    legacy_source_id,
+                    _now(),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO comic_panel_render_assets (
+                    id,
+                    scene_panel_id,
+                    generation_id,
+                    asset_role,
+                    storage_path,
+                    prompt_snapshot,
+                    quality_score,
+                    bubble_safe_zones,
+                    crop_metadata,
+                    render_notes,
+                    is_selected,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"stale-legacy-asset-{index + 1}",
+                    panel_id,
+                    generation_id,
+                    "candidate",
+                    None,
+                    None,
+                    None,
+                    "[]",
+                    None,
+                    None,
+                    0,
+                    _now(),
+                    _now(),
+                ),
+            )
+        conn.execute(
+            """
+            UPDATE comic_scene_panels
+            SET panel_type = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            ("establish", "2026-04-04T00:10:00+00:00", panel_id),
+        )
+        conn.commit()
+
+    generation_service = _StubGenerationService(temp_db)
+    current_source_id = _panel_render_source_id(panel_id, 3, "local_preview", panel_type="establish")
+
+    result = await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=3,
+        execution_mode="local_preview",
+    )
+
+    assert result.execution_mode == "local_preview"
+    assert len(generation_service.batch_calls) == 1
+    assert generation_service.batch_calls[0][0]["source_id"] == current_source_id
+    assert generation_service.batch_calls[0][0]["width"] == 1216
+    assert generation_service.batch_calls[0][0]["height"] == 832
+    assert [asset.generation_id for asset in result.render_assets] == [
+        "queued-generation-1",
+        "queued-generation-2",
+        "queued-generation-3",
+    ]
 
 
 async def test_queue_panel_render_candidates_does_not_fall_back_when_current_source_has_generations(

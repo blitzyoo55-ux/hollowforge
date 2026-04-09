@@ -320,6 +320,22 @@ async def _load_generation_count_for_source(source_id: str) -> int:
     return int(row["generation_count"]) if row is not None else 0
 
 
+async def _load_generation_created_at_for_source(source_id: str) -> str | None:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT MAX(created_at) AS created_at
+            FROM generations
+            WHERE source_id = ?
+            """,
+            (source_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return cast(str | None, row["created_at"])
+
+
 async def _load_render_jobs_for_source(source_id: str) -> list[dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute(
@@ -357,7 +373,8 @@ async def _load_reusable_render_assets_for_request(
     candidate_count: int,
     execution_mode: ComicRenderExecutionMode,
     profile: Any,
-) -> list[ComicPanelRenderAssetResponse]:
+    panel_updated_at: str,
+) -> tuple[str | None, list[ComicPanelRenderAssetResponse]]:
     current_source_id = _render_request_source_id(
         panel_id,
         candidate_count,
@@ -371,18 +388,36 @@ async def _load_reusable_render_assets_for_request(
             source_id=current_source_id,
         )
         if len(current_rows) == candidate_count:
-            return current_rows
-        return []
+            return current_source_id, current_rows
+        return None, []
+
+    async def _load_fresh_legacy_assets(
+        source_id: str,
+    ) -> tuple[str | None, list[ComicPanelRenderAssetResponse]]:
+        legacy_rows = await _load_render_assets_for_source(
+            panel_id=panel_id,
+            source_id=source_id,
+        )
+        if len(legacy_rows) != candidate_count:
+            return None, []
+        batch_created_at = await _load_generation_created_at_for_source(source_id)
+        if batch_created_at is not None and batch_created_at < panel_updated_at:
+            return None, []
+        return source_id, legacy_rows
+
+    pre_profile_source_id = (
+        f"comic-panel-render:{panel_id}:{candidate_count}:{execution_mode}"
+    )
+    reused_source_id, reused_assets = await _load_fresh_legacy_assets(
+        pre_profile_source_id
+    )
+    if reused_source_id is not None:
+        return reused_source_id, reused_assets
 
     if execution_mode == "local_preview":
         legacy_source_id = f"comic-panel-render:{panel_id}:{candidate_count}"
-        legacy_rows = await _load_render_assets_for_source(
-            panel_id=panel_id,
-            source_id=legacy_source_id,
-        )
-        if len(legacy_rows) == candidate_count:
-            return legacy_rows
-    return []
+        return await _load_fresh_legacy_assets(legacy_source_id)
+    return None, []
 
 
 def _build_prompt(context: dict[str, Any]) -> str:
@@ -869,10 +904,12 @@ async def queue_panel_render_candidates(
         candidate_count=candidate_count,
         execution_mode=execution_mode,
         profile=profile,
+        panel_updated_at=cast(str, context["updated_at"]),
     )
+    reused_source_id, existing_assets = existing_assets
     if len(existing_assets) == candidate_count:
         existing_jobs = (
-            await _load_render_jobs_for_source(source_id)
+            await _load_render_jobs_for_source(reused_source_id or source_id)
             if execution_mode == "remote_worker"
             else []
         )
