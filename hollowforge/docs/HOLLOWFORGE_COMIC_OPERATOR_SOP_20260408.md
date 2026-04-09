@@ -179,6 +179,27 @@ cd backend
   --timeout-sec 1800
 ```
 
+Bounded Camila V2 pilot path:
+
+```bash
+cd backend
+./.venv/bin/python scripts/launch_camila_v2_comic_pilot.py \
+  --base-url http://127.0.0.1:8000
+
+./.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py \
+  --base-url http://127.0.0.1:8000 \
+  --episode-id 09854884-5d52-4c94-9d5b-61800bfec677 \
+  --selected-scene-panel-id df540260-b759-4d42-b384-637bf60661ed \
+  --selected-render-asset-id d5866d4b-a4cd-4463-a01d-a1f2da43be43 \
+  --selected-render-generation-id c7a2075b-f76c-4caf-85b5-406ed026db5f \
+  --selected-render-asset-storage-path outputs/051d5939-1216-4561-ad11-b9696da5cfb3.png \
+  --timeout-sec 1800
+```
+
+The comic helper is intentionally bounded for live validation. It now defaults
+to one panel, one remote candidate, and a longer materialization poll so the
+pilot lane proves the V2 render contract before a broader one-shot run.
+
 Stale reconcile fallback:
 
 ```bash

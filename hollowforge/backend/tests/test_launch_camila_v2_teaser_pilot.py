@@ -48,24 +48,7 @@ def test_main_maps_execution_from_series_style_motion_policy(
             "series_style_id": series_style_id,
             "character_series_binding_id": "camila_pilot_binding_v1",
         },
-        "scenes": [
-            {
-                "scene": {"id": "scene-1"},
-                "panels": [
-                    {
-                        "id": "panel-1",
-                        "render_assets": [
-                            {
-                                "id": "asset-selected-1",
-                                "is_selected": True,
-                                "storage_path": "images/comics/panel-selected-1.png",
-                                "generation_id": "gen-selected-1",
-                            }
-                        ],
-                    }
-                ],
-            }
-        ],
+        "scenes": [{"scene": {"id": "scene-1"}, "panels": [{"id": "panel-1"}]}],
         "pages": [],
     }
 
@@ -119,6 +102,14 @@ def test_main_maps_execution_from_series_style_motion_policy(
             base_url,
             "--episode-id",
             "comic-ep-v2-teaser-1",
+            "--selected-scene-panel-id",
+            "panel-1",
+            "--selected-render-asset-id",
+            "asset-selected-1",
+            "--selected-render-generation-id",
+            "gen-selected-1",
+            "--selected-render-asset-storage-path",
+            "images/comics/panel-selected-1.png",
         ],
     )
 
@@ -126,6 +117,9 @@ def test_main_maps_execution_from_series_style_motion_policy(
     captured = capsys.readouterr()
     assert f"series_style_id: {series_style_id}" in captured.out
     assert "character_series_binding_id: camila_pilot_binding_v1" in captured.out
+    assert "selected_scene_panel_id: panel-1" in captured.out
+    assert "selected_render_asset_id: asset-selected-1" in captured.out
+    assert "selected_render_generation_id: gen-selected-1" in captured.out
     assert "selected_render_asset_storage_path: images/comics/panel-selected-1.png" in captured.out
     assert f"teaser_motion_policy: {expected_motion_policy}" in captured.out
     assert f"preset_id: {expected_preset_id}" in captured.out
@@ -154,24 +148,7 @@ def test_main_requires_completed_selected_render_from_v2_episode(
                     "series_style_id": "camila_pilot_v1",
                     "character_series_binding_id": "camila_pilot_binding_v1",
                 },
-                "scenes": [
-                    {
-                        "scene": {"id": "scene-2"},
-                        "panels": [
-                            {
-                                "id": "panel-2",
-                                "render_assets": [
-                                    {
-                                        "id": "asset-selected-2",
-                                        "is_selected": True,
-                                        "storage_path": "images/comics/panel-selected-2.png",
-                                        "generation_id": "gen-selected-2",
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ],
+                "scenes": [{"scene": {"id": "scene-2"}, "panels": [{"id": "panel-2"}]}],
                 "pages": [],
             }
         if (method, url) == ("GET", f"{base_url}/api/v1/generations/gen-selected-2"):
@@ -192,6 +169,14 @@ def test_main_requires_completed_selected_render_from_v2_episode(
             base_url,
             "--episode-id",
             "comic-ep-v2-teaser-2",
+            "--selected-scene-panel-id",
+            "panel-2",
+            "--selected-render-asset-id",
+            "asset-selected-2",
+            "--selected-render-generation-id",
+            "gen-selected-2",
+            "--selected-render-asset-storage-path",
+            "images/comics/panel-selected-2.png",
         ],
     )
     assert module.main() == 1

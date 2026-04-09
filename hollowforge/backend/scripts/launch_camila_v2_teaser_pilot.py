@@ -6,9 +6,18 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+BACKEND_DIR = SCRIPT_DIR.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from app.services.series_style_canon_registry import get_series_style_canon
 
@@ -66,7 +75,7 @@ def _resolve_execution_preset_for_style(series_style_id: str) -> tuple[str, str]
     return motion_policy, preset_id
 
 
-def _extract_selected_render_context(episode_detail: dict[str, Any]) -> dict[str, str]:
+def _extract_episode_v2_context(episode_detail: dict[str, Any]) -> dict[str, str]:
     episode = episode_detail.get("episode")
     if not isinstance(episode, dict):
         raise RuntimeError("Episode detail is missing episode payload")
@@ -87,49 +96,50 @@ def _extract_selected_render_context(episode_detail: dict[str, Any]) -> dict[str
         raise RuntimeError("V2 episode is missing series_style_id")
     if not character_series_binding_id:
         raise RuntimeError("V2 episode is missing character_series_binding_id")
+    return {
+        "episode_id": episode_id,
+        "series_style_id": series_style_id,
+        "character_series_binding_id": character_series_binding_id,
+    }
 
-    scenes = episode_detail.get("scenes")
-    if not isinstance(scenes, list):
-        raise RuntimeError("Episode detail is missing scenes")
 
-    for scene in scenes:
-        if not isinstance(scene, dict):
-            continue
-        panels = scene.get("panels")
-        if not isinstance(panels, list):
-            continue
-        for panel in panels:
-            if not isinstance(panel, dict):
-                continue
-            panel_id = str(panel.get("id") or "").strip()
-            render_assets = panel.get("render_assets")
-            if not isinstance(render_assets, list):
-                continue
-            for asset in render_assets:
-                if not isinstance(asset, dict):
-                    continue
-                if not bool(asset.get("is_selected")):
-                    continue
-                asset_id = str(asset.get("id") or "").strip()
-                generation_id = str(asset.get("generation_id") or "").strip()
-                storage_path = str(asset.get("storage_path") or "").strip()
-                if not asset_id or not generation_id or not storage_path:
-                    continue
-                if not panel_id:
-                    raise RuntimeError("Selected render asset panel id is missing")
-                return {
-                    "episode_id": episode_id,
-                    "series_style_id": series_style_id,
-                    "character_series_binding_id": character_series_binding_id,
-                    "scene_panel_id": panel_id,
-                    "selected_render_asset_id": asset_id,
-                    "generation_id": generation_id,
-                    "selected_render_asset_storage_path": storage_path,
-                }
+def _resolve_selected_render_context(
+    *,
+    episode_detail: dict[str, Any],
+    selected_scene_panel_id: str | None,
+    selected_render_asset_id: str | None,
+    selected_render_generation_id: str | None,
+    selected_render_asset_storage_path: str | None,
+) -> dict[str, str]:
+    episode_context = _extract_episode_v2_context(episode_detail)
 
-    raise RuntimeError(
-        "V2 episode requires a selected render asset with generation_id and storage_path"
+    explicit_scene_panel_id = str(selected_scene_panel_id or "").strip()
+    explicit_asset_id = str(selected_render_asset_id or "").strip()
+    explicit_generation_id = str(selected_render_generation_id or "").strip()
+    explicit_storage_path = str(selected_render_asset_storage_path or "").strip()
+
+    explicit_values = (
+        explicit_scene_panel_id,
+        explicit_asset_id,
+        explicit_generation_id,
+        explicit_storage_path,
     )
+    if any(explicit_values):
+        if not all(explicit_values):
+            raise RuntimeError(
+                "Explicit selected render context requires scene_panel_id, "
+                "selected_render_asset_id, selected_render_generation_id, and "
+                "selected_render_asset_storage_path"
+            )
+        return {
+            **episode_context,
+            "selected_scene_panel_id": explicit_scene_panel_id,
+            "selected_render_asset_id": explicit_asset_id,
+            "selected_render_generation_id": explicit_generation_id,
+            "selected_render_asset_storage_path": explicit_storage_path,
+        }
+
+    return episode_context
 
 
 def _require_completed_generation(*, base_url: str, generation_id: str) -> None:
@@ -173,6 +183,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--episode-id", required=True)
+    parser.add_argument("--selected-scene-panel-id")
+    parser.add_argument("--selected-render-asset-id")
+    parser.add_argument("--selected-render-generation-id")
+    parser.add_argument("--selected-render-asset-storage-path")
     parser.add_argument("--poll-sec", type=float, default=DEFAULT_POLL_SEC)
     parser.add_argument("--timeout-sec", type=float, default=DEFAULT_TIMEOUT_SEC)
     parser.add_argument("--no-wait", action="store_true")
@@ -182,6 +196,9 @@ def main() -> int:
         "episode_id": str(args.episode_id or "").strip(),
         "series_style_id": "",
         "character_series_binding_id": "",
+        "selected_scene_panel_id": "",
+        "selected_render_asset_id": "",
+        "selected_render_generation_id": "",
         "selected_render_asset_storage_path": "",
         "teaser_motion_policy": "",
         "preset_id": "",
@@ -202,11 +219,22 @@ def main() -> int:
             ),
             label=f"comic episode {args.episode_id}",
         )
-        comic_context = _extract_selected_render_context(episode_detail)
+        comic_context = _resolve_selected_render_context(
+            episode_detail=episode_detail,
+            selected_scene_panel_id=args.selected_scene_panel_id,
+            selected_render_asset_id=args.selected_render_asset_id,
+            selected_render_generation_id=args.selected_render_generation_id,
+            selected_render_asset_storage_path=args.selected_render_asset_storage_path,
+        )
         summary["episode_id"] = comic_context["episode_id"]
         summary["series_style_id"] = comic_context["series_style_id"]
         summary["character_series_binding_id"] = comic_context[
             "character_series_binding_id"
+        ]
+        summary["selected_scene_panel_id"] = comic_context["selected_scene_panel_id"]
+        summary["selected_render_asset_id"] = comic_context["selected_render_asset_id"]
+        summary["selected_render_generation_id"] = comic_context[
+            "selected_render_generation_id"
         ]
         summary["selected_render_asset_storage_path"] = comic_context[
             "selected_render_asset_storage_path"
@@ -222,7 +250,7 @@ def main() -> int:
         current_step = "require_completed_selected_render"
         _require_completed_generation(
             base_url=args.base_url,
-            generation_id=comic_context["generation_id"],
+            generation_id=comic_context["selected_render_generation_id"],
         )
 
         current_step = "launch_animation"
@@ -231,11 +259,11 @@ def main() -> int:
                 "POST",
                 f"{args.base_url.rstrip('/')}/api/v1/animation/presets/{preset_id}/launch",
                 {
-                    "generation_id": comic_context["generation_id"],
+                    "generation_id": comic_context["selected_render_generation_id"],
                     "dispatch_immediately": True,
                     "request_overrides": {},
                     "episode_id": comic_context["episode_id"],
-                    "scene_panel_id": comic_context["scene_panel_id"],
+                    "scene_panel_id": comic_context["selected_scene_panel_id"],
                     "selected_render_asset_id": comic_context["selected_render_asset_id"],
                 },
             ),

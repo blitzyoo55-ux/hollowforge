@@ -17,6 +17,8 @@ Production image generation and orchestration console for Lab451.
   - comic panel roles now resolve different render profiles; `establish` now
     uses a scene-first prompt recipe that biases toward room readability before
     portrait glamour, while `insert` continues to suppress glamour bias
+  - Character Canon V2 plus Series Style Canon layering is now landed for the
+    Camila-only pilot lane under `render_lane=character_canon_v2`
   - if establish candidates still vary too widely in storytelling quality, tune
     panel profile values before revisiting story import
 - animation execution worker: `lab451-animation-worker/`
@@ -59,10 +61,13 @@ cd backend
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_one_panel_verification.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_four_panel_benchmark.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_teaser_animation_smoke.py
+./.venv/bin/python -m pytest -q tests/test_launch_camila_v2_comic_pilot.py tests/test_launch_camila_v2_teaser_pilot.py
 ./.venv/bin/python scripts/check_comic_remote_render_preflight.py --backend-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_one_panel_verification.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_four_panel_benchmark.py --base-url http://127.0.0.1:8000
+./.venv/bin/python scripts/launch_camila_v2_comic_pilot.py --base-url http://127.0.0.1:8000
+./.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py --base-url http://127.0.0.1:8000 --episode-id 09854884-5d52-4c94-9d5b-61800bfec677 --selected-scene-panel-id df540260-b759-4d42-b384-637bf60661ed --selected-render-asset-id d5866d4b-a4cd-4463-a01d-a1f2da43be43 --selected-render-generation-id c7a2075b-f76c-4caf-85b5-406ed026db5f --selected-render-asset-storage-path outputs/051d5939-1216-4561-ad11-b9696da5cfb3.png --timeout-sec 1800
 ./.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py \
   --base-url http://127.0.0.1:8000 \
   --episode-id 2d696b08-4899-4a3b-b499-adc37dbaa9f5 \
@@ -123,6 +128,10 @@ cd backend
 - backend detail route: `GET /api/v1/comic/episodes/{episode_id}`
 - frontend studio route: `/comic` with manuscript profile selection plus
   selected-render teaser ops
+- bounded Camila V2 comic pilot:
+  `backend/scripts/launch_camila_v2_comic_pilot.py`
+- bounded Camila V2 teaser pilot:
+  `backend/scripts/launch_camila_v2_teaser_pilot.py`
 
 ## Production Hand-off Commands
 

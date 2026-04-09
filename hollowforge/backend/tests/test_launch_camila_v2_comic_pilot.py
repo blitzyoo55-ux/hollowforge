@@ -22,7 +22,7 @@ def _load_module():
     return module
 
 
-def test_main_builds_camila_v2_episode_with_explicit_ids_and_candidate_count_3(
+def test_main_builds_camila_v2_episode_with_explicit_ids_and_single_candidate_default(
     monkeypatch,
     capsys,
 ) -> None:
@@ -82,38 +82,30 @@ def test_main_builds_camila_v2_episode_with_explicit_ids_and_candidate_count_3(
         },
         (
             "POST",
-            f"{base_url}/api/v1/comic/panels/panel-1/queue-renders?candidate_count=3",
+            f"{base_url}/api/v1/comic/panels/panel-1/queue-renders?candidate_count=1&execution_mode=remote_worker",
         ): {
-            "queued_generation_count": 3,
+            "queued_generation_count": 1,
             "render_assets": [
-                {"id": "asset-1", "storage_path": "images/comics/panel-1-selected.png"}
+                {"id": "asset-1", "generation_id": "gen-1", "storage_path": ""}
             ],
         },
+        ("GET", f"{base_url}/api/v1/comic/panels/panel-1/render-jobs"): [
+            {
+                "id": "render-job-1",
+                "render_asset_id": "asset-1",
+                "generation_id": "gen-1",
+                "status": "completed",
+                "output_path": "images/comics/panel-1-selected.png",
+            }
+        ],
         (
             "POST",
             f"{base_url}/api/v1/comic/panels/panel-1/assets/asset-1/select",
         ): {
             "id": "asset-1",
+            "generation_id": "gen-1",
             "scene_panel_id": "panel-1",
             "storage_path": "images/comics/panel-1-selected.png",
-            "is_selected": True,
-        },
-        (
-            "POST",
-            f"{base_url}/api/v1/comic/panels/panel-2/queue-renders?candidate_count=3",
-        ): {
-            "queued_generation_count": 3,
-            "render_assets": [
-                {"id": "asset-2", "storage_path": "images/comics/panel-2-selected.png"}
-            ],
-        },
-        (
-            "POST",
-            f"{base_url}/api/v1/comic/panels/panel-2/assets/asset-2/select",
-        ): {
-            "id": "asset-2",
-            "scene_panel_id": "panel-2",
-            "storage_path": "images/comics/panel-2-selected.png",
             "is_selected": True,
         },
     }
@@ -145,6 +137,9 @@ def test_main_builds_camila_v2_episode_with_explicit_ids_and_candidate_count_3(
     assert "episode_id: comic-ep-camila-v2-1" in captured.out
     assert "series_style_id: camila_pilot_v1" in captured.out
     assert "character_series_binding_id: camila_pilot_binding_v1" in captured.out
+    assert "selected_render_asset_id: asset-1" in captured.out
+    assert "selected_render_generation_id: gen-1" in captured.out
+    assert "selected_scene_panel_id: panel-1" in captured.out
     assert "selected_render_asset_storage_path: images/comics/panel-1-selected.png" in captured.out
     assert "overall_success: true" in captured.out
 

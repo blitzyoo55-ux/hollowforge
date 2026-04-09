@@ -16,7 +16,11 @@ DEFAULT_STORY_PROMPT = "Camila checks the studio lockbox at closing."
 DEFAULT_STORY_LANE = "adult_nsfw"
 DEFAULT_TITLE = "Camila V2 Comic Pilot"
 DEFAULT_PANEL_MULTIPLIER = 1
-DEFAULT_CANDIDATE_COUNT = 3
+DEFAULT_CANDIDATE_COUNT = 1
+DEFAULT_EXECUTION_MODE = "remote_worker"
+DEFAULT_RENDER_POLL_ATTEMPTS = 420
+DEFAULT_RENDER_POLL_SEC = 1.0
+DEFAULT_PANEL_LIMIT = 1
 
 EXPECTED_CHARACTER_ID = "char_camila_duarte"
 EXPECTED_CHARACTER_VERSION_ID = "charver_camila_duarte_still_v1"
@@ -150,6 +154,44 @@ def _pick_selectable_asset(render_assets: list[dict[str, Any]]) -> dict[str, Any
     return selected
 
 
+def _poll_render_job_output_path(
+    *,
+    base_url: str,
+    panel_id: str,
+    render_asset_id: str,
+    generation_id: str,
+    poll_attempts: int,
+    poll_sec: float,
+) -> str:
+    import time
+
+    render_jobs_url = _build_url(
+        base_url,
+        f"/api/v1/comic/panels/{panel_id}/render-jobs",
+    )
+    for attempt in range(max(1, poll_attempts)):
+        jobs = _require_list(
+            _request_json("GET", render_jobs_url),
+            label=f"comic panel render jobs {panel_id}",
+        )
+        for job in jobs:
+            if str(job.get("render_asset_id") or "").strip() != render_asset_id:
+                continue
+            job_generation_id = str(job.get("generation_id") or "").strip()
+            if generation_id and job_generation_id and job_generation_id != generation_id:
+                continue
+            output_path = str(job.get("output_path") or "").strip()
+            if output_path:
+                return output_path
+        if attempt < max(1, poll_attempts) - 1:
+            time.sleep(max(0.1, poll_sec))
+
+    raise RuntimeError(
+        "Timed out waiting for selected render asset to materialize "
+        f"for panel {panel_id}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -158,6 +200,10 @@ def main() -> int:
     parser.add_argument("--title", default=DEFAULT_TITLE)
     parser.add_argument("--panel-multiplier", type=int, default=DEFAULT_PANEL_MULTIPLIER)
     parser.add_argument("--candidate-count", type=int, default=DEFAULT_CANDIDATE_COUNT)
+    parser.add_argument("--execution-mode", default=DEFAULT_EXECUTION_MODE)
+    parser.add_argument("--render-poll-attempts", type=int, default=DEFAULT_RENDER_POLL_ATTEMPTS)
+    parser.add_argument("--render-poll-sec", type=float, default=DEFAULT_RENDER_POLL_SEC)
+    parser.add_argument("--panel-limit", type=int, default=DEFAULT_PANEL_LIMIT)
     parser.add_argument("--character-id", default=EXPECTED_CHARACTER_ID)
     parser.add_argument(
         "--character-version-id",
@@ -175,6 +221,9 @@ def main() -> int:
         "episode_id": "",
         "series_style_id": str(args.series_style_id or "").strip(),
         "character_series_binding_id": str(args.character_series_binding_id or "").strip(),
+        "selected_render_asset_id": "",
+        "selected_render_generation_id": "",
+        "selected_scene_panel_id": "",
         "selected_render_asset_storage_path": "",
         "queued_generation_count": 0,
         "overall_success": False,
@@ -229,6 +278,10 @@ def main() -> int:
         current_step = "queue_and_select_renders"
         total_queued = 0
         first_storage_path = ""
+        first_selected_asset_id = ""
+        first_generation_id = ""
+        first_panel_id = ""
+        panel_ids = panel_ids[: max(1, int(args.panel_limit or 1))]
         for index, panel_id in enumerate(panel_ids):
             queue_response = _require_object(
                 _request_json(
@@ -236,7 +289,10 @@ def main() -> int:
                     _build_url(
                         args.base_url,
                         f"/api/v1/comic/panels/{panel_id}/queue-renders",
-                        {"candidate_count": args.candidate_count},
+                        {
+                            "candidate_count": args.candidate_count,
+                            "execution_mode": args.execution_mode,
+                        },
                     ),
                 ),
                 label=f"comic panel render queue {panel_id}",
@@ -257,10 +313,28 @@ def main() -> int:
                 ),
                 label=f"comic panel asset selection {panel_id}",
             )
+            selected_asset_id = str(selected_asset.get("id") or "").strip()
+            selected_generation_id = str(selected_asset.get("generation_id") or "").strip()
+            selected_storage_path = str(selected_asset.get("storage_path") or "").strip()
+            if not selected_storage_path and args.execution_mode == "remote_worker":
+                selected_storage_path = _poll_render_job_output_path(
+                    base_url=args.base_url,
+                    panel_id=panel_id,
+                    render_asset_id=selected_asset_id,
+                    generation_id=selected_generation_id,
+                    poll_attempts=args.render_poll_attempts,
+                    poll_sec=args.render_poll_sec,
+                )
             if index == 0:
-                first_storage_path = str(selected_asset.get("storage_path") or "").strip()
+                first_storage_path = selected_storage_path
+                first_selected_asset_id = selected_asset_id
+                first_generation_id = selected_generation_id
+                first_panel_id = str(selected_asset.get("scene_panel_id") or panel_id).strip()
 
         summary["queued_generation_count"] = total_queued
+        summary["selected_render_asset_id"] = first_selected_asset_id
+        summary["selected_render_generation_id"] = first_generation_id
+        summary["selected_scene_panel_id"] = first_panel_id
         summary["selected_render_asset_storage_path"] = first_storage_path
         summary["overall_success"] = True
         summary["failed_step"] = ""

@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-08
+Last updated: 2026-04-09
 
 ## Snapshot
 
@@ -32,12 +32,24 @@ Last updated: 2026-04-08
   `backend/scripts/launch_comic_production_dry_run.py`.
 - The comic teaser animation smoke helper entry point is
   `backend/scripts/launch_comic_teaser_animation_smoke.py`.
+- The bounded Camila V2 comic pilot helper entry point is
+  `backend/scripts/launch_camila_v2_comic_pilot.py`.
+- The bounded Camila V2 teaser pilot helper entry point is
+  `backend/scripts/launch_camila_v2_teaser_pilot.py`.
 - The current `/comic` operator runbook is
   `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md`.
 - The frontend must be rebuilt explicitly with `npm run build` before deploy.
 - The current local animation preview lane is `sdxl_ipadapter_microanim_v2`.
 - The latest validated comic teaser episode id is
   `2d696b08-4899-4a3b-b499-adc37dbaa9f5`.
+- Character Canon V2 plus Series Style Canon layering is now landed for the
+  Camila-only pilot lane under `render_lane=character_canon_v2`.
+- The latest validated Camila V2 episode id is
+  `09854884-5d52-4c94-9d5b-61800bfec677`.
+- The latest validated Camila V2 teaser animation job id is
+  `e609ca82-ff84-4d7d-b199-469e7bab5325`.
+- The latest validated Camila V2 teaser output is
+  `data/outputs/15d0003c-99c5-48b3-991f-eff9a95e8f24.mp4`.
 - The stable launchd labels are `com.mori.hollowforge.backend` and
   `com.mori.hollowforge.animation-worker`.
 - The canonical teaser validation path expects the stable launchd backend and
@@ -118,7 +130,20 @@ Last updated: 2026-04-08
    --base-url http://127.0.0.1:8000` to mark it `failed / Worker restarted`.
    Once it is failed, rerun the existing teaser helper. Recovery is `fail then
    rerun`, not resume.
-14. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
+14. Use `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py
+   --base-url http://127.0.0.1:8000` for the bounded Camila V2 still lane. The
+   helper now defaults to `--panel-limit 1`, `--candidate-count 1`, and
+   `--execution-mode remote_worker`, and emits explicit selected-render markers
+   for the paired teaser helper.
+15. Use `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py
+   --base-url http://127.0.0.1:8000 --episode-id
+   09854884-5d52-4c94-9d5b-61800bfec677 --selected-scene-panel-id
+   df540260-b759-4d42-b384-637bf60661ed --selected-render-asset-id
+   d5866d4b-a4cd-4463-a01d-a1f2da43be43 --selected-render-generation-id
+   c7a2075b-f76c-4caf-85b5-406ed026db5f --selected-render-asset-storage-path
+   outputs/051d5939-1216-4561-ad11-b9696da5cfb3.png --timeout-sec 1800` for the
+   bounded Camila V2 teaser validation path.
+16. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
    this file, and the roadmap do not drift.
 
 ## Active Priorities
@@ -128,6 +153,8 @@ Last updated: 2026-04-08
   manuscript profile selection and ZIP/report verification steps
 - continue the shift from random image generation toward character, episode,
   and shot-oriented production
+- keep Character Canon V2 layered separately from legacy favorite still
+  recipes, with Camila as the first pilot lane before broader migration
 - keep the comic MVP bounded around import, per-panel selected renders,
   dialogue drafting, page assembly, and handoff export before broadening the
   surface
@@ -163,6 +190,10 @@ Last updated: 2026-04-08
   `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
 - backend comic teaser animation smoke:
   `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py`
+- backend Camila V2 comic pilot:
+  `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py`
+- backend Camila V2 teaser pilot:
+  `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py`
 - frontend comic route: `/comic`
 - frontend checks: `frontend/package.json`
 - animation worker runtime: `lab451-animation-worker/run_local_animation_worker.sh`
@@ -189,26 +220,29 @@ Last updated: 2026-04-08
 
 <!-- project-hub:status:start -->
 - current phase: active
-- latest session: animation shot registry + `/comic` current-shot teaser ops
-- latest summary: Landed shot registry schema/service/linkage, added
-  `GET /api/v1/animation/shots/current`, and switched `/comic` teaser ops from
-  generation-based job history to `Current Teaser Shot` plus recent variants.
+- latest session: Character Canon V2 + Series Style Canon Camila pilot helpers
+- latest summary: Landed the Camila-only `character_canon_v2` lane, added
+  bounded comic and teaser pilot helpers with explicit selected-render markers,
+  and verified live teaser rerun output at
+  `data/outputs/15d0003c-99c5-48b3-991f-eff9a95e8f24.mp4`.
 
 ### Open Issues
 - none
 
 ### Next Actions
-- Choose the next bounded extension: publish/export automation or a fuller shot
-  library above the landed `current shot + variants` registry.
+- Decide whether the next bounded fix stays on Camila V2 quality tuning or
+  starts broadening the Character Canon V2 migration to additional characters.
 - Keep `STATE.md`, `ROADMAP.md`, and the status checkpoint aligned when the next
   phase starts.
 
 ### Verification Snapshot
 - backend `tests/test_animation_shot_registry.py` passes
 - backend `tests/test_animation_reconciliation.py` passes
+- backend `tests/test_launch_camila_v2_comic_pilot.py` passes
+- backend `tests/test_launch_camila_v2_teaser_pilot.py` passes
 - frontend `src/pages/ComicStudio.test.tsx` passes
 - `npm run build` passes
 - live `POST /api/v1/animation/reconcile-stale` responds normally
-- fresh teaser output verified at
-  `data/outputs/a51ed7d1-aba6-4b77-a00f-e6ce07613ba3.mp4`
+- fresh Camila V2 teaser output verified at
+  `data/outputs/15d0003c-99c5-48b3-991f-eff9a95e8f24.mp4`
 <!-- project-hub:status:end -->
