@@ -29,24 +29,20 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
         name="Camila",
         identity_anchor="Camila, poised adult woman with a practical, grounded presence",
         face_structure_notes=(
-            "Defined but natural face structure with calm proportions and no "
-            "beautification drift."
+            "Defined but natural face structure with calm proportions and stable "
+            "recognition."
         ),
         eye_signature=(
-            "Clear, attentive eyes with a steady directness rather than a posed "
-            "fashion gaze."
+            "Clear, attentive eyes with a steady directness and consistent gaze."
         ),
         hair_signature=(
-            "Practical, low-fuss hair that reads as lived-in and controlled without "
-            "becoming editorial."
+            "Practical, low-fuss hair that reads as lived-in and controlled."
         ),
         skin_surface_policy=(
-            "Preserve a natural skin surface with light texture and avoid airbrushed "
-            "finish."
+            "Preserve a natural skin surface with light texture and avoid oversmoothing."
         ),
         body_signature=(
-            "Adult, grounded build with believable presence and no exaggerated pose "
-            "language."
+            "Adult, grounded build with believable presence and balanced posture."
         ),
         expression_range=(
             "Calm, observant, and direct with small controlled shifts in emotion."

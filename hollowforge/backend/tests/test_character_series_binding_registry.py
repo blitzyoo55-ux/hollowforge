@@ -29,8 +29,8 @@ def test_load_camila_binding_by_explicit_id() -> None:
         "No wardrobe drift, no glamour drift, no editorial styling drift."
     )
     assert binding.do_not_mutate == (
-        "Do not mutate Camila identity ownership, style ownership, or checkpoint "
-        "ownership through this binding."
+        "Do not mutate Camila identity ownership or style ownership through this "
+        "binding."
     )
 
 

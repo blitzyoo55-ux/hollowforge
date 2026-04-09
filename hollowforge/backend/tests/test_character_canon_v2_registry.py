@@ -26,24 +26,20 @@ def test_load_camila_v2_character_canon_by_id() -> None:
         "than performatively styled."
     )
     assert camila.face_structure_notes == (
-        "Defined but natural face structure with calm proportions and no "
-        "beautification drift."
+        "Defined but natural face structure with calm proportions and stable "
+        "recognition."
     )
     assert camila.eye_signature == (
-        "Clear, attentive eyes with a steady directness rather than a posed "
-        "fashion gaze."
+        "Clear, attentive eyes with a steady directness and consistent gaze."
     )
     assert camila.hair_signature == (
-        "Practical, low-fuss hair that reads as lived-in and controlled without "
-        "becoming editorial."
+        "Practical, low-fuss hair that reads as lived-in and controlled."
     )
     assert camila.skin_surface_policy == (
-        "Preserve a natural skin surface with light texture and avoid airbrushed "
-        "finish."
+        "Preserve a natural skin surface with light texture and avoid oversmoothing."
     )
     assert camila.body_signature == (
-        "Adult, grounded build with believable presence and no exaggerated pose "
-        "language."
+        "Adult, grounded build with believable presence and balanced posture."
     )
     assert camila.expression_range == (
         "Calm, observant, and direct with small controlled shifts in emotion."
@@ -52,9 +48,19 @@ def test_load_camila_v2_character_canon_by_id() -> None:
         "No glamour styling, no editorial beauty language, no resort presentation, "
         "no model-pose drift."
     )
-    assert "glamour" not in camila.identity_anchor.lower()
-    assert "editorial" not in camila.identity_anchor.lower()
-    assert "resort" not in camila.identity_anchor.lower()
+    for field_name in (
+        "identity_anchor",
+        "face_structure_notes",
+        "eye_signature",
+        "hair_signature",
+        "skin_surface_policy",
+        "body_signature",
+        "expression_range",
+    ):
+        field_value = getattr(camila, field_name).lower()
+        assert "glamour" not in field_value
+        assert "editorial" not in field_value
+        assert "resort" not in field_value
 
 
 def test_camila_v2_character_canon_rejects_unknown_id() -> None:

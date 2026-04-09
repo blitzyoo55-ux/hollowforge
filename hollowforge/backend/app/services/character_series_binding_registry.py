@@ -33,8 +33,8 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
             "No wardrobe drift, no glamour drift, no editorial styling drift."
         ),
         do_not_mutate=(
-            "Do not mutate Camila identity ownership, style ownership, or checkpoint "
-            "ownership through this binding."
+            "Do not mutate Camila identity ownership or style ownership through this "
+            "binding."
         ),
         notes="Camila-only pilot binding for the V2 registry pilot.",
     )
