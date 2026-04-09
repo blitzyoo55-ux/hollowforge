@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.comic_render_profiles import (
     filter_anchor_fragments,
     filter_profile_loras,
+    select_scene_cues,
     resolve_comic_panel_render_profile,
 )
 
@@ -10,9 +11,38 @@ from app.services.comic_render_profiles import (
 def test_resolve_profile_returns_establish_env_profile_for_establish_panel() -> None:
     profile = resolve_comic_panel_render_profile({"panel_type": "establish"})
 
-    assert profile.profile_id == "establish_env_v1"
+    assert profile.profile_id == "establish_env_v2"
     assert profile.width == 1216
     assert profile.height == 832
+    assert profile.prompt_order_mode == "scene_first"
+    assert profile.subject_prominence_mode == "reduced"
+    assert profile.scene_cue_mode == "artist_loft_scene_cues"
+
+
+def test_select_scene_cues_returns_artist_loft_morning_scene_cues_in_order() -> None:
+    location = {
+        "id": "artist_loft_morning",
+        "scene_cues": [
+            "tall factory windows",
+            "easel",
+            "canvas",
+            "worktable",
+            "coffee mug",
+            "sketchbook",
+        ],
+    }
+
+    assert select_scene_cues(location, scene_cue_mode="artist_loft_scene_cues") == [
+        "tall factory windows",
+        "easel",
+    ]
+
+
+def test_select_scene_cues_returns_empty_list_when_location_has_no_scene_cues() -> None:
+    assert select_scene_cues(
+        {"id": "artist_loft_morning"},
+        scene_cue_mode="artist_loft_scene_cues",
+    ) == []
 
 
 def test_resolve_profile_returns_beat_dialogue_profile_for_beat_panel() -> None:

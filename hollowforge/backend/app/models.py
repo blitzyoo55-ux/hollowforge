@@ -693,6 +693,7 @@ class StoryPlannerLocationCatalogEntry(BaseModel):
     setting_anchor: str = Field(min_length=1, max_length=1000)
     visual_rules: List[str] = Field(min_length=1, max_length=12)
     restricted_elements: List[str] = Field(default_factory=list, max_length=12)
+    scene_cues: List[str] = Field(default_factory=list, max_length=12)
 
 
 class StoryPlannerPolicyPackCatalogEntry(BaseModel):

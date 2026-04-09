@@ -15,6 +15,9 @@ class ComicPanelRenderProfile:
     height: int
     negative_prompt_append: str
     anchor_filter_mode: str
+    prompt_order_mode: str = "default_subject_first"
+    subject_prominence_mode: str = "default"
+    scene_cue_mode: str = "none"
 
 
 _BEAUTY_ENHANCER_MARKERS = (
@@ -142,6 +145,9 @@ def _make_profile(
     height: int,
     negative_prompt_append: str,
     anchor_filter_mode: str,
+    prompt_order_mode: str = "default_subject_first",
+    subject_prominence_mode: str = "default",
+    scene_cue_mode: str = "none",
 ) -> ComicPanelRenderProfile:
     return ComicPanelRenderProfile(
         profile_id=profile_id,
@@ -151,18 +157,28 @@ def _make_profile(
         height=height,
         negative_prompt_append=negative_prompt_append,
         anchor_filter_mode=anchor_filter_mode,
+        prompt_order_mode=prompt_order_mode,
+        subject_prominence_mode=subject_prominence_mode,
+        scene_cue_mode=scene_cue_mode,
     )
 
 
 _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
     _make_profile(
-        "establish_env_v1",
+        "establish_env_v2",
         ("establish",),
         lora_mode="filter_beauty_enhancers",
         width=1216,
         height=832,
-        negative_prompt_append="glamour shoot, fashion editorial, close portrait, airbrushed skin, copy-paste composition",
+        negative_prompt_append=(
+            "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
+            "copy-paste composition, single-subject glamour poster, pinup composition, "
+            "beauty key visual, empty background, minimal room detail, subject filling frame"
+        ),
         anchor_filter_mode="drop_portrait_bias",
+        prompt_order_mode="scene_first",
+        subject_prominence_mode="reduced",
+        scene_cue_mode="artist_loft_scene_cues",
     ),
     _make_profile(
         "beat_dialogue_v1",
@@ -208,6 +224,22 @@ def resolve_comic_panel_render_profile(
     if profile is not None:
         return profile
     return _PROFILE_BY_PANEL_TYPE["beat"]
+
+
+def select_scene_cues(
+    location: dict[str, object] | None,
+    *,
+    scene_cue_mode: str,
+) -> list[str]:
+    if scene_cue_mode != "artist_loft_scene_cues" or not location:
+        return []
+
+    raw_scene_cues = location.get("scene_cues")
+    if not isinstance(raw_scene_cues, list):
+        return []
+
+    scene_cues = [str(cue).strip() for cue in raw_scene_cues if str(cue).strip()]
+    return scene_cues[:2]
 
 
 def filter_profile_loras(
