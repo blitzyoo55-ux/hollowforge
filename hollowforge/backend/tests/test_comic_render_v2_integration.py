@@ -239,8 +239,8 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "steps": 29,
             "cfg": 5.35,
             "sampler": "euler_a",
-            "identity_lock_strength": "strong",
-            "style_lock_strength": "strong",
+            "identity_lock_strength": 0.92,
+            "style_lock_strength": 0.88,
             "width": 960,
             "height": 1216,
             "framing_profile": "beat_dialogue_v1",
@@ -355,8 +355,8 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "Role negative: plastic skin, waxy face, dead eyes",
         ],
     }
-    assert snapshot["resolver_execution_summary"]["identity_lock_strength"] == "strong"
-    assert snapshot["resolver_execution_summary"]["style_lock_strength"] == "strong"
+    assert snapshot["resolver_execution_summary"]["identity_lock_strength"] == 0.92
+    assert snapshot["resolver_execution_summary"]["style_lock_strength"] == 0.88
     assert snapshot["resolver_execution_summary"]["width"] == 960
     assert snapshot["resolver_execution_summary"]["height"] == 1216
     assert snapshot["resolver_execution_summary"]["framing_profile"] == "beat_dialogue_v1"
