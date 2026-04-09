@@ -19,6 +19,19 @@ def test_load_camila_binding_by_explicit_id() -> None:
     assert binding.character_id == "camila_v2"
     assert binding.series_style_id == "camila_pilot_v1"
     assert binding.notes == "Camila-only pilot binding for the V2 registry pilot."
+    assert binding.identity_lock_strength == "strong"
+    assert binding.hair_lock_strength == "strong"
+    assert binding.face_lock_strength == "strong"
+    assert binding.allowed_wardrobe_family == (
+        "simple functional everyday wardrobe"
+    )
+    assert binding.binding_negative_rules == (
+        "No wardrobe drift, no glamour drift, no editorial styling drift."
+    )
+    assert binding.do_not_mutate == (
+        "Do not mutate Camila identity ownership, style ownership, or checkpoint "
+        "ownership through this binding."
+    )
 
 
 def test_load_camila_binding_by_pair_lookup() -> None:

@@ -11,6 +11,12 @@ class CharacterSeriesBindingEntry(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     character_id: str = Field(min_length=1, max_length=120)
     series_style_id: str = Field(min_length=1, max_length=120)
+    identity_lock_strength: str = Field(min_length=1, max_length=120)
+    hair_lock_strength: str = Field(min_length=1, max_length=120)
+    face_lock_strength: str = Field(min_length=1, max_length=120)
+    allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
+    binding_negative_rules: str = Field(min_length=1, max_length=1000)
+    do_not_mutate: str = Field(min_length=1, max_length=1000)
     notes: str = Field(min_length=1, max_length=1000)
 
 
@@ -19,6 +25,17 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         id="camila_pilot_binding_v1",
         character_id="camila_v2",
         series_style_id="camila_pilot_v1",
+        identity_lock_strength="strong",
+        hair_lock_strength="strong",
+        face_lock_strength="strong",
+        allowed_wardrobe_family="simple functional everyday wardrobe",
+        binding_negative_rules=(
+            "No wardrobe drift, no glamour drift, no editorial styling drift."
+        ),
+        do_not_mutate=(
+            "Do not mutate Camila identity ownership, style ownership, or checkpoint "
+            "ownership through this binding."
+        ),
         notes="Camila-only pilot binding for the V2 registry pilot.",
     )
 }

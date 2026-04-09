@@ -12,6 +12,27 @@ def test_load_pilot_series_style_canon_by_id() -> None:
     assert style.display_name == "Camila Pilot V1"
     assert style.teaser_motion_policy == "static_hero"
     assert style.notes == "Pilot series style canon for the Camila-only V2 pilot."
+    assert style.line_policy == (
+        "Keep linework clean, controlled, and panel-readable without heavy "
+        "finish loss."
+    )
+    assert style.shading_policy == (
+        "Use restrained shading that supports volume while avoiding muddy contrast."
+    )
+    assert style.surface_texture_policy == (
+        "Render surfaces with enough texture to stay natural without adding noise."
+    )
+    assert style.panel_readability_policy == (
+        "Prioritize clear subject separation and readable forms in still frames."
+    )
+    assert style.artifact_avoidance_policy == (
+        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation "
+        "artifacts."
+    )
+    assert style.hand_face_reliability_policy == (
+        "Preserve hands and faces with extra care because they are the highest "
+        "risk regions for still quality."
+    )
 
 
 def test_load_test_only_series_style_canon_uses_different_teaser_motion_policy() -> None:
