@@ -38,10 +38,6 @@ _STYLE_EXECUTION_REGISTRY: dict[str, dict[str, Any]] = {
         "steps": 30,
         "cfg": 5.4,
         "sampler": "euler_a",
-        "style_artifact_negative": (
-            "Avoid style artifacts: over-sharpened outlines, posterized gradients, "
-            "muddy midtones."
-        ),
     },
     "camila_motion_test_v1": {
         "checkpoint": "waiIllustriousSDXL_v160.safetensors",
@@ -54,10 +50,6 @@ _STYLE_EXECUTION_REGISTRY: dict[str, dict[str, Any]] = {
         "steps": 28,
         "cfg": 5.2,
         "sampler": "euler_a",
-        "style_artifact_negative": (
-            "Avoid style artifacts: unstable line cadence, temporal shimmer, muddy "
-            "midtones."
-        ),
     },
 }
 
@@ -94,7 +86,6 @@ _REQUIRED_STYLE_EXECUTION_KEYS: tuple[str, ...] = (
     "steps",
     "cfg",
     "sampler",
-    "style_artifact_negative",
 )
 
 
@@ -160,15 +151,38 @@ def resolve_comic_render_v2_contract(
     )
     identity_block = (
         character.identity_anchor,
+        character.face_structure_notes,
+        character.eye_signature,
+        character.hair_signature,
+        character.skin_surface_policy,
+        character.body_signature,
+        character.expression_range,
+        character.identity_negative_rules,
+        character.anti_drift,
         character.wardrobe_notes,
         character.personality_notes,
     )
     style_block = (
         f"Series style: {style.display_name}",
+        style.line_policy,
+        style.shading_policy,
+        style.surface_texture_policy,
+        style.panel_readability_policy,
+        style.artifact_avoidance_policy,
+        style.hand_face_reliability_policy,
         f"Style notes: {style.notes}",
     )
 
     binding_fragments: list[str] = [f"Binding notes: {binding.notes}"]
+    binding_fragments.extend(
+        [
+            f"Identity lock: {binding.identity_lock_strength}",
+            f"Hair lock: {binding.hair_lock_strength}",
+            f"Face lock: {binding.face_lock_strength}",
+            f"Wardrobe family: {binding.allowed_wardrobe_family}",
+            f"Do not mutate: {binding.do_not_mutate}",
+        ]
+    )
     if location_label and location_label.strip():
         binding_fragments.append(f"Location: {location_label.strip()}")
     if continuity_notes and continuity_notes.strip():
@@ -195,9 +209,9 @@ def resolve_comic_render_v2_contract(
     execution_params["framing_profile"] = role_profile.profile_id
 
     negative_rules = (
-        style_execution["style_artifact_negative"],
+        style.artifact_avoidance_policy,
         character.anti_drift,
-        "Binding negative: do not swap character identity or style assignment outside this binding.",
+        binding.binding_negative_rules,
         f"Role negative: {role_profile.negative_prompt_append}",
     )
 

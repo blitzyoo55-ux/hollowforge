@@ -197,9 +197,39 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
         raise AssertionError("legacy prompt assembly invoked for character_canon_v2 lane")
 
     contract = ComicRenderV2Contract(
-        identity_block=("Identity: Camila grounded presence",),
-        style_block=("Style: Camila Pilot V1",),
-        binding_block=("Binding: Camila pilot binding",),
+        identity_block=(
+            "Camila, poised adult woman with a practical, grounded presence",
+            "Defined but natural face structure with calm proportions and stable recognition.",
+            "Clear, attentive eyes with a steady directness and consistent gaze.",
+            "Practical, low-fuss hair that reads as lived-in and controlled.",
+            "Preserve a natural skin surface with light texture and avoid oversmoothing.",
+            "Adult, grounded build with believable presence and balanced posture.",
+            "Calm, observant, and direct with small controlled shifts in emotion.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "Simple, functional wardrobe choices that support the scene without turning her into a fashion portrait.",
+            "Measured, observant, and direct; she reads as self-possessed rather than performatively styled.",
+        ),
+        style_block=(
+            "Series style: Camila Pilot V1",
+            "Keep linework clean, controlled, and panel-readable without heavy finish loss.",
+            "Use restrained shading that supports volume while avoiding muddy contrast.",
+            "Render surfaces with enough texture to stay natural without adding noise.",
+            "Prioritize clear subject separation and readable forms in still frames.",
+            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+            "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
+            "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
+        ),
+        binding_block=(
+            "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
+            "Identity lock: strong",
+            "Hair lock: strong",
+            "Face lock: strong",
+            "Wardrobe family: simple functional everyday wardrobe",
+            "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
+            "Location: artist loft morning",
+            "Continuity: Carry over the wet brush on the easel from prior panel.",
+        ),
         role_block=("Role: beat panel",),
         execution_params={
             "checkpoint": "v2_style_checkpoint.safetensors",
@@ -209,8 +239,31 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "steps": 29,
             "cfg": 5.35,
             "sampler": "euler_a",
+            "identity_lock_strength": "strong",
+            "style_lock_strength": "strong",
+            "width": 960,
+            "height": 1216,
+            "framing_profile": "beat_dialogue_v1",
+            "positive_merge_sequence": (
+                "role",
+                "identity",
+                "style",
+                "binding",
+                "continuity_location",
+            ),
+            "negative_merge_sequence": (
+                "style_artifacts",
+                "identity_drift",
+                "binding_drift",
+                "role_quality",
+            ),
         },
-        negative_rules=("Avoid style drift", "Avoid identity drift"),
+        negative_rules=(
+            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "No wardrobe drift, no glamour drift, no editorial styling drift.",
+            "Role negative: plastic skin, waxy face, dead eyes",
+        ),
     )
 
     monkeypatch.setattr(comic_render_service, "_build_prompt", _unexpected_legacy_prompt)
@@ -261,12 +314,65 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
     assert snapshot["series_style_id"] == "camila_pilot_v1"
     assert snapshot["character_series_binding_id"] == "camila_pilot_binding_v1"
     assert snapshot["resolver_sections"] == {
-        "identity_block": ["Identity: Camila grounded presence"],
-        "style_block": ["Style: Camila Pilot V1"],
-        "binding_block": ["Binding: Camila pilot binding"],
+        "identity_block": [
+            "Camila, poised adult woman with a practical, grounded presence",
+            "Defined but natural face structure with calm proportions and stable recognition.",
+            "Clear, attentive eyes with a steady directness and consistent gaze.",
+            "Practical, low-fuss hair that reads as lived-in and controlled.",
+            "Preserve a natural skin surface with light texture and avoid oversmoothing.",
+            "Adult, grounded build with believable presence and balanced posture.",
+            "Calm, observant, and direct with small controlled shifts in emotion.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "Simple, functional wardrobe choices that support the scene without turning her into a fashion portrait.",
+            "Measured, observant, and direct; she reads as self-possessed rather than performatively styled.",
+        ],
+        "style_block": [
+            "Series style: Camila Pilot V1",
+            "Keep linework clean, controlled, and panel-readable without heavy finish loss.",
+            "Use restrained shading that supports volume while avoiding muddy contrast.",
+            "Render surfaces with enough texture to stay natural without adding noise.",
+            "Prioritize clear subject separation and readable forms in still frames.",
+            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+            "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
+            "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
+        ],
+        "binding_block": [
+            "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
+            "Identity lock: strong",
+            "Hair lock: strong",
+            "Face lock: strong",
+            "Wardrobe family: simple functional everyday wardrobe",
+            "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
+            "Location: artist loft morning",
+            "Continuity: Carry over the wet brush on the easel from prior panel.",
+        ],
         "role_block": ["Role: beat panel"],
-        "negative_rules": ["Avoid style drift", "Avoid identity drift"],
+        "negative_rules": [
+            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "No wardrobe drift, no glamour drift, no editorial styling drift.",
+            "Role negative: plastic skin, waxy face, dead eyes",
+        ],
     }
+    assert snapshot["resolver_execution_summary"]["identity_lock_strength"] == "strong"
+    assert snapshot["resolver_execution_summary"]["style_lock_strength"] == "strong"
+    assert snapshot["resolver_execution_summary"]["width"] == 960
+    assert snapshot["resolver_execution_summary"]["height"] == 1216
+    assert snapshot["resolver_execution_summary"]["framing_profile"] == "beat_dialogue_v1"
+    assert snapshot["resolver_execution_summary"]["positive_merge_sequence"] == [
+        "role",
+        "identity",
+        "style",
+        "binding",
+        "continuity_location",
+    ]
+    assert snapshot["resolver_execution_summary"]["negative_merge_sequence"] == [
+        "style_artifacts",
+        "identity_drift",
+        "binding_drift",
+        "role_quality",
+    ]
 
 
 async def test_v2_remote_job_request_json_carries_lane_binding_and_resolver_summary(

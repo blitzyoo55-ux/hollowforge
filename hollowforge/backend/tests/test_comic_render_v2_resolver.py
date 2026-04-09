@@ -48,7 +48,7 @@ def test_resolve_comic_render_v2_contract_materializes_required_sections() -> No
     )
 
 
-def test_resolve_comic_render_v2_contract_keeps_positive_and_negative_order_stable() -> None:
+def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract() -> None:
     contract = resolve_comic_render_v2_contract(
         character_id="camila_v2",
         series_style_id="camila_pilot_v1",
@@ -65,6 +65,14 @@ def test_resolve_comic_render_v2_contract_keeps_positive_and_negative_order_stab
     )
     assert contract.identity_block == (
         "Camila, poised adult woman with a practical, grounded presence",
+        "Defined but natural face structure with calm proportions and stable recognition.",
+        "Clear, attentive eyes with a steady directness and consistent gaze.",
+        "Practical, low-fuss hair that reads as lived-in and controlled.",
+        "Preserve a natural skin surface with light texture and avoid oversmoothing.",
+        "Adult, grounded build with believable presence and balanced posture.",
+        "Calm, observant, and direct with small controlled shifts in emotion.",
+        "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
+        "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
         (
             "Simple, functional wardrobe choices that support the scene without "
             "turning her into a fashion portrait."
@@ -76,10 +84,21 @@ def test_resolve_comic_render_v2_contract_keeps_positive_and_negative_order_stab
     )
     assert contract.style_block == (
         "Series style: Camila Pilot V1",
+        "Keep linework clean, controlled, and panel-readable without heavy finish loss.",
+        "Use restrained shading that supports volume while avoiding muddy contrast.",
+        "Render surfaces with enough texture to stay natural without adding noise.",
+        "Prioritize clear subject separation and readable forms in still frames.",
+        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+        "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
         "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
     )
     assert contract.binding_block == (
         "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
+        "Identity lock: strong",
+        "Hair lock: strong",
+        "Face lock: strong",
+        "Wardrobe family: simple functional everyday wardrobe",
+        "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
         "Location: artist loft morning",
         "Continuity: Carry over the wet brush on the easel from prior panel.",
     )
@@ -97,12 +116,12 @@ def test_resolve_comic_render_v2_contract_keeps_positive_and_negative_order_stab
         "role_quality",
     )
     assert contract.negative_rules == (
-        "Avoid style artifacts: over-sharpened outlines, posterized gradients, muddy midtones.",
+        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
         (
             "Keep Camila anchored in a calm, grounded, non-glamour identity. "
             "Avoid drifting into editorial beauty framing."
         ),
-        "Binding negative: do not swap character identity or style assignment outside this binding.",
+        "No wardrobe drift, no glamour drift, no editorial styling drift.",
         "Role negative: plastic skin, waxy face, dead eyes",
     )
 
