@@ -27,12 +27,6 @@ _BEAUTY_ENHANCER_MARKERS = (
     "eyeenhancer",
 )
 
-_SUPPORTED_LORA_MODES = {
-    "inherit_all",
-    "filter_beauty_enhancers",
-}
-
-
 def _normalize_filename(filename: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", filename.lower())
 
@@ -61,7 +55,7 @@ def _make_profile(
 _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
     _make_profile(
         "establish_env_v1",
-        ("establish", "splash"),
+        ("establish",),
         lora_mode="filter_beauty_enhancers",
         width=1216,
         height=832,
@@ -70,7 +64,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
     ),
     _make_profile(
         "beat_dialogue_v1",
-        ("beat", "transition"),
+        ("beat",),
         lora_mode="inherit_all",
         width=960,
         height=1216,
@@ -119,9 +113,6 @@ def filter_profile_loras(
     *,
     lora_mode: str,
 ) -> list[dict[str, object]]:
-    if lora_mode not in _SUPPORTED_LORA_MODES:
-        raise ValueError(f"Unsupported comic panel lora_mode: {lora_mode}")
-
     if lora_mode != "filter_beauty_enhancers":
         return [dict(lora) for lora in loras]
 
