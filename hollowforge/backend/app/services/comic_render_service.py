@@ -31,8 +31,11 @@ from app.services.comic_render_profiles import (
     select_scene_cues,
     resolve_comic_panel_render_profile,
 )
+from app.services.character_series_binding_registry import get_character_series_binding
+from app.services.comic_render_v2_resolver import resolve_comic_render_v2_contract
 from app.services.generation_service import GenerationService
 from app.services.story_planner_catalog import load_story_planner_catalog
+from app.services.workflow_registry import infer_workflow_lane
 
 _RENDER_ASSET_SELECT_COLUMNS = """
     a.id,
@@ -216,6 +219,9 @@ async def _load_panel_render_context(panel_id: str) -> dict[str, Any]:
                 s.continuity_notes AS scene_continuity_notes,
                 e.character_id AS character_id,
                 e.character_version_id AS character_version_id,
+                e.render_lane AS render_lane,
+                e.series_style_id AS series_style_id,
+                e.character_series_binding_id AS character_series_binding_id,
                 c.canonical_prompt_anchor AS canonical_prompt_anchor,
                 cv.prompt_prefix AS prompt_prefix,
                 cv.negative_prompt AS negative_prompt,
@@ -638,6 +644,84 @@ def merge_negative_prompt(
 
 def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
     profile = resolve_comic_panel_render_profile(context)
+    if str(context.get("render_lane") or "").strip() == "character_canon_v2":
+        series_style_id = str(context.get("series_style_id") or "").strip()
+        binding_id = str(context.get("character_series_binding_id") or "").strip()
+        if not series_style_id or not binding_id:
+            raise ValueError(
+                "character_canon_v2 lane requires series_style_id and character_series_binding_id"
+            )
+        binding = get_character_series_binding(binding_id)
+        if binding.series_style_id != series_style_id:
+            raise ValueError(
+                "character_canon_v2 lane series_style_id does not match binding"
+            )
+
+        contract = resolve_comic_render_v2_contract(
+            character_id=binding.character_id,
+            series_style_id=series_style_id,
+            binding_id=binding_id,
+            panel_type=str(context.get("panel_type") or "").strip().lower(),
+            location_label=cast(str | None, context.get("location_label")),
+            continuity_notes=cast(str | None, context.get("scene_continuity_notes")),
+            role_profile=profile,
+        )
+        execution_params = contract.execution_params
+        lora_items = execution_params.get("loras", ())
+        resolver_sections = {
+            "identity_block": [str(item) for item in contract.identity_block],
+            "style_block": [str(item) for item in contract.style_block],
+            "binding_block": [str(item) for item in contract.binding_block],
+            "role_block": [str(item) for item in contract.role_block],
+            "negative_rules": [str(item) for item in contract.negative_rules],
+        }
+        resolver_execution_summary = {
+            key: (
+                [dict(item) for item in value]
+                if key == "loras" and isinstance(value, tuple | list)
+                else value
+            )
+            for key, value in dict(execution_params).items()
+        }
+        prompt_fragments = [
+            *resolver_sections["role_block"],
+            *resolver_sections["identity_block"],
+            *resolver_sections["style_block"],
+            *resolver_sections["binding_block"],
+        ]
+        prompt = " ".join(fragment.strip() for fragment in prompt_fragments if fragment.strip())
+        if not prompt:
+            raise ValueError("V2 comic render resolver returned an empty prompt")
+        negative_prompt = ", ".join(
+            rule.strip() for rule in resolver_sections["negative_rules"] if rule.strip()
+        ) or None
+
+        context["resolver_sections"] = resolver_sections
+        context["resolver_execution_summary"] = resolver_execution_summary
+
+        return GenerationCreate(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            preserve_blank_negative_prompt=(
+                not isinstance(negative_prompt, str) or not negative_prompt.strip()
+            ),
+            checkpoint=cast(str, execution_params["checkpoint"]),
+            workflow_lane=infer_workflow_lane(cast(str, execution_params["checkpoint"])),
+            loras=[
+                LoraInput.model_validate(item)
+                for item in lora_items
+                if isinstance(item, dict)
+            ],
+            steps=int(execution_params["steps"]),
+            cfg=float(execution_params["cfg"]),
+            width=profile.width,
+            height=profile.height,
+            sampler=cast(str, execution_params["sampler"]),
+            scheduler=cast(str, context["scheduler"]),
+            clip_skip=int(context["clip_skip"]),
+        )
+
+    profile = resolve_comic_panel_render_profile(context)
     negative_prompt = context.get("negative_prompt")
     raw_loras = [
         cast(dict[str, Any], item)
@@ -723,6 +807,23 @@ def _build_remote_render_job_request_json(
     else:
         parsed_loras = []
 
+    comic_payload: dict[str, Any] = {
+        "scene_panel_id": panel_context["id"],
+        "render_asset_id": render_asset_id,
+        "character_version_id": panel_context.get("character_version_id"),
+    }
+    optional_comic_fields = (
+        "render_lane",
+        "series_style_id",
+        "character_series_binding_id",
+        "resolver_sections",
+        "resolver_execution_summary",
+    )
+    for field in optional_comic_fields:
+        value = panel_context.get(field)
+        if value is not None:
+            comic_payload[field] = value
+
     return {
         "backend_family": "sdxl_still",
         "model_profile": "comic_panel_sdxl_v1",
@@ -741,11 +842,7 @@ def _build_remote_render_job_request_json(
             "clip_skip": generation_row.get("clip_skip"),
             "source_id": generation_row.get("source_id"),
         },
-        "comic": {
-            "scene_panel_id": panel_context["id"],
-            "render_asset_id": render_asset_id,
-            "character_version_id": panel_context.get("character_version_id"),
-        },
+        "comic": comic_payload,
     }
 
 
@@ -1035,6 +1132,18 @@ async def queue_panel_render_candidates(
         "negative_prompt": generation.negative_prompt,
         "checkpoint": generation.checkpoint,
     }
+    if str(context.get("render_lane") or "").strip() == "character_canon_v2":
+        prompt_snapshot["render_lane"] = cast(str, context.get("render_lane"))
+        prompt_snapshot["series_style_id"] = cast(str, context.get("series_style_id"))
+        prompt_snapshot["character_series_binding_id"] = cast(
+            str, context.get("character_series_binding_id")
+        )
+        prompt_snapshot["resolver_sections"] = cast(
+            dict[str, Any], context.get("resolver_sections") or {}
+        )
+        prompt_snapshot["resolver_execution_summary"] = cast(
+            dict[str, Any], context.get("resolver_execution_summary") or {}
+        )
     await _persist_missing_render_assets(
         panel_id=panel_id,
         generation_rows=[

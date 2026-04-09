@@ -114,6 +114,16 @@ def build_comic_remote_worker_payload(
         "render_asset_id": render_asset.get("id"),
         "character_version_id": panel_context.get("character_version_id"),
     }
+    for field in (
+        "render_lane",
+        "series_style_id",
+        "character_series_binding_id",
+        "resolver_sections",
+        "resolver_execution_summary",
+    ):
+        value = panel_context.get(field)
+        if value is not None:
+            request_json["comic"][field] = value
     callback_token = settings.ANIMATION_CALLBACK_TOKEN or None
     callback_url = _build_comic_callback_url(str(comic_render_job["id"]))
 
