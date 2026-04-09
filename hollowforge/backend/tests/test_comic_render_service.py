@@ -29,6 +29,24 @@ def _now() -> str:
     return "2026-04-04T00:00:00+00:00"
 
 
+def _panel_render_source_id(
+    panel_id: str,
+    candidate_count: int,
+    execution_mode: str,
+    *,
+    panel_type: str = "beat",
+) -> str:
+    profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": panel_type}
+    )
+    return comic_render_service._render_request_source_id(
+        panel_id,
+        candidate_count,
+        execution_mode,
+        comic_render_service._profile_signature(profile),
+    )
+
+
 async def _create_panel_fixture(
     temp_db: Path,
     *,
@@ -117,8 +135,9 @@ async def _create_panel_fixture(
 
 
 class _StubGenerationService:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, generation_id_prefix: str = "") -> None:
         self._db_path = db_path
+        self._generation_id_prefix = generation_id_prefix
         self.batch_calls: list[tuple[dict[str, object], int, int]] = []
         self._batches: dict[tuple[object, ...], list[SimpleNamespace]] = {}
 
@@ -143,13 +162,17 @@ class _StubGenerationService:
             return 100, existing_batch
 
         batch = [
-            SimpleNamespace(id=f"queued-generation-{index + 1}")
+            SimpleNamespace(
+                id=f"{self._generation_id_prefix}queued-generation-{index + 1}"
+            )
             for index in range(count)
         ]
         with sqlite3.connect(self._db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             for index in range(count):
-                queued_generation_id = f"queued-generation-{index + 1}"
+                queued_generation_id = (
+                    f"{self._generation_id_prefix}queued-generation-{index + 1}"
+                )
                 conn.execute(
                     """
                     INSERT INTO generations (
@@ -198,6 +221,7 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
     generation_service = _StubGenerationService(temp_db)
+    source_id = _panel_render_source_id(panel_id, 3, "local_preview")
 
     result = await queue_panel_render_candidates(
         panel_id=panel_id,
@@ -251,6 +275,7 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
     assert generation_payload["scheduler"] == "normal"
     assert generation_payload["clip_skip"] == 2
     assert len(generation_payload["loras"]) == 2
+    assert generation_payload["source_id"] == source_id
 
     with sqlite3.connect(temp_db) as conn:
         rows = conn.execute(
@@ -287,7 +312,7 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
             ("queued-generation-1",),
         ).fetchone()[0]
 
-    assert generation_source_id == f"comic-panel-render:{panel_id}:3:local_preview"
+    assert generation_source_id == source_id
 
 
 async def test_build_prompt_frontloads_setting_for_establish_panels() -> None:
@@ -319,6 +344,7 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db, panel_type="establish")
     generation_service = _StubGenerationService(temp_db)
+    source_id = _panel_render_source_id(panel_id, 1, "local_preview", panel_type="establish")
 
     await queue_panel_render_candidates(
         panel_id=panel_id,
@@ -329,6 +355,15 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
     payload = generation_service.batch_calls[0][0]
     assert payload["width"] == 1216
     assert payload["height"] == 832
+    assert payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
+    assert payload["workflow_lane"] == "sdxl_illustrious"
+    assert payload["negative_prompt"] == (
+        "child, teen, underage, school uniform, text, logo, watermark, blurry, "
+        "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
+        "hands, explicit nudity, graphic sexual content, close portrait, "
+        "fashion shoot, glamour pose, airbrushed skin, copy-paste framing"
+    )
+    assert payload["source_id"] == source_id
 
 
 async def test_establish_generation_filters_beauty_enhancer_loras(
@@ -360,7 +395,19 @@ async def test_closeup_generation_keeps_character_version_loras(
     )
 
     payload = generation_service.batch_calls[0][0]
-    assert payload["loras"] != []
+    with sqlite3.connect(temp_db) as conn:
+        expected_loras_json = conn.execute(
+            """
+            SELECT loras
+            FROM character_versions
+            WHERE id = ?
+            """,
+            ("charver_kaede_ren_still_v1",),
+        ).fetchone()[0]
+
+    assert payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
+    assert payload["workflow_lane"] == "sdxl_illustrious"
+    assert payload["loras"] == json.loads(expected_loras_json)
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(
@@ -370,6 +417,7 @@ async def test_queue_panel_render_candidates_remote_creates_generation_shells_an
     panel_id = await _create_panel_fixture(temp_db)
     generation_service = GenerationService()
     dispatch_calls: list[dict[str, object]] = []
+    source_id = _panel_render_source_id(panel_id, 3, "remote_worker")
 
     async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
         dispatch_calls.append(
@@ -409,7 +457,6 @@ async def test_queue_panel_render_candidates_remote_creates_generation_shells_an
     assert len(result.render_assets) == 3
     assert all(asset.storage_path is None for asset in result.render_assets)
 
-    source_id = f"comic-panel-render:{panel_id}:3:remote_worker"
     with sqlite3.connect(temp_db) as conn:
         generation_rows = conn.execute(
             """
@@ -488,6 +535,7 @@ async def test_queue_panel_render_candidates_remote_retry_dispatches_queued_rema
     generation_service = GenerationService()
     first_pass = True
     dispatch_attempts: list[int] = []
+    source_id = _panel_render_source_id(panel_id, 3, "remote_worker")
 
     async def _dispatch_with_first_failure(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
         nonlocal first_pass
@@ -514,7 +562,6 @@ async def test_queue_panel_render_candidates_remote_retry_dispatches_queued_rema
             execution_mode="remote_worker",
         )
 
-    source_id = f"comic-panel-render:{panel_id}:3:remote_worker"
     with sqlite3.connect(temp_db) as conn:
         failed_pass_rows = conn.execute(
             """
@@ -574,6 +621,7 @@ async def test_queue_panel_render_candidates_remote_pending_count_excludes_faile
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
     generation_service = GenerationService()
+    source_id = _panel_render_source_id(panel_id, 3, "remote_worker")
 
     async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
         return {
@@ -638,6 +686,7 @@ async def test_queue_panel_render_candidates_remote_reuse_reports_materialized_a
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
     generation_service = GenerationService()
+    source_id = _panel_render_source_id(panel_id, 3, "remote_worker")
 
     async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
         return {
@@ -720,6 +769,7 @@ async def test_queue_panel_render_candidates_is_idempotent_for_same_panel_and_co
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
     generation_service = _StubGenerationService(temp_db)
+    source_id = _panel_render_source_id(panel_id, 3, "local_preview")
 
     first = await queue_panel_render_candidates(
         panel_id=panel_id,
@@ -752,7 +802,7 @@ async def test_queue_panel_render_candidates_is_idempotent_for_same_panel_and_co
             FROM generations
             WHERE source_id = ?
             """,
-            (f"comic-panel-render:{panel_id}:3:local_preview",),
+            (source_id,),
         ).fetchone()
 
     assert asset_rows is not None
@@ -760,16 +810,14 @@ async def test_queue_panel_render_candidates_is_idempotent_for_same_panel_and_co
     assert asset_rows[0] == 3
     assert generation_rows[0] == 3
     assert len(generation_service.batch_calls) == 1
-    assert generation_service.batch_calls[0][0]["source_id"] == (
-        f"comic-panel-render:{panel_id}:3:local_preview"
-    )
+    assert generation_service.batch_calls[0][0]["source_id"] == source_id
 
 
 async def test_queue_panel_render_candidates_reuses_legacy_local_preview_batch(
     temp_db: Path,
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
-    legacy_source_id = f"comic-panel-render:{panel_id}:3"
+    legacy_source_id = _panel_render_source_id(panel_id, 3, "local_preview")
 
     with sqlite3.connect(temp_db) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -869,7 +917,7 @@ async def test_queue_panel_render_candidates_does_not_fall_back_when_current_sou
     temp_db: Path,
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
-    current_source_id = f"comic-panel-render:{panel_id}:3:local_preview"
+    current_source_id = _panel_render_source_id(panel_id, 3, "local_preview")
     legacy_source_id = f"comic-panel-render:{panel_id}:3"
 
     with sqlite3.connect(temp_db) as conn:
@@ -990,7 +1038,7 @@ async def test_queue_panel_render_candidates_does_not_fall_back_when_current_sou
         ValueError,
         match=(
             "partial batch exists for source_id "
-            f"'comic-panel-render:{panel_id}:3:local_preview': expected 3, found 1"
+            f"'{current_source_id}': expected 3, found 1"
         ),
     ):
         await queue_panel_render_candidates(
@@ -1022,3 +1070,47 @@ async def test_queue_panel_render_candidates_does_not_fall_back_when_current_sou
     assert legacy_asset_rows is not None
     assert current_generation_rows[0] == 1
     assert legacy_asset_rows[0] == 3
+
+
+async def test_queue_panel_render_candidates_changes_source_when_panel_profile_changes(
+    temp_db: Path,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db, panel_type="establish")
+    first_generation_service = _StubGenerationService(temp_db)
+
+    first = await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=first_generation_service,
+        candidate_count=1,
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute(
+            """
+            UPDATE comic_scene_panels
+            SET panel_type = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            ("closeup", _now(), panel_id),
+        )
+        conn.commit()
+
+    second_generation_service = _StubGenerationService(
+        temp_db,
+        generation_id_prefix="closeup-",
+    )
+    second = await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=second_generation_service,
+        candidate_count=1,
+    )
+
+    assert len(first_generation_service.batch_calls) == 1
+    assert len(second_generation_service.batch_calls) == 1
+    assert (
+        first_generation_service.batch_calls[0][0]["source_id"]
+        != second_generation_service.batch_calls[0][0]["source_id"]
+    )
+    assert first.render_assets[0].generation_id != second.render_assets[0].generation_id
+    assert first_generation_service.batch_calls[0][0]["width"] == 1216
+    assert second_generation_service.batch_calls[0][0]["width"] == 832

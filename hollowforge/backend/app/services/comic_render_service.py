@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -112,12 +113,30 @@ def _render_asset_response(row: dict[str, Any]) -> ComicPanelRenderAssetResponse
     return ComicPanelRenderAssetResponse.model_validate(payload)
 
 
+def _profile_signature(profile: Any) -> str:
+    signature_payload = {
+        "profile_id": profile.profile_id,
+        "lora_mode": profile.lora_mode,
+        "width": profile.width,
+        "height": profile.height,
+        "negative_prompt_append": profile.negative_prompt_append,
+        "anchor_filter_mode": profile.anchor_filter_mode,
+    }
+    digest = hashlib.sha1(
+        json.dumps(signature_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return digest[:12]
+
+
 def _render_request_source_id(
     panel_id: str,
     candidate_count: int,
     execution_mode: ComicRenderExecutionMode,
+    profile_signature: str,
 ) -> str:
-    return f"comic-panel-render:{panel_id}:{candidate_count}:{execution_mode}"
+    return (
+        f"comic-panel-render:{panel_id}:{candidate_count}:{execution_mode}:{profile_signature}"
+    )
 
 
 def _build_queue_response(
@@ -337,9 +356,13 @@ async def _load_reusable_render_assets_for_request(
     panel_id: str,
     candidate_count: int,
     execution_mode: ComicRenderExecutionMode,
+    profile: Any,
 ) -> list[ComicPanelRenderAssetResponse]:
     current_source_id = _render_request_source_id(
-        panel_id, candidate_count, execution_mode
+        panel_id,
+        candidate_count,
+        execution_mode,
+        _profile_signature(profile),
     )
     current_generation_count = await _load_generation_count_for_source(current_source_id)
     if current_generation_count > 0:
@@ -352,7 +375,9 @@ async def _load_reusable_render_assets_for_request(
         return []
 
     if execution_mode == "local_preview":
-        legacy_source_id = f"comic-panel-render:{panel_id}:{candidate_count}"
+        legacy_source_id = (
+            f"comic-panel-render:{panel_id}:{candidate_count}:{_profile_signature(profile)}"
+        )
         legacy_rows = await _load_render_assets_for_source(
             panel_id=panel_id,
             source_id=legacy_source_id,
@@ -832,12 +857,20 @@ async def queue_panel_render_candidates(
     execution_mode: ComicRenderExecutionMode = "local_preview",
 ) -> ComicPanelRenderQueueResponse:
     context = await _load_panel_render_context(panel_id)
-    source_id = _render_request_source_id(panel_id, candidate_count, execution_mode)
+    profile = resolve_comic_panel_render_profile(context)
+    profile_signature = _profile_signature(profile)
+    source_id = _render_request_source_id(
+        panel_id,
+        candidate_count,
+        execution_mode,
+        profile_signature,
+    )
     context["source_id"] = source_id
     existing_assets = await _load_reusable_render_assets_for_request(
         panel_id=panel_id,
         candidate_count=candidate_count,
         execution_mode=execution_mode,
+        profile=profile,
     )
     if len(existing_assets) == candidate_count:
         existing_jobs = (
