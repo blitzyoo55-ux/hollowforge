@@ -744,6 +744,28 @@ async def test_assess_panel_candidate_quality_is_selection_aware_by_role() -> No
     assert "penalty: malformed hands" in closeup_notes
 
 
+async def test_assess_panel_candidate_quality_ignores_unstructured_and_negated_text() -> None:
+    beat_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "beat"}
+    )
+
+    score, notes = comic_render_service._assess_panel_candidate_quality(
+        profile=beat_profile,
+        assessment_payload={
+            "positive_signals": ["expression readability", "natural body pose"],
+            "negative_signals": [],
+            "notes": "Rubric reminder: no dead eyes, no waxy skin.",
+            "summary": "This candidate avoids the listed failures.",
+        },
+    )
+
+    assert score > 0.7
+    assert notes == [
+        "reward: expression readability",
+        "reward: natural body pose",
+    ]
+
+
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(
     temp_db: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1729,3 +1751,82 @@ async def test_queue_panel_render_candidates_changes_source_when_panel_profile_c
     assert first.render_assets[0].generation_id != second.render_assets[0].generation_id
     assert first_generation_service.batch_calls[0][0]["width"] == 1216
     assert second_generation_service.batch_calls[0][0]["width"] == 832
+
+
+async def test_materialize_remote_render_job_callback_persists_structured_quality_assessment(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db)
+    generation_service = GenerationService()
+
+    async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
+        return {
+            "id": f"remote-job-{job['request_index']}",
+            "job_id": f"remote-job-{job['request_index']}",
+            "job_url": f"https://worker.test/jobs/{job['id']}",
+        }
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "dispatch_comic_render_job",
+        _fake_dispatch,
+    )
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=2,
+        execution_mode="remote_worker",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        job_id = conn.execute(
+            """
+            SELECT id
+            FROM comic_render_jobs
+            WHERE scene_panel_id = ?
+            ORDER BY request_index ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()[0]
+
+    await materialize_remote_render_job_callback(
+        job_id=job_id,
+        payload=AnimationJobCallbackPayload(
+            status="completed",
+            output_path="images/comics/panel-quality.png",
+            request_json={
+                "worker": {
+                    "quality_assessment": {
+                        "positive_signals": [
+                            "expression readability",
+                            "natural body pose",
+                        ],
+                        "negative_signals": ["dead eyes"],
+                        "notes": "Quality rubric: no dead eyes, no waxy skin.",
+                    }
+                }
+            },
+        ),
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        asset_row = conn.execute(
+            """
+            SELECT quality_score, render_notes, storage_path
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()
+
+    assert asset_row[2] == "images/comics/panel-quality.png"
+    assert asset_row[0] == pytest.approx(0.6)
+    assert asset_row[1] == (
+        "reward: expression readability; reward: natural body pose; "
+        "penalty: dead eyes"
+    )

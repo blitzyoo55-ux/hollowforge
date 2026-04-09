@@ -715,23 +715,32 @@ _QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
 }
 
 
-def _collect_quality_strings(value: Any) -> list[str]:
-    if value is None:
+def _normalize_quality_signal_list(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple):
         return []
-    if isinstance(value, str):
-        cleaned = value.strip()
-        return [cleaned] if cleaned else []
-    if isinstance(value, dict):
-        collected: list[str] = []
-        for item in value.values():
-            collected.extend(_collect_quality_strings(item))
-        return collected
-    if isinstance(value, list | tuple | set):
-        collected: list[str] = []
-        for item in value:
-            collected.extend(_collect_quality_strings(item))
-        return collected
-    return []
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        cleaned = item.strip().lower()
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_quality_assessment_payload(
+    assessment_payload: dict[str, Any] | None,
+) -> tuple[list[str], list[str]]:
+    if not isinstance(assessment_payload, dict):
+        return [], []
+
+    positive = _normalize_quality_signal_list(
+        assessment_payload.get("positive_signals", assessment_payload.get("strengths"))
+    )
+    negative = _normalize_quality_signal_list(
+        assessment_payload.get("negative_signals", assessment_payload.get("issues"))
+    )
+    return positive, negative
 
 
 def _extract_quality_assessment_payload(request_json: dict[str, Any]) -> dict[str, Any] | None:
@@ -762,13 +771,15 @@ def _assess_panel_candidate_quality(
     profile: Any,
     assessment_payload: dict[str, Any] | None,
 ) -> tuple[float, list[str]]:
-    flattened = " ".join(_collect_quality_strings(assessment_payload)).lower()
+    positive_signals, negative_signals = _normalize_quality_assessment_payload(
+        assessment_payload
+    )
     score = 0.5
     notes: list[str] = []
 
     for hint in getattr(profile, "quality_selector_hints", ()):
         markers = _QUALITY_HINT_MARKERS.get(str(hint), (str(hint),))
-        if any(marker in flattened for marker in markers):
+        if any(signal in markers for signal in positive_signals):
             score += 0.12
             notes.append(f"reward: {hint}")
 
@@ -777,7 +788,7 @@ def _assess_panel_candidate_quality(
             continue
         if label == "portrait pull on non-closeup role" and "closeup" in profile.panel_types:
             continue
-        if any(marker in flattened for marker in markers):
+        if any(signal in markers for signal in negative_signals):
             score -= _QUALITY_PENALTY_WEIGHTS[label]
             notes.append(f"penalty: {label}")
 
