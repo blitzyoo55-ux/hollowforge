@@ -97,6 +97,103 @@ Panel role은 별도 계층으로 유지한다.
 - character-series binding
 - panel render profile
 
+### 5. Layer contract is explicit
+
+이번 V2에서는 네 층이 같은 종류의 책임을 중복해서 갖지 않는다.
+
+- `character canon`
+  - 사람의 정체성만 제공
+  - 얼굴/헤어/체형/표정 범위
+  - anti-drift identity rules
+- `series style canon`
+  - 작품의 표면 미감만 제공
+  - checkpoint / LoRA family
+  - line / shading / palette / artifact policy
+  - manga still과 teaser가 공유하는 공통 스타일 방향
+- `character-series binding`
+  - 특정 캐릭터가 특정 스타일에서 어떻게 유지되는지 제공
+  - identity lock strength
+  - style-safe wardrobe
+  - binding-specific do / don't
+- `panel render profile`
+  - role별 shot grammar만 제공
+  - framing
+  - aspect ratio
+  - prompt order
+  - role-specific negatives
+
+즉 `series style canon`은 role별 컷 문법을 가지지 않고, `panel render profile`은 시리즈 미감 자체를 가지지 않는다.
+
+## Layer Composition Contract
+
+구현 시 최종 render input은 아래 구조로 materialize된다.
+
+- `identity_block`
+  - source: `character canon`
+- `style_block`
+  - source: `series style canon`
+- `binding_block`
+  - source: `character-series binding`
+- `role_block`
+  - source: `panel render profile`
+- `execution_params`
+  - checkpoint family
+  - LoRA family
+  - aspect ratio
+  - step/cfg/sampler family
+- `negative_rules`
+  - artifact negatives
+  - anti-drift negatives
+  - binding negatives
+  - role negatives
+
+### Positive composition order
+
+최종 positive assembly는 아래 순서로 고정한다.
+
+1. `role_block`
+   - shot role
+   - composition
+   - scene readability goals
+2. `identity_block`
+   - same-person anchor
+   - face / hair / body identity
+3. `style_block`
+   - line / shading / tonal direction
+4. `binding_block`
+   - style-safe wardrobe
+   - strength modifiers
+   - compatibility cues
+5. continuity / location / episode context
+
+즉 style은 identity와 shot role 위에 올라가지만, 둘을 덮어쓰지 못한다.
+
+### Negative composition order
+
+최종 negative는 단순 대체가 아니라 누적 합성으로 고정한다.
+
+1. `series style canon.artifact_avoidance_policy`
+2. `character canon.anti_drift_rules`
+3. `character-series binding.binding_negative_rules`
+4. `panel render profile.role_negatives`
+
+규칙:
+
+- 뒤 계층이 앞 계층을 삭제할 수 없다
+- dedupe는 가능하지만 제거는 불가하다
+- `panel render profile`은 role-specific negative를 추가할 수는 있지만 character identity 보호 규칙을 약화시킬 수는 없다
+
+### Execution precedence
+
+실행 파라미터 우선순위는 아래로 고정한다.
+
+- checkpoint / LoRA family: `series style canon`
+- identity lock strength: `character-series binding`
+- aspect ratio / framing defaults: `panel render profile`
+- continuity context: current episode / panel context
+
+즉 style canon이 모델 계열을 결정하고, panel profile이 shot geometry를 결정한다.
+
 ## Proposed Model
 
 ### A. Character Canon 2.0
@@ -138,7 +235,7 @@ Panel role은 별도 계층으로 유지한다.
 - `shading_policy`
 - `palette_policy`
 - `artifact_avoidance_policy`
-- `manga_panel_policy`
+- `manga_surface_policy`
 - `teaser_motion_policy`
 - `status`
 
@@ -147,6 +244,11 @@ Panel role은 별도 계층으로 유지한다.
 - 기존 favorite 모델/LoRA는 참고 자료일 뿐이다.
 - 새 style canon은 `현재 제작 목적에 맞는 결과`를 기준으로 다시 구성한다.
 - 필요하면 기존 favorite recipe를 버릴 수 있다.
+- 여기서의 `manga_surface_policy`는 role별 shot 문법이 아니라, 만화 still이 가져야 할 공통 표면 미감만 뜻한다.
+  - line crispness
+  - tone density
+  - anti-airbrush policy
+  - anti-poster-glamour policy
 
 ### C. Character-Series Binding
 
@@ -174,6 +276,8 @@ Panel role은 별도 계층으로 유지한다.
 
 - panel profile은 더 이상 character look을 직접 책임지지 않는다.
 - panel profile은 role별 연출만 책임진다.
+- panel profile은 `series style canon`의 시각 미감을 재정의하지 않는다.
+- panel profile은 `manga_surface_policy`를 상속받고, 그 위에 role별 구도만 더한다.
 
 즉:
 
@@ -181,6 +285,16 @@ Panel role은 별도 계층으로 유지한다.
 - `style canon`은 look-and-feel
 - `binding`은 compatibility
 - `panel profile`은 shot grammar
+
+여기서 경계는 아래처럼 고정한다.
+
+- `series style canon`
+  - 작품 전체 line / shading / palette / anti-artifact 미감
+- `panel render profile`
+  - establish / beat / insert / closeup 별 shot role 문법
+  - role-specific framing
+  - role-specific aspect ratio
+  - role-specific negative append
 
 ## Legacy Strategy
 
@@ -212,6 +326,20 @@ Panel role은 별도 계층으로 유지한다.
 - 전체를 동시에 건드리면 drift와 품질 회귀를 한꺼번에 만든다.
 
 따라서 새 구조는 `Camila Duarte` 1캐릭터 파일럿부터 시작한다.
+
+### Operational cut line
+
+이번 Camila 파일럿은 `global runtime replacement`가 아니다.
+
+운영 cut line은 아래처럼 고정한다.
+
+- 기존 runtime default는 그대로 `legacy lane`
+- V2는 `Camila pilot lane`으로만 opt-in
+- pilot lane은 명시적 `series_style_id`와 `binding_id`가 있을 때만 사용
+- 다른 캐릭터는 자동으로 V2를 읽지 않는다
+- dual-read 전면 지원이나 전체 라우트 교체는 이번 범위가 아니다
+
+즉 구현 범위는 `Camila only, explicit opt-in, no global migration`이다.
 
 ## Camila Duarte Pilot
 
@@ -284,6 +412,37 @@ Camila는 이미 comic pilot에 실제로 사용됐고, `artist loft morning`에
 - 여전히 AI-generated 콘텐츠이지만 과도한 synthetic glamour 티가 줄어든다.
 - airbrushed beauty still보다 `읽히는 만화 컷`에 더 가깝다.
 
+## Pilot Pass Rubric
+
+이번 파일럿은 주관 평가만으로 통과시키지 않는다.
+
+최소 검증 세트:
+
+- one-shot 1편
+  - 4 panels
+  - panel당 candidate 3개
+- teaser 1개
+
+평가자:
+
+- 1차: operator 직접 검수
+- 2차: HollowForge acceptance note 기록
+
+통과 기준:
+
+1. identity stability
+   - 선택된 4패널 중 최소 3패널이 같은 Camila로 읽혀야 한다
+   - teaser도 같은 Camila로 읽혀야 한다
+2. establish readability
+   - establish 선택컷에서 loft-readable cue가 최소 2개 보여야 한다
+   - subject가 frame 대부분을 차지하면 실패다
+3. panel diversity
+   - 4패널이 near-identical portrait set으로 읽히면 실패다
+4. artifact tolerance
+   - 선택된 컷 중 severe crop failure / severe anatomy failure / poster-glamour collapse가 2개 이상 나오면 실패다
+
+즉 `1편 + teaser` 기준으로 operator가 `같은 인물이다`, `컷 역할이 읽힌다`, `과한 AI glamour still이 아니다`를 동시에 확인해야 Camila pilot을 통과로 본다.
+
 ## Out of Scope
 
 이번 설계는 아래를 포함하지 않는다.
@@ -304,4 +463,3 @@ Camila는 이미 comic pilot에 실제로 사용됐고, `artist loft morning`에
 4. 파일럿 검증 통과 후 핵심 캐릭터 확장
 
 즉 전략은 `full reset`이 아니라 `controlled migration`이다.
-
