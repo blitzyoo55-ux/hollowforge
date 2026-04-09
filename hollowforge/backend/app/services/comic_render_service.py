@@ -375,9 +375,7 @@ async def _load_reusable_render_assets_for_request(
         return []
 
     if execution_mode == "local_preview":
-        legacy_source_id = (
-            f"comic-panel-render:{panel_id}:{candidate_count}:{_profile_signature(profile)}"
-        )
+        legacy_source_id = f"comic-panel-render:{panel_id}:{candidate_count}"
         legacy_rows = await _load_render_assets_for_source(
             panel_id=panel_id,
             source_id=legacy_source_id,

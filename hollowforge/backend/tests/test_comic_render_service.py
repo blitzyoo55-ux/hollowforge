@@ -817,7 +817,7 @@ async def test_queue_panel_render_candidates_reuses_legacy_local_preview_batch(
     temp_db: Path,
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db)
-    legacy_source_id = _panel_render_source_id(panel_id, 3, "local_preview")
+    legacy_source_id = f"comic-panel-render:{panel_id}:3"
 
     with sqlite3.connect(temp_db) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -911,6 +911,7 @@ async def test_queue_panel_render_candidates_reuses_legacy_local_preview_batch(
         "legacy-asset-3",
     ]
     assert len(generation_service.batch_calls) == 0
+    assert legacy_source_id == f"comic-panel-render:{panel_id}:3"
 
 
 async def test_queue_panel_render_candidates_does_not_fall_back_when_current_source_has_generations(
