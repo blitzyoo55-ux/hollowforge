@@ -450,6 +450,24 @@ async def test_v2_establish_override_and_beat_panel_keeps_base_style_stack(
     establish_payload, _, _ = establish_generation_service.batch_calls[0]
     assert establish_payload["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert establish_payload["loras"] == []
+    assert establish_payload.get("reference_guided") is not True
+    assert "still_backend_family" not in establish_payload
+
+    with sqlite3.connect(temp_db) as conn:
+        raw_snapshot = conn.execute(
+            """
+            SELECT prompt_snapshot
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (establish_panel_id,),
+        ).fetchone()[0]
+
+    snapshot = json.loads(raw_snapshot)
+    assert snapshot["resolver_execution_summary"].get("reference_guided") is not True
+    assert "still_backend_family" not in snapshot["resolver_execution_summary"]
 
     beat_payload, _, _ = beat_generation_service.batch_calls[0]
     assert beat_payload["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
