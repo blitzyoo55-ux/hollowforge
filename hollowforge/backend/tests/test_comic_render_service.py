@@ -344,6 +344,12 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert prompt.startswith("Setting: inside Artist Loft Morning.")
     assert "Composition: establish manga panel" in prompt
     assert "environment-first framing" in prompt
+    assert "no held note, no placard, no presented paper" in prompt
+    assert (
+        "Action: lead inhabits the room naturally with relaxed empty hands, no note, letter, card, sign, or written prop presented to the viewer."
+        in prompt
+    )
+    assert "checks the studio lockbox" not in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
@@ -352,6 +358,30 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert "strong eye contact" not in prompt
     assert "glamorous adult woman" not in prompt
     assert "luminous skin" not in prompt
+
+
+async def test_establish_prompt_uses_composition_cues_without_direct_manga_style_phrasing() -> None:
+    prompt = comic_render_service._build_prompt(
+        {
+            "prompt_prefix": "masterpiece, best quality, original character, adult woman, solo, tasteful adult allure",
+            "canonical_prompt_anchor": "Kaede Ren, elegant east asian beauty, sleek black bob",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Keep tall windows and the worktable visible.",
+            "action_intent": "The lead enters the room and clocks a black invitation on the worktable from across the space.",
+            "expression_intent": "Measured alertness",
+            "camera_intent": "Wide establishing shot inside Artist Loft Morning, with the room and its key props clearly visible.",
+            "panel_type": "establish",
+            "framing": "Wide establishing composition with room depth and key props visible.",
+            "continuity_lock": "Hold Artist Loft Morning's visual rules and keep the lead silhouette consistent.",
+        }
+    )
+
+    assert "manga style" not in prompt.lower()
+    assert "japanese manga style" not in prompt.lower()
+    assert "Composition: establish manga panel" not in prompt
+    assert "wide room view inside Artist Loft Morning" in prompt
+    assert "leave negative space for dialogue" in prompt
+    assert "environment-first framing" in prompt
 
 
 async def test_non_establish_prompt_path_does_not_touch_catalog_lookup(
@@ -412,8 +442,13 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
         in prompt
     )
     assert "Subject prominence:" in prompt
+    assert (
+        "Action: lead inhabits the room naturally with relaxed empty hands, no note, letter, card, sign, or written prop presented to the viewer."
+        in prompt
+    )
     assert "wide room view inside Artist Loft Morning" in prompt
     assert "Wide establishing shot" not in prompt
+    assert "black invitation" not in prompt
     assert "tasteful adult allure" not in prompt
     assert "glamorous adult woman" not in prompt
     assert "high-response beauty editorial" not in prompt
@@ -464,10 +499,11 @@ async def test_establish_negative_prompt_appends_single_subject_glamour_poster_a
         "hands, explicit nudity, graphic sexual content, glamour shoot, "
         "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
         "single-subject glamour poster, pinup composition, beauty key visual, "
-        "empty background, minimal room detail, subject filling frame, unreadable text, "
-        "random letters, gibberish text, logo, watermark, subtitle overlay, caption box, "
-        "speech bubble outline, camera frame, viewfinder, screenshot border, interface overlay, "
-        "recording overlay"
+        "empty background, minimal room detail, subject filling frame, holding note, "
+        "holding letter, message card, placard, sign held to viewer, paper presented to viewer, "
+        "rec frame, lower third subtitle, unreadable text, random letters, gibberish text, "
+        "logo, watermark, subtitle overlay, caption box, speech bubble outline, camera frame, "
+        "viewfinder, screenshot border, interface overlay, recording overlay"
     )
 
 
@@ -542,10 +578,11 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
         "hands, explicit nudity, graphic sexual content, glamour shoot, "
         "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
         "single-subject glamour poster, pinup composition, beauty key visual, "
-        "empty background, minimal room detail, subject filling frame, unreadable text, "
-        "random letters, gibberish text, logo, watermark, subtitle overlay, caption box, "
-        "speech bubble outline, camera frame, viewfinder, screenshot border, interface overlay, "
-        "recording overlay"
+        "empty background, minimal room detail, subject filling frame, holding note, "
+        "holding letter, message card, placard, sign held to viewer, paper presented to viewer, "
+        "rec frame, lower third subtitle, unreadable text, random letters, gibberish text, "
+        "logo, watermark, subtitle overlay, caption box, speech bubble outline, camera frame, "
+        "viewfinder, screenshot border, interface overlay, recording overlay"
     )
     assert payload["source_id"] == source_id
 
@@ -740,6 +777,25 @@ async def test_build_generation_request_v2_filters_style_loras_by_panel_profile(
     assert beat_generation.loras[1].strength == pytest.approx(0.36)
 
 
+async def test_build_generation_request_v2_uses_text_only_establish_lane() -> None:
+    establish_generation = comic_render_service._build_generation_request(
+        {
+            "render_lane": "character_canon_v2",
+            "panel_type": "establish",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
+            "scheduler": "normal",
+            "clip_skip": 2,
+        }
+    )
+
+    assert establish_generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
+    assert establish_generation.loras == []
+    assert getattr(establish_generation, "reference_guided", None) is not True
+
+
 async def test_build_generation_request_v2_populates_reference_guided_establish_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -781,9 +837,9 @@ async def test_build_generation_request_v2_populates_reference_guided_establish_
     assert generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
     assert context["reference_guided"] is True
     assert context["still_backend_family"] == "sdxl_ipadapter_still"
-    assert context["ipadapter_weight"] == pytest.approx(0.92)
-    assert context["ipadapter_start_at"] == pytest.approx(0.0)
-    assert context["ipadapter_end_at"] == pytest.approx(1.0)
+    assert context["ipadapter_weight"] == pytest.approx(0.35)
+    assert context["ipadapter_start_at"] == pytest.approx(0.62)
+    assert context["ipadapter_end_at"] == pytest.approx(0.95)
     assert context["reference_images"] == [
         *binding.reference_sets["establish"].primary,
         *binding.reference_sets["establish"].secondary,
@@ -799,7 +855,7 @@ async def test_build_remote_render_job_request_json_includes_reference_guided_st
             "series_style_id": "camila_pilot_v1",
             "character_series_binding_id": "camila_pilot_binding_v1",
             "reference_images": [
-                "camila_v2_establish_anchor_hero.png",
+                "camila_v2_establish_anchor_face.png",
                 "camila_v2_establish_anchor_halfbody.png",
             ],
             "resolver_sections": {},
@@ -830,12 +886,12 @@ async def test_build_remote_render_job_request_json_includes_reference_guided_st
 
     assert request_json["backend_family"] == "sdxl_ipadapter_still"
     assert request_json["reference_images"] == [
-        "camila_v2_establish_anchor_hero.png",
+        "camila_v2_establish_anchor_face.png",
         "camila_v2_establish_anchor_halfbody.png",
     ]
-    assert request_json["ipadapter_weight"] == pytest.approx(0.92)
-    assert request_json["ipadapter_start_at"] == pytest.approx(0.0)
-    assert request_json["ipadapter_end_at"] == pytest.approx(1.0)
+    assert request_json["ipadapter_weight"] == pytest.approx(0.35)
+    assert request_json["ipadapter_start_at"] == pytest.approx(0.62)
+    assert request_json["ipadapter_end_at"] == pytest.approx(0.95)
     assert request_json["still_generation"]["prompt"] == "panel prompt"
     assert request_json["still_generation"]["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert request_json["comic"]["character_version_id"] == "charver_camila_v2_still_v1"
@@ -1024,6 +1080,64 @@ async def test_output_quality_assessment_penalties_can_reject_overlay_candidate(
     assert score <= 0.06
     assert "penalty: text artifact overlay" in notes
     assert "penalty: camera frame overlay" in notes
+
+
+async def test_derive_output_quality_assessment_flags_bottom_band_text_overlay(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "bottom-band-text.png"
+    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([(0, 760), (1216, 832)], fill=(158, 122, 94))
+    for index in range(15):
+        x = 72 + (index * 70)
+        draw.rectangle([(x, 786), (x + 28, 798)], fill=(245, 245, 245))
+        draw.rectangle([(x + 4, 798), (x + 36, 808)], fill=(24, 24, 24))
+        draw.rectangle([(x + 10, 808), (x + 40, 818)], fill=(245, 245, 245))
+    image.save(image_path)
+
+    assessment = await asyncio.to_thread(
+        comic_render_service._derive_output_quality_assessment_from_output,
+        image_path,
+    )
+
+    assert assessment == {
+        "negative_signals": [
+            "subtitle overlay",
+            "caption box",
+            "random text",
+        ]
+    }
+
+
+async def test_derive_output_quality_assessment_flags_upper_band_text_overlay(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "upper-band-text.png"
+    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([(0, 0), (520, 90)], fill=(46, 34, 30))
+    for row in range(3):
+        y = 10 + (row * 18)
+        for index in range(14):
+            x = 14 + (index * 28)
+            draw.rectangle([(x, y), (x + 14, y + 5)], fill=(245, 245, 245))
+            draw.rectangle([(x + 3, y + 5), (x + 19, y + 10)], fill=(24, 24, 24))
+            draw.rectangle([(x + 6, y + 10), (x + 20, y + 15)], fill=(245, 245, 245))
+    image.save(image_path)
+
+    assessment = await asyncio.to_thread(
+        comic_render_service._derive_output_quality_assessment_from_output,
+        image_path,
+    )
+
+    assert assessment == {
+        "negative_signals": [
+            "subtitle overlay",
+            "caption box",
+            "random text",
+        ]
+    }
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(

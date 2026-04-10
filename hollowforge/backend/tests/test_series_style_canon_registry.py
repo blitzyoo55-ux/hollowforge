@@ -11,7 +11,10 @@ def test_load_pilot_series_style_canon_by_id() -> None:
     assert style.id == "camila_pilot_v1"
     assert style.display_name == "Camila Pilot V1"
     assert style.teaser_motion_policy == "static_hero"
-    assert style.notes == "Pilot series style canon for the Camila-only V2 pilot."
+    assert style.notes == (
+        "Pilot series style canon for the Camila-only V2 pilot, aligned to the "
+        "installed favorite-quality stack rather than an unshipped custom LoRA."
+    )
     assert style.line_policy == (
         "Keep linework clean, controlled, and panel-readable without heavy "
         "finish loss."
@@ -25,9 +28,14 @@ def test_load_pilot_series_style_canon_by_id() -> None:
     assert style.panel_readability_policy == (
         "Prioritize clear subject separation and readable forms in still frames."
     )
+    assert style.appeal_policy == (
+        "Preserve attractive adult facial clarity, healthy warmth, and natural "
+        "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
+    )
     assert style.artifact_avoidance_policy == (
-        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation "
-        "artifacts."
+        "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
+        "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
+        "screenshot borders, and other generation artifacts."
     )
     assert style.hand_face_reliability_policy == (
         "Preserve hands and faces with extra care because they are the highest "
@@ -44,8 +52,19 @@ def test_load_test_only_series_style_canon_uses_different_teaser_motion_policy()
     assert test_only.display_name == "Camila Motion Test V1"
     assert test_only.notes == (
         "Test-only alternate style used to validate teaser motion policy "
-        "variance."
+        "variance while staying on the installed favorite-quality stack."
     )
+
+
+def test_load_pilot_series_style_canon_keeps_establish_override_text_only() -> None:
+    style = get_series_style_canon(series_style_id="camila_pilot_v1")
+
+    assert style.role_execution_overrides == {
+        "establish": {
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": (),
+        }
+    }
 
 
 def test_series_style_canon_rejects_unknown_id() -> None:

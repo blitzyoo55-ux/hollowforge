@@ -127,6 +127,23 @@ def test_camila_v2_establish_uses_reference_guided_execution_lane() -> None:
     assert contract.execution_params["reference_guided"] is True
 
 
+def test_camila_v2_establish_rolls_back_to_bounded_text_only_execution_lane() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_establish_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert contract.execution_params["loras"] == ()
+    assert contract.execution_params.get("reference_guided") is not True
+    assert "still_backend_family" not in contract.execution_params
+
+
 def test_series_style_canon_exposes_role_override() -> None:
     pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
     motion_test = get_series_style_canon(series_style_id="camila_motion_test_v1")
@@ -140,6 +157,17 @@ def test_series_style_canon_exposes_role_override() -> None:
         }
     }
     assert motion_test.role_execution_overrides == {}
+
+
+def test_series_style_canon_establish_override_is_text_only() -> None:
+    pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
+
+    assert pilot.role_execution_overrides == {
+        "establish": {
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": (),
+        }
+    }
 
 
 def test_resolve_comic_render_v2_contract_keeps_base_stack_for_beat() -> None:
@@ -225,6 +253,10 @@ def test_resolve_comic_render_v2_contract_does_not_over_route_without_explicit_m
             panel_readability_policy=(
                 "Prioritize clear subject separation and readable forms in still frames."
             ),
+            appeal_policy=(
+                "Preserve attractive adult facial clarity, healthy warmth, and natural "
+                "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
+            ),
             artifact_avoidance_policy=(
                 "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
                 "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
@@ -286,6 +318,10 @@ def test_resolve_comic_render_v2_contract_rejects_malformed_reference_guided_met
             panel_readability_policy=(
                 "Prioritize clear subject separation and readable forms in still frames."
             ),
+            appeal_policy=(
+                "Preserve attractive adult facial clarity, healthy warmth, and natural "
+                "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
+            ),
             artifact_avoidance_policy=(
                 "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
                 "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
@@ -338,27 +374,27 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Role profile: beat_dialogue_v1",
     )
     assert contract.identity_block == (
-        "Camila Duarte, adult Brazilian woman with warm sun-kissed tan skin, long chestnut-brown wavy hair, and a practical grounded presence",
-        "Defined adult face structure with calm cheekbone and jawline balance, stable recognition, and no youthful simplification.",
-        "Warm hazel eyes with steady directness, consistent gaze, and adult calm.",
+        "Camila Duarte, adult Brazilian woman with warm sun-kissed tan skin, long chestnut-brown wavy hair, and a naturally elegant grounded presence",
+        "Graceful adult face structure with calm cheekbone and jawline balance, stable recognition, and no youthful simplification.",
+        "Warm hazel eyes with steady directness, calm confidence, and adult warmth.",
         "Long chestnut-brown waves with warm highlights; never orange, blonde, or school-idol styled.",
-        "Preserve a natural lightly tanned skin surface with warm undertone, light texture, and no oversmoothing.",
-        "Adult grounded build with believable feminine presence, balanced posture, and no youth-coded proportions.",
+        "Preserve a natural lightly tanned skin surface with warm undertone, light texture, healthy warmth, and no oversmoothing.",
+        "Adult grounded build with believable feminine presence, balanced posture, healthy proportions, and no youth-coded silhouette.",
         "Calm, observant, and direct with small controlled shifts in emotion.",
-        "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift, no school-uniform cues, no necktie, no orange hair, no youth-coded anime heroine drift.",
-        "Keep Camila anchored in a calm, grounded, adult non-glamour identity. Avoid drifting into editorial beauty framing, school-uniform styling, or youthful heroine shortcuts.",
+        "Composed mature beauty, approachable warmth, and quietly magnetic adult presence; attractive without glamour posing or teen-coded stylization.",
         (
-            "Simple functional studio-casual wardrobe such as soft knits, shirts, "
-            "or adult loungewear that supports the scene without turning her into a "
-            "fashion portrait."
+            "Simple studio-casual wardrobe such as soft knits, open-collar shirts, "
+            "or adult loungewear that flatters an adult silhouette without turning "
+            "her into a fashion portrait."
         ),
         (
             "Measured, observant, and direct; she reads as self-possessed, mature, "
-            "and grounded rather than performatively styled."
+            "grounded, and quietly alluring through confidence rather than performance."
         ),
         (
-            "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
-            "adult grounded presentation. Reject school-uniform and youth-coded drift."
+            "Chestnut-brown hair with warm highlights, lightly tanned skin, and a "
+            "mature calm presence with natural elegance. Reject school-uniform and "
+            "youth-coded drift."
         ),
     )
     assert contract.style_block == (
@@ -367,6 +403,7 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Use restrained shading that supports volume while avoiding muddy contrast.",
         "Render surfaces with enough texture to stay natural without adding noise.",
         "Prioritize clear subject separation and readable forms in still frames.",
+        "Preserve attractive adult facial clarity, healthy warmth, and natural presence without glamour gloss, teen-coded exaggeration, or plastic skin.",
         "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
         "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
         (
@@ -377,11 +414,8 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
     )
     assert contract.binding_block == (
         "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
-        "Identity lock: strong",
-        "Hair lock: strong",
-        "Face lock: strong",
+        "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, and natural charm without glamour posing.",
         "Wardrobe family: simple functional everyday wardrobe",
-        "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
         "Location: artist loft morning",
         "Continuity: Carry over the wet brush on the easel from prior panel.",
     )
@@ -400,6 +434,7 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
     )
     assert contract.negative_rules == (
         "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
+        "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift, no school-uniform cues, no necktie, no orange hair, no youth-coded anime heroine drift.",
         (
             "Keep Camila anchored in a calm, grounded, adult non-glamour identity. "
             "Avoid drifting into editorial beauty framing, school-uniform styling, "
