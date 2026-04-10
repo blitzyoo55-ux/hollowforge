@@ -32,6 +32,8 @@ def test_main_keeps_bounded_defaults_for_the_single_panel_lane(
     assert module.DEFAULT_CANDIDATE_COUNT == 1
     assert module.DEFAULT_EXECUTION_MODE == "remote_worker"
     assert module.DEFAULT_PANEL_LIMIT == 1
+    assert "artist loft" in module.DEFAULT_STORY_PROMPT.lower()
+    assert "morning" in module.DEFAULT_STORY_PROMPT.lower()
 
     responses: dict[tuple[str, str], object] = {
         ("POST", f"{base_url}/api/v1/tools/story-planner/plan"): {

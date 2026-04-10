@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from app.models import (
     AnimationJobCallbackPayload,
@@ -773,6 +773,75 @@ async def test_assess_panel_candidate_quality_ignores_unstructured_and_negated_t
         "reward: expression readability",
         "reward: natural body pose",
     ]
+
+
+async def test_derive_output_quality_assessment_flags_camera_and_text_overlays(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "overlay-sample.png"
+    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
+    draw = ImageDraw.Draw(image)
+
+    draw.line([(16, 16), (120, 16)], fill=(255, 255, 255), width=8)
+    draw.line([(16, 16), (16, 92)], fill=(255, 255, 255), width=8)
+    draw.line([(1096, 16), (1200, 16)], fill=(255, 255, 255), width=8)
+    draw.line([(1200, 16), (1200, 92)], fill=(255, 255, 255), width=8)
+    draw.rectangle([(80, 620), (1140, 760)], fill=(24, 24, 24))
+    for index in range(14):
+        x = 110 + (index * 68)
+        draw.rectangle([(x, 660), (x + 22, 674)], fill=(245, 245, 245))
+        draw.rectangle([(x + 10, 694), (x + 40, 706)], fill=(245, 245, 245))
+
+    image.save(image_path)
+
+    assessment = await asyncio.to_thread(
+        comic_render_service._derive_output_quality_assessment_from_output,
+        image_path,
+    )
+
+    assert assessment == {
+        "negative_signals": [
+            "camera frame",
+            "viewfinder",
+            "subtitle overlay",
+            "caption box",
+            "random text",
+        ]
+    }
+
+
+async def test_output_quality_assessment_penalties_can_reject_overlay_candidate(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "overlay-sample.png"
+    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
+    draw = ImageDraw.Draw(image)
+    draw.line([(16, 16), (120, 16)], fill=(255, 255, 255), width=8)
+    draw.line([(16, 16), (16, 92)], fill=(255, 255, 255), width=8)
+    draw.line([(1096, 16), (1200, 16)], fill=(255, 255, 255), width=8)
+    draw.line([(1200, 16), (1200, 92)], fill=(255, 255, 255), width=8)
+    draw.rectangle([(80, 620), (1140, 760)], fill=(24, 24, 24))
+    for index in range(14):
+        x = 110 + (index * 68)
+        draw.rectangle([(x, 660), (x + 22, 674)], fill=(245, 245, 245))
+    image.save(image_path)
+
+    establish_profile = comic_render_service.resolve_comic_panel_render_profile(
+        {"panel_type": "establish"}
+    )
+    derived_assessment = await asyncio.to_thread(
+        comic_render_service._derive_output_quality_assessment_from_output,
+        image_path,
+    )
+
+    score, notes = comic_render_service._assess_panel_candidate_quality(
+        profile=establish_profile,
+        assessment_payload=derived_assessment,
+    )
+
+    assert score <= 0.06
+    assert "penalty: text artifact overlay" in notes
+    assert "penalty: camera frame overlay" in notes
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(

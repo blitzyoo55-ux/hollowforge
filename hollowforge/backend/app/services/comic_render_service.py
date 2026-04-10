@@ -1220,6 +1220,111 @@ def _merge_identity_assessment_payloads(
     return merged or None
 
 
+def _merge_quality_assessment_payloads(
+    base_payload: dict[str, Any] | None,
+    derived_payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if base_payload is None and derived_payload is None:
+        return None
+
+    merged: dict[str, Any] = {}
+    positive_values: list[str] = []
+    negative_values: list[str] = []
+    for payload in (base_payload, derived_payload):
+        if not isinstance(payload, dict):
+            continue
+        for value in _normalize_quality_signal_list(
+            payload.get("positive_signals", payload.get("strengths"))
+        ):
+            if value not in positive_values:
+                positive_values.append(value)
+        for value in _normalize_quality_signal_list(
+            payload.get("negative_signals", payload.get("issues"))
+        ):
+            if value not in negative_values:
+                negative_values.append(value)
+
+    if positive_values:
+        merged["positive_signals"] = positive_values
+    if negative_values:
+        merged["negative_signals"] = negative_values
+    return merged or None
+
+
+def _has_camera_frame_overlay(arr: np.ndarray) -> bool:
+    height, width, _ = arr.shape
+    corner_h = max(72, int(height * 0.14))
+    corner_w = max(72, int(width * 0.14))
+    edge_h = max(10, int(height * 0.02))
+    edge_w = max(10, int(width * 0.02))
+
+    brightness = arr.mean(axis=2)
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    bright_white = (brightness >= 232.0) & (chroma <= 28.0)
+
+    patches = (
+        ("tl", bright_white[:corner_h, :corner_w]),
+        ("tr", bright_white[:corner_h, width - corner_w :]),
+        ("bl", bright_white[height - corner_h :, :corner_w]),
+        ("br", bright_white[height - corner_h :, width - corner_w :]),
+    )
+
+    flagged_corners = 0
+    for name, patch in patches:
+        if patch.size == 0:
+            continue
+        if "t" in name:
+            horizontal_ratio = float(patch[:edge_h, :].mean())
+        else:
+            horizontal_ratio = float(patch[-edge_h:, :].mean())
+        if "l" in name:
+            vertical_ratio = float(patch[:, :edge_w].mean())
+        else:
+            vertical_ratio = float(patch[:, -edge_w:].mean())
+        if horizontal_ratio >= 0.06 and vertical_ratio >= 0.05:
+            flagged_corners += 1
+
+    return flagged_corners >= 2
+
+
+def _has_lower_third_text_overlay(arr: np.ndarray) -> bool:
+    height, width, _ = arr.shape
+    top = int(height * 0.68)
+    bottom = int(height * 0.93)
+    left = int(width * 0.05)
+    right = int(width * 0.95)
+    region = arr[top:bottom, left:right]
+    if region.size == 0:
+        return False
+
+    luminance = region.mean(axis=2)
+    row_dark_ratio = float((luminance.mean(axis=1) < 90.0).mean())
+    dark_pixel_ratio = float((luminance < 70.0).mean())
+    bright_pixel_ratio = float((luminance > 220.0).mean())
+    return (
+        row_dark_ratio >= 0.45
+        and dark_pixel_ratio >= 0.35
+        and bright_pixel_ratio >= 0.004
+    )
+
+
+def _derive_output_quality_assessment_from_output(
+    image_path: Path,
+) -> dict[str, Any] | None:
+    with Image.open(image_path) as image:
+        arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+
+    negative: list[str] = []
+    if _has_camera_frame_overlay(arr):
+        negative.extend(["camera frame", "viewfinder"])
+    if _has_lower_third_text_overlay(arr):
+        negative.extend(["subtitle overlay", "caption box", "random text"])
+
+    if not negative:
+        return None
+    return {"negative_signals": negative}
+
+
 def _assess_panel_candidate_quality(
     *,
     profile: Any,
@@ -1998,11 +2103,21 @@ async def materialize_remote_render_job_callback(
                         if isinstance(comic_payload, dict)
                         else ""
                     )
-                    if render_lane == "character_canon_v2" and next_output_path:
+                    local_output_path: Path | None = None
+                    if next_output_path:
                         local_output_path = await _ensure_local_callback_output_path(
                             output_path=next_output_path,
                             output_url=next_output_url,
                         )
+                        if local_output_path is not None:
+                            assessment_payload = _merge_quality_assessment_payloads(
+                                assessment_payload,
+                                await asyncio.to_thread(
+                                    _derive_output_quality_assessment_from_output,
+                                    local_output_path,
+                                ),
+                            )
+                    if render_lane == "character_canon_v2" and next_output_path:
                         if local_output_path is None:
                             identity_assessment_payload = _merge_identity_assessment_payloads(
                                 identity_assessment_payload,
