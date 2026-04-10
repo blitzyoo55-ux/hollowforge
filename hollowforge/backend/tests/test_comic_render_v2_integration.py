@@ -39,6 +39,11 @@ async def _create_panel_fixture(
     character_version_id: str,
     series_style_id: str | None = None,
     character_series_binding_id: str | None = None,
+    panel_type: str = "beat",
+    framing: str = "waist-up with workspace context",
+    camera_intent: str = "eye-level camera",
+    action_intent: str = "Camila checks notes beside the easel.",
+    expression_intent: str = "focused calm",
 ) -> str:
     episode = await create_comic_episode(
         ComicEpisodeCreate(
@@ -105,11 +110,11 @@ async def _create_panel_fixture(
                 panel_id,
                 scene_id,
                 1,
-                "beat",
-                "waist-up with workspace context",
-                "eye-level camera",
-                "Camila checks notes beside the easel.",
-                "focused calm",
+                panel_type,
+                framing,
+                camera_intent,
+                action_intent,
+                expression_intent,
                 "placeholder dialogue",
                 "Keep brush and sketchbook continuity.",
                 1,
@@ -124,8 +129,9 @@ async def _create_panel_fixture(
 
 
 class _StubGenerationService:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, generation_id_prefix: str = "") -> None:
         self._db_path = db_path
+        self._generation_id_prefix = generation_id_prefix
         self.batch_calls: list[tuple[dict[str, object], int, int]] = []
 
     async def queue_generation_batch(  # type: ignore[no-untyped-def]
@@ -137,7 +143,10 @@ class _StubGenerationService:
         payload = generation.model_dump()
         self.batch_calls.append((payload, count, seed_increment))
 
-        rows = [SimpleNamespace(id=f"v2-local-gen-{index + 1}") for index in range(count)]
+        rows = [
+            SimpleNamespace(id=f"{self._generation_id_prefix}v2-local-gen-{index + 1}")
+            for index in range(count)
+        ]
         with sqlite3.connect(self._db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             for index, row in enumerate(rows):
@@ -303,6 +312,9 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
     assert payload["sampler"] == "euler_a"
     assert payload["width"] == 960
     assert payload["height"] == 1216
+    assert "Setting: inside Artist Loft Morning." in payload["prompt"]
+    assert "Action:" in payload["prompt"]
+    assert "Composition:" in payload["prompt"]
 
     with sqlite3.connect(temp_db) as conn:
         raw_snapshot = conn.execute(
@@ -379,6 +391,77 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
         "identity_drift",
         "binding_drift",
         "role_quality",
+    ]
+
+
+async def test_v2_establish_override_and_beat_panel_keeps_base_style_stack(
+    temp_db: Path,
+) -> None:
+    establish_panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_id="panel_v2_establish_local_1",
+        scene_id="scene_v2_establish_local_1",
+        episode_id="episode_v2_establish_local_1",
+        render_lane="character_canon_v2",
+        character_id="char_camila_duarte",
+        character_version_id="charver_camila_duarte_still_v1",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        framing="wide room composition with worktable depth",
+        camera_intent="wide establishing shot inside Artist Loft Morning",
+        action_intent="Camila checks the studio lockbox by the window.",
+        expression_intent="measured alertness",
+    )
+    beat_panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_id="panel_v2_beat_local_1",
+        scene_id="scene_v2_beat_local_1",
+        episode_id="episode_v2_beat_local_1",
+        render_lane="character_canon_v2",
+        character_id="char_camila_duarte",
+        character_version_id="charver_camila_duarte_still_v1",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+    establish_generation_service = _StubGenerationService(
+        temp_db,
+        generation_id_prefix="establish-",
+    )
+    await queue_panel_render_candidates(
+        panel_id=establish_panel_id,
+        generation_service=establish_generation_service,  # type: ignore[arg-type]
+        candidate_count=1,
+        execution_mode="local_preview",
+    )
+    beat_generation_service = _StubGenerationService(
+        temp_db,
+        generation_id_prefix="beat-",
+    )
+    await queue_panel_render_candidates(
+        panel_id=beat_panel_id,
+        generation_service=beat_generation_service,  # type: ignore[arg-type]
+        candidate_count=1,
+        execution_mode="local_preview",
+    )
+
+    establish_payload, _, _ = establish_generation_service.batch_calls[0]
+    assert establish_payload["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert establish_payload["loras"] == []
+
+    beat_payload, _, _ = beat_generation_service.batch_calls[0]
+    assert beat_payload["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
+    assert beat_payload["loras"] == [
+        {
+            "filename": "DetailedEyes_V3.safetensors",
+            "strength": 0.45,
+            "category": None,
+        },
+        {
+            "filename": "Face_Enhancer_Illustrious.safetensors",
+            "strength": 0.36,
+            "category": None,
+        },
     ]
 
 
