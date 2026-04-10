@@ -41,8 +41,8 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         ),
         reference_sets={
             "establish": {
-                "primary": ("camila_v2_establish_primary.png",),
-                "secondary": ("camila_v2_establish_secondary.png",),
+                "primary": ("camila_v2_establish_anchor_hero.png",),
+                "secondary": ("camila_v2_establish_anchor_halfbody.png",),
             }
         },
         do_not_mutate=(
