@@ -28,6 +28,36 @@ def _make_role_profile() -> ComicPanelRenderProfile:
     )
 
 
+def _make_insert_role_profile() -> ComicPanelRenderProfile:
+    return ComicPanelRenderProfile(
+        profile_id="insert_detail_v1",
+        panel_types=("insert",),
+        lora_mode="inherit_all",
+        width=960,
+        height=1216,
+        negative_prompt_append="plastic skin, waxy face, dead eyes",
+        anchor_filter_mode="drop_face_gloss_bias",
+        prompt_order_mode="default_subject_first",
+        subject_prominence_mode="default",
+        scene_cue_mode="none",
+    )
+
+
+def _make_closeup_role_profile() -> ComicPanelRenderProfile:
+    return ComicPanelRenderProfile(
+        profile_id="closeup_detail_v1",
+        panel_types=("closeup",),
+        lora_mode="inherit_all",
+        width=960,
+        height=1216,
+        negative_prompt_append="plastic skin, waxy face, dead eyes",
+        anchor_filter_mode="drop_face_gloss_bias",
+        prompt_order_mode="default_subject_first",
+        subject_prominence_mode="default",
+        scene_cue_mode="none",
+    )
+
+
 def _make_establish_role_profile() -> ComicPanelRenderProfile:
     return ComicPanelRenderProfile(
         profile_id="establish_static_v1",
@@ -118,6 +148,46 @@ def test_resolve_comic_render_v2_contract_keeps_base_stack_for_beat() -> None:
         location_label=None,
         continuity_notes=None,
         role_profile=_make_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
+    assert contract.execution_params["loras"] == (
+        {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+        {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
+    )
+    assert contract.execution_params.get("reference_guided") is not True
+    assert "still_backend_family" not in contract.execution_params
+
+
+def test_resolve_comic_render_v2_contract_keeps_existing_lane_for_insert() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="insert",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_insert_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
+    assert contract.execution_params["loras"] == (
+        {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+        {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
+    )
+    assert contract.execution_params.get("reference_guided") is not True
+    assert "still_backend_family" not in contract.execution_params
+
+
+def test_resolve_comic_render_v2_contract_keeps_existing_lane_for_closeup() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="closeup",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_closeup_role_profile(),
     )
 
     assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
