@@ -22,6 +22,7 @@ class CharacterSeriesBindingEntry(BaseModel):
     hair_lock_strength: str = Field(min_length=1, max_length=120)
     face_lock_strength: str = Field(min_length=1, max_length=120)
     allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
+    appeal_notes: str = Field(min_length=1, max_length=1000)
     binding_negative_rules: str = Field(min_length=1, max_length=1000)
     reference_sets: dict[str, CharacterSeriesReferenceSetEntry] = Field(
         default_factory=dict
@@ -39,6 +40,10 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         hair_lock_strength="strong",
         face_lock_strength="strong",
         allowed_wardrobe_family="simple functional everyday wardrobe",
+        appeal_notes=(
+            "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm "
+            "skin, graceful posture, and natural charm without glamour posing."
+        ),
         binding_negative_rules=(
             "No wardrobe drift, no glamour drift, no editorial styling drift, no "
             "camera-frame drift, no UI overlay drift, no random text drift, no "
@@ -46,7 +51,7 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         ),
         reference_sets={
             "establish": CharacterSeriesReferenceSetEntry(
-                primary=("camila_v2_establish_anchor_hero.png",),
+                primary=("camila_v2_establish_anchor_face.png",),
                 secondary=("camila_v2_establish_anchor_halfbody.png",),
             )
         },

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from types import MappingProxyType
 from typing import Any
-from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
@@ -129,32 +129,9 @@ def _merge_style_execution_override(
 def _deep_freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType({key: _deep_freeze(item) for key, item in value.items()})
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return tuple(_deep_freeze(item) for item in value)
     return deepcopy(value)
-
-
-def _resolve_reference_guided_still_backend_family(
-    role_execution_override: Mapping[str, Any] | None,
-) -> str | None:
-    if not role_execution_override:
-        return None
-
-    reference_guided = role_execution_override.get("reference_guided")
-    still_backend_family = role_execution_override.get("still_backend_family")
-
-    if reference_guided is None and still_backend_family is None:
-        return None
-    if reference_guided is not True:
-        raise ValueError(
-            "Invalid reference-guided role override; expected reference_guided is True"
-        )
-    if not isinstance(still_backend_family, str) or not still_backend_family.strip():
-        raise ValueError(
-            "Invalid reference-guided role override; expected a non-empty "
-            "still_backend_family"
-        )
-    return still_backend_family
 
 
 def resolve_comic_render_v2_contract(
@@ -198,8 +175,7 @@ def resolve_comic_render_v2_contract(
         character.skin_surface_policy,
         character.body_signature,
         character.expression_range,
-        character.identity_negative_rules,
-        character.anti_drift,
+        character.adult_appeal_notes,
         character.wardrobe_notes,
         character.personality_notes,
         character.reference_descriptor_notes,
@@ -210,21 +186,17 @@ def resolve_comic_render_v2_contract(
         style.shading_policy,
         style.surface_texture_policy,
         style.panel_readability_policy,
+        style.appeal_policy,
         style.artifact_avoidance_policy,
         style.hand_face_reliability_policy,
         f"Style notes: {style.notes}",
     )
 
-    binding_fragments: list[str] = [f"Binding notes: {binding.notes}"]
-    binding_fragments.extend(
-        [
-            f"Identity lock: {binding.identity_lock_strength}",
-            f"Hair lock: {binding.hair_lock_strength}",
-            f"Face lock: {binding.face_lock_strength}",
-            f"Wardrobe family: {binding.allowed_wardrobe_family}",
-            f"Do not mutate: {binding.do_not_mutate}",
-        ]
-    )
+    binding_fragments: list[str] = [
+        f"Binding notes: {binding.notes}",
+        binding.appeal_notes,
+        f"Wardrobe family: {binding.allowed_wardrobe_family}",
+    ]
     if location_label and location_label.strip():
         binding_fragments.append(f"Location: {location_label.strip()}")
     if continuity_notes and continuity_notes.strip():
@@ -234,9 +206,6 @@ def resolve_comic_render_v2_contract(
     style_execution = _merge_style_execution_override(
         _resolve_style_execution_params(series_style_id),
         style.role_execution_overrides.get(panel_type),
-    )
-    reference_guided_backend_family = _resolve_reference_guided_still_backend_family(
-        style.role_execution_overrides.get(panel_type)
     )
 
     # Precedence: style base execution -> style role override -> binding lock strengths -> role constraints.
@@ -256,16 +225,9 @@ def resolve_comic_render_v2_contract(
     execution_params["height"] = role_profile.height
     execution_params["framing_profile"] = role_profile.profile_id
 
-    if (
-        panel_type == "establish"
-        and binding.reference_sets.get(panel_type)
-        and reference_guided_backend_family is not None
-    ):
-        execution_params["still_backend_family"] = reference_guided_backend_family
-        execution_params["reference_guided"] = True
-
     negative_rules = (
         style.artifact_avoidance_policy,
+        character.identity_negative_rules,
         character.anti_drift,
         binding.binding_negative_rules,
         f"Role negative: {role_profile.negative_prompt_append}",

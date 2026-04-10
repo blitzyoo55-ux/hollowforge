@@ -17,6 +17,7 @@ class SeriesStyleCanonEntry(BaseModel):
     shading_policy: str = Field(min_length=1, max_length=1000)
     surface_texture_policy: str = Field(min_length=1, max_length=1000)
     panel_readability_policy: str = Field(min_length=1, max_length=1000)
+    appeal_policy: str = Field(min_length=1, max_length=1000)
     artifact_avoidance_policy: str = Field(min_length=1, max_length=1000)
     hand_face_reliability_policy: str = Field(min_length=1, max_length=1000)
     notes: str = Field(min_length=1, max_length=1000)
@@ -43,6 +44,10 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
         panel_readability_policy=(
             "Prioritize clear subject separation and readable forms in still frames."
         ),
+        appeal_policy=(
+            "Preserve attractive adult facial clarity, healthy warmth, and natural "
+            "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
+        ),
         artifact_avoidance_policy=(
             "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
             "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
@@ -60,8 +65,6 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
             "establish": {
                 "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
                 "loras": (),
-                "reference_guided": True,
-                "still_backend_family": "sdxl_ipadapter_still",
             }
         },
     ),
@@ -81,6 +84,10 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
         ),
         panel_readability_policy=(
             "Prioritize clear subject separation and readable forms in still frames."
+        ),
+        appeal_policy=(
+            "Preserve attractive adult facial clarity, healthy warmth, and natural "
+            "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
         ),
         artifact_avoidance_policy=(
             "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "

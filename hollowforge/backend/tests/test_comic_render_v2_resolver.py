@@ -110,7 +110,7 @@ def test_resolve_comic_render_v2_contract_uses_establish_style_override() -> Non
     assert contract.execution_params["loras"] == ()
 
 
-def test_camila_v2_establish_uses_reference_guided_execution_lane() -> None:
+def test_camila_v2_establish_uses_bounded_text_only_execution_lane() -> None:
     contract = resolve_comic_render_v2_contract(
         character_id="camila_v2",
         series_style_id="camila_pilot_v1",
@@ -123,8 +123,8 @@ def test_camila_v2_establish_uses_reference_guided_execution_lane() -> None:
 
     assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert contract.execution_params["loras"] == ()
-    assert contract.execution_params["still_backend_family"] == "sdxl_ipadapter_still"
-    assert contract.execution_params["reference_guided"] is True
+    assert contract.execution_params.get("reference_guided") is not True
+    assert "still_backend_family" not in contract.execution_params
 
 
 def test_camila_v2_establish_rolls_back_to_bounded_text_only_execution_lane() -> None:
@@ -152,8 +152,6 @@ def test_series_style_canon_exposes_role_override() -> None:
         "establish": {
             "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
             "loras": (),
-            "reference_guided": True,
-            "still_backend_family": "sdxl_ipadapter_still",
         }
     }
     assert motion_test.role_execution_overrides == {}
@@ -293,69 +291,6 @@ def test_resolve_comic_render_v2_contract_does_not_over_route_without_explicit_m
     assert contract.execution_params["loras"] == ()
     assert contract.execution_params.get("reference_guided") is not True
     assert "still_backend_family" not in contract.execution_params
-
-
-def test_resolve_comic_render_v2_contract_rejects_malformed_reference_guided_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setitem(
-        series_style_canon_registry._SERIES_STYLE_CANON_REGISTRY,
-        "camila_pilot_v1",
-        series_style_canon_registry.SeriesStyleCanonEntry(
-            id="camila_pilot_v1",
-            display_name="Camila Pilot V1",
-            teaser_motion_policy="static_hero",
-            line_policy=(
-                "Keep linework clean, controlled, and panel-readable without heavy "
-                "finish loss."
-            ),
-            shading_policy=(
-                "Use restrained shading that supports volume while avoiding muddy contrast."
-            ),
-            surface_texture_policy=(
-                "Render surfaces with enough texture to stay natural without adding noise."
-            ),
-            panel_readability_policy=(
-                "Prioritize clear subject separation and readable forms in still frames."
-            ),
-            appeal_policy=(
-                "Preserve attractive adult facial clarity, healthy warmth, and natural "
-                "presence without glamour gloss, teen-coded exaggeration, or plastic skin."
-            ),
-            artifact_avoidance_policy=(
-                "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
-                "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
-                "screenshot borders, and other generation artifacts."
-            ),
-            hand_face_reliability_policy=(
-                "Preserve hands and faces with extra care because they are the highest "
-                "risk regions for still quality."
-            ),
-            notes=(
-                "Pilot series style canon for the Camila-only V2 pilot, aligned to "
-                "the installed favorite-quality stack rather than an unshipped custom LoRA."
-            ),
-            role_execution_overrides={
-                "establish": {
-                    "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
-                    "loras": (),
-                    "reference_guided": True,
-                    "still_backend_family": "",
-                }
-            },
-        ),
-    )
-
-    with pytest.raises(ValueError, match="still_backend_family"):
-        resolve_comic_render_v2_contract(
-            character_id="camila_v2",
-            series_style_id="camila_pilot_v1",
-            binding_id="camila_pilot_binding_v1",
-            panel_type="establish",
-            location_label=None,
-            continuity_notes=None,
-            role_profile=_make_establish_role_profile(),
-        )
 
 
 def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract() -> None:
