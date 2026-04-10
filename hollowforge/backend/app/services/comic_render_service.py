@@ -64,9 +64,9 @@ _RENDER_ASSET_SELECT_COLUMNS = """
     a.updated_at
 """
 
-_REFERENCE_GUIDED_IPADAPTER_WEIGHT = 0.92
-_REFERENCE_GUIDED_IPADAPTER_START_AT = 0.0
-_REFERENCE_GUIDED_IPADAPTER_END_AT = 1.0
+_REFERENCE_GUIDED_IPADAPTER_WEIGHT = 0.35
+_REFERENCE_GUIDED_IPADAPTER_START_AT = 0.62
+_REFERENCE_GUIDED_IPADAPTER_END_AT = 0.95
 
 
 def _now_iso() -> str:
@@ -672,14 +672,18 @@ def _build_panel_story_prompt_sentences(
     quality_focus_sentence = (
         _build_quality_focus_sentence(profile) if include_quality_focus else None
     )
-    composition_sentence = _build_labeled_sentence(
-        "Composition",
-        [
-            f"{panel_type_lower} manga panel" if panel_type_lower else None,
-            composition_priority_hint,
-            _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
-            _normalize_positive_visual_prompt_fragment(context.get("framing")),
-        ],
+    composition_sentence = (
+        _build_establish_composition_sentence(context, profile=profile)
+        if panel_type_lower == "establish"
+        else _build_labeled_sentence(
+            "Composition",
+            [
+                f"{panel_type_lower} manga panel" if panel_type_lower else None,
+                composition_priority_hint,
+                _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
+                _normalize_positive_visual_prompt_fragment(context.get("framing")),
+            ],
+        )
     )
     continuity_sentence = _build_labeled_sentence(
         "Continuity",
@@ -1426,13 +1430,20 @@ def _has_camera_frame_overlay(arr: np.ndarray) -> bool:
             continue
         if "t" in name:
             horizontal_ratio = float(patch[:edge_h, :].mean())
+            horizontal_peak = float(patch[:edge_h, :].mean(axis=1).max())
         else:
             horizontal_ratio = float(patch[-edge_h:, :].mean())
+            horizontal_peak = float(patch[-edge_h:, :].mean(axis=1).max())
         if "l" in name:
             vertical_ratio = float(patch[:, :edge_w].mean())
+            vertical_peak = float(patch[:, :edge_w].mean(axis=0).max())
         else:
             vertical_ratio = float(patch[:, -edge_w:].mean())
-        if horizontal_ratio >= 0.06 and vertical_ratio >= 0.05:
+            vertical_peak = float(patch[:, -edge_w:].mean(axis=0).max())
+        if (
+            (horizontal_ratio >= 0.06 and vertical_ratio >= 0.05)
+            or (horizontal_peak >= 0.16 and vertical_peak >= 0.16)
+        ):
             flagged_corners += 1
 
     return flagged_corners >= 2
@@ -1474,6 +1485,52 @@ def _has_lower_third_text_overlay(arr: np.ndarray) -> bool:
     )
 
 
+def _has_bottom_band_text_overlay(arr: np.ndarray) -> bool:
+    height, width, _ = arr.shape
+    top = int(height * 0.90)
+    bottom = int(height * 0.995)
+    left = int(width * 0.05)
+    right = int(width * 0.95)
+    region = arr[top:bottom, left:right]
+    if region.size == 0:
+        return False
+
+    luminance = region.mean(axis=2)
+    grad_x = np.abs(np.diff(luminance, axis=1))
+    grad_y = np.abs(np.diff(luminance, axis=0))
+    edge_ratio = float(((grad_x > 32.0).mean() + (grad_y > 32.0).mean()) / 2.0)
+    bright_ratio = float((luminance > 220.0).mean())
+    dark_outline_ratio = float((luminance < 120.0).mean())
+    return (
+        edge_ratio >= 0.015
+        and bright_ratio >= 0.015
+        and dark_outline_ratio >= 0.05
+    )
+
+
+def _has_upper_band_text_overlay(arr: np.ndarray) -> bool:
+    height, width, _ = arr.shape
+    top = 0
+    bottom = int(height * 0.12)
+    left = 0
+    right = int(width * 0.45)
+    region = arr[top:bottom, left:right]
+    if region.size == 0:
+        return False
+
+    luminance = region.mean(axis=2)
+    grad_x = np.abs(np.diff(luminance, axis=1))
+    grad_y = np.abs(np.diff(luminance, axis=0))
+    edge_ratio = float(((grad_x > 32.0).mean() + (grad_y > 32.0).mean()) / 2.0)
+    bright_ratio = float((luminance > 220.0).mean())
+    dark_ratio = float((luminance < 120.0).mean())
+    return (
+        edge_ratio >= 0.03
+        and bright_ratio >= 0.01
+        and dark_ratio >= 0.45
+    )
+
+
 def _derive_output_quality_assessment_from_output(
     image_path: Path,
 ) -> dict[str, Any] | None:
@@ -1484,6 +1541,10 @@ def _derive_output_quality_assessment_from_output(
     if _has_camera_frame_overlay(arr):
         negative.extend(["camera frame", "viewfinder"])
     if _has_lower_third_text_overlay(arr):
+        negative.extend(["subtitle overlay", "caption box", "random text"])
+    if _has_bottom_band_text_overlay(arr):
+        negative.extend(["subtitle overlay", "caption box", "random text"])
+    if _has_upper_band_text_overlay(arr):
         negative.extend(["subtitle overlay", "caption box", "random text"])
 
     if not negative:
