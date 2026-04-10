@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from pydantic import BaseModel, Field
 
 
@@ -25,7 +23,7 @@ class CharacterSeriesBindingEntry(BaseModel):
     face_lock_strength: str = Field(min_length=1, max_length=120)
     allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
     binding_negative_rules: str = Field(min_length=1, max_length=1000)
-    reference_sets: Mapping[str, CharacterSeriesReferenceSetEntry] = Field(
+    reference_sets: dict[str, CharacterSeriesReferenceSetEntry] = Field(
         default_factory=dict
     )
     do_not_mutate: str = Field(min_length=1, max_length=1000)
