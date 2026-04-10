@@ -63,3 +63,22 @@ def test_story_plan_bridge_preserves_explicit_v2_metadata() -> None:
     assert detail.render_lane == "character_canon_v2"
     assert detail.series_style_id == "camila_pilot_v1"
     assert detail.character_series_binding_id == "camila_pilot_binding_v1"
+
+
+def test_story_plan_bridge_maps_single_panel_per_shot_to_canonical_role_sequence() -> None:
+    detail = build_comic_draft_from_story_plan(
+        approved_plan=_build_registry_led_approved_plan(),
+        character_version_id="charver_camila_duarte_still_v1",
+        title="Camila V2 Four Shot Acceptance",
+        panel_multiplier=1,
+        render_lane="character_canon_v2",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+
+    assert [panel.panel_type for panel in detail.panels] == [
+        "establish",
+        "beat",
+        "insert",
+        "closeup",
+    ]

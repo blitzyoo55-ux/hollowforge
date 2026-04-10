@@ -40,9 +40,18 @@ def _scene_continuity_notes(
 
 def _panel_type_for(
     *,
+    shot_no: int,
     panel_no: int,
     panel_multiplier: int,
 ) -> str:
+    if panel_multiplier == 1:
+        canonical_shot_roles = {
+            1: "establish",
+            2: "beat",
+            3: "insert",
+            4: "closeup",
+        }
+        return canonical_shot_roles.get(shot_no, "beat")
     if panel_no == 1:
         return "establish"
     if panel_no == panel_multiplier:
@@ -53,39 +62,63 @@ def _panel_type_for(
 def _panel_camera_intent(
     *,
     shot: StoryPlannerShotCard,
+    shot_no: int,
     panel_no: int,
     panel_multiplier: int,
 ) -> str:
-    if panel_no == 1:
+    role = _panel_type_for(
+        shot_no=shot_no,
+        panel_no=panel_no,
+        panel_multiplier=panel_multiplier,
+    )
+    if role == "establish":
         return shot.camera
-    if panel_no == panel_multiplier:
+    if role == "closeup":
         return f"{shot.camera} Tighten the focus on the emotional turn."
+    if role == "insert":
+        return f"{shot.camera} Shift emphasis toward the key detail."
     return f"{shot.camera} Hold the transition beat."
 
 
 def _panel_action_intent(
     *,
     shot: StoryPlannerShotCard,
+    shot_no: int,
     panel_no: int,
     panel_multiplier: int,
 ) -> str:
-    if panel_no == 1:
+    role = _panel_type_for(
+        shot_no=shot_no,
+        panel_no=panel_no,
+        panel_multiplier=panel_multiplier,
+    )
+    if role == "establish":
         return shot.action
-    if panel_no == panel_multiplier:
+    if role == "closeup":
         return f"{shot.action} Land the scene on the clearest reaction."
+    if role == "insert":
+        return f"{shot.action} Make the key object or gesture the clearest readable detail."
     return f"{shot.action} Bridge toward the reveal."
 
 
 def _panel_expression_intent(
     *,
     shot: StoryPlannerShotCard,
+    shot_no: int,
     panel_no: int,
     panel_multiplier: int,
 ) -> str:
-    if panel_no == 1:
+    role = _panel_type_for(
+        shot_no=shot_no,
+        panel_no=panel_no,
+        panel_multiplier=panel_multiplier,
+    )
+    if role == "establish":
         return shot.emotion
-    if panel_no == panel_multiplier:
+    if role == "closeup":
         return f"{shot.emotion} with the reaction pushed closer to the foreground"
+    if role == "insert":
+        return f"{shot.emotion} while attention stays on the key detail"
     return f"{shot.emotion} while the tension continues to build"
 
 
@@ -138,22 +171,26 @@ def build_comic_draft_from_story_plan(
                     scene_no=shot.shot_no,
                     panel_no=panel_no,
                     panel_type=_panel_type_for(
+                        shot_no=shot.shot_no,
                         panel_no=panel_no,
                         panel_multiplier=panel_multiplier,
                     ),
                     framing=f"Scene {shot.shot_no} panel {panel_no}",
                     camera_intent=_panel_camera_intent(
                         shot=shot,
+                        shot_no=shot.shot_no,
                         panel_no=panel_no,
                         panel_multiplier=panel_multiplier,
                     ),
                     action_intent=_panel_action_intent(
                         shot=shot,
+                        shot_no=shot.shot_no,
                         panel_no=panel_no,
                         panel_multiplier=panel_multiplier,
                     ),
                     expression_intent=_panel_expression_intent(
                         shot=shot,
+                        shot_no=shot.shot_no,
                         panel_no=panel_no,
                         panel_multiplier=panel_multiplier,
                     ),
