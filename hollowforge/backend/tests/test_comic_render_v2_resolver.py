@@ -10,6 +10,7 @@ from app.services.comic_render_v2_resolver import (
     _STYLE_EXECUTION_REGISTRY,
     resolve_comic_render_v2_contract,
 )
+from app.services.series_style_canon_registry import get_series_style_canon
 
 
 def _make_role_profile() -> ComicPanelRenderProfile:
@@ -46,6 +47,20 @@ def test_resolve_comic_render_v2_contract_materializes_required_sections() -> No
         "execution_params",
         "negative_rules",
     )
+
+
+
+def test_series_style_canon_exposes_role_override() -> None:
+    pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
+    motion_test = get_series_style_canon(series_style_id="camila_motion_test_v1")
+
+    assert pilot.role_execution_overrides == {
+        "establish": {
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": (),
+        }
+    }
+    assert motion_test.role_execution_overrides == {}
 
 
 def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract() -> None:

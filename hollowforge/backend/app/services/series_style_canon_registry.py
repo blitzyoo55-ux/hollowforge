@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +20,9 @@ class SeriesStyleCanonEntry(BaseModel):
     artifact_avoidance_policy: str = Field(min_length=1, max_length=1000)
     hand_face_reliability_policy: str = Field(min_length=1, max_length=1000)
     notes: str = Field(min_length=1, max_length=1000)
+    role_execution_overrides: Mapping[str, Mapping[str, Any]] = Field(
+        default_factory=dict
+    )
 
 
 _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
@@ -48,6 +53,12 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
             "risk regions for still quality."
         ),
         notes="Pilot series style canon for the Camila-only V2 pilot.",
+        role_execution_overrides={
+            "establish": {
+                "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+                "loras": (),
+            }
+        },
     ),
     "camila_motion_test_v1": SeriesStyleCanonEntry(
         id="camila_motion_test_v1",
