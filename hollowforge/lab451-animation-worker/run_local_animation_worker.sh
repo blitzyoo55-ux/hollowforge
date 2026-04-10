@@ -3,17 +3,24 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="${SCRIPT_DIR}/../backend"
+COMMON_GIT_DIR="$(git -C "${SCRIPT_DIR}" rev-parse --git-common-dir)"
+COMMON_REPO_ROOT="$(cd "$(dirname "${COMMON_GIT_DIR}")" && pwd)"
+COMMON_PROJECT_DIR="${COMMON_REPO_ROOT}/hollowforge"
 
 if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
   PYTHON_BIN="${SCRIPT_DIR}/.venv/bin/python"
 elif [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
   PYTHON_BIN="${BACKEND_DIR}/.venv/bin/python"
+elif [[ -x "${COMMON_PROJECT_DIR}/backend/.venv/bin/python" ]]; then
+  PYTHON_BIN="${COMMON_PROJECT_DIR}/backend/.venv/bin/python"
 else
   PYTHON_BIN="python3"
 fi
 
+: "${WORKER_HOST:=127.0.0.1}"
+: "${WORKER_PORT:=8600}"
 : "${WORKER_EXECUTOR_BACKEND:=comfyui_pipeline}"
-: "${WORKER_PUBLIC_BASE_URL:=http://127.0.0.1:8600}"
+: "${WORKER_PUBLIC_BASE_URL:=http://${WORKER_HOST}:${WORKER_PORT}}"
 : "${WORKER_COMFYUI_URL:=http://127.0.0.1:8188}"
 : "${WORKER_COMFYUI_LTXV_CHECKPOINT:=ltxv-2b-0.9.8-distilled-fp8.safetensors}"
 : "${WORKER_COMFYUI_LTXV_CHECKPOINT_FALLBACK:=ltx-video-2b-v0.9.5.safetensors}"
@@ -28,6 +35,8 @@ if [[ -z "${WORKER_FFMPEG_BIN:-}" ]]; then
   fi
 fi
 export WORKER_EXECUTOR_BACKEND
+export WORKER_HOST
+export WORKER_PORT
 export WORKER_PUBLIC_BASE_URL
 export WORKER_COMFYUI_URL
 export WORKER_COMFYUI_LTXV_CHECKPOINT
@@ -38,4 +47,4 @@ export WORKER_COMFYUI_CLIP_VISION_MODEL
 export WORKER_FFMPEG_BIN
 
 cd "${SCRIPT_DIR}"
-exec "${PYTHON_BIN}" -m uvicorn app.main:app --app-dir "${SCRIPT_DIR}" --host 127.0.0.1 --port 8600
+exec "${PYTHON_BIN}" -m uvicorn app.main:app --app-dir "${SCRIPT_DIR}" --host "${WORKER_HOST}" --port "${WORKER_PORT}"

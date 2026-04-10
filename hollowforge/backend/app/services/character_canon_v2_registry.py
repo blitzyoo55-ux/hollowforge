@@ -21,6 +21,13 @@ class CharacterCanonV2Entry(BaseModel):
     anti_drift: str = Field(min_length=1, max_length=1000)
     wardrobe_notes: str = Field(min_length=1, max_length=600)
     personality_notes: str = Field(min_length=1, max_length=600)
+    reference_descriptor_notes: str = Field(min_length=1, max_length=600)
+    reference_hair_brightness_range: tuple[float, float]
+    reference_hair_warmth_range: tuple[float, float]
+    reference_skin_brightness_range: tuple[float, float]
+    reference_skin_warmth_range: tuple[float, float]
+    forbidden_wardrobe_tags: tuple[str, ...] = Field(default_factory=tuple)
+    forbidden_youth_tags: tuple[str, ...] = Field(default_factory=tuple)
 
 
 _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
@@ -62,6 +69,30 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
         personality_notes=(
             "Measured, observant, and direct; she reads as self-possessed rather "
             "than performatively styled."
+        ),
+        reference_descriptor_notes=(
+            "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
+            "adult grounded presentation. Reject school-uniform and youth-coded drift."
+        ),
+        reference_hair_brightness_range=(0.14, 0.48),
+        reference_hair_warmth_range=(0.03, 0.28),
+        reference_skin_brightness_range=(0.45, 0.82),
+        reference_skin_warmth_range=(0.03, 0.24),
+        forbidden_wardrobe_tags=(
+            "school_uniform",
+            "serafuku",
+            "sailor_collar",
+            "necktie",
+            "bow",
+            "neck_ribbon",
+            "plaid_skirt",
+        ),
+        forbidden_youth_tags=(
+            "child",
+            "loli",
+            "young",
+            "petite",
+            "school_uniform",
         ),
     )
 }

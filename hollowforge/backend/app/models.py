@@ -1714,6 +1714,7 @@ class AnimationJobCallbackPayload(BaseModel):
     external_job_id: Optional[str] = None
     external_job_url: Optional[str] = None
     output_path: Optional[str] = None
+    output_url: Optional[str] = None
     error_message: Optional[str] = None
     request_json: Optional[Dict[str, Any]] = None
 

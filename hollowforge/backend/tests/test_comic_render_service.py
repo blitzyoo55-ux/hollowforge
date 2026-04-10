@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from app.models import (
     AnimationJobCallbackPayload,
@@ -1830,3 +1831,130 @@ async def test_materialize_remote_render_job_callback_persists_structured_qualit
         "reward: expression readability; reward: natural body pose; "
         "penalty: dead eyes"
     )
+
+
+async def test_extract_identity_assessment_payload_reads_nested_worker_identity_signals() -> None:
+    request_json = {
+        "worker": {
+            "quality_assessment": {
+                "positive_signals": ["expression readability"],
+                "negative_signals": ["dead eyes"],
+                "identity_positive_signals": ["camila hair color match", "single face"],
+                "identity_negative_signals": ["camila hair length drift"],
+            }
+        }
+    }
+
+    payload = comic_render_service._extract_identity_assessment_payload(request_json)
+
+    assert payload == {
+        "positive_signals": ["expression readability"],
+        "negative_signals": ["dead eyes"],
+        "identity_positive_signals": ["camila hair color match", "single face"],
+        "identity_negative_signals": ["camila hair length drift"],
+    }
+
+
+async def test_derive_camila_v2_identity_assessment_uses_visual_reference_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_path = tmp_path / "camila-reference-pass.png"
+    image = Image.new("RGB", (240, 240), (210, 180, 150))
+    for x in range(70, 170):
+        for y in range(25, 90):
+            image.putpixel((x, y), (106, 76, 56))
+    for x in range(88, 152):
+        for y in range(108, 178):
+            image.putpixel((x, y), (186, 156, 134))
+    image.save(image_path)
+
+    async def _fake_analyze_image(_path: str, pixel_art_mode: bool = False):  # type: ignore[no-untyped-def]
+        return {
+            "wd14": {
+                "all_tags": {"1girl": 0.98, "solo": 0.97},
+                "bad_tags": [],
+            }
+        }
+
+    monkeypatch.setattr(comic_render_service, "analyze_image", _fake_analyze_image)
+    monkeypatch.setattr(
+        comic_render_service,
+        "detect_faces",
+        lambda _path: [(70, 70, 100, 110)],
+    )
+
+    payload = await comic_render_service._derive_camila_v2_identity_assessment_from_output(
+        local_output_path=image_path
+    )
+
+    assert payload is not None
+    assert "camila visual hair reference match" in payload["identity_positive_signals"]
+    assert "camila visual skin reference match" in payload["identity_positive_signals"]
+    assert "camila reference descriptor missing" not in payload["identity_negative_signals"]
+
+
+async def test_derive_camila_v2_identity_assessment_flags_youth_and_reference_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_path = tmp_path / "camila-reference-fail.png"
+    image = Image.new("RGB", (240, 240), (230, 225, 228))
+    for x in range(70, 170):
+        for y in range(25, 90):
+            image.putpixel((x, y), (28, 28, 32))
+    for x in range(88, 152):
+        for y in range(108, 178):
+            image.putpixel((x, y), (236, 228, 233))
+    image.save(image_path)
+
+    async def _fake_analyze_image(_path: str, pixel_art_mode: bool = False):  # type: ignore[no-untyped-def]
+        return {
+            "wd14": {
+                "all_tags": {
+                    "1girl": 0.98,
+                    "solo": 0.97,
+                    "school_uniform": 0.82,
+                    "black_hair": 0.88,
+                    "pale_skin": 0.75,
+                },
+                "bad_tags": [],
+            }
+        }
+
+    monkeypatch.setattr(comic_render_service, "analyze_image", _fake_analyze_image)
+    monkeypatch.setattr(
+        comic_render_service,
+        "detect_faces",
+        lambda _path: [(70, 70, 100, 110)],
+    )
+
+    payload = await comic_render_service._derive_camila_v2_identity_assessment_from_output(
+        local_output_path=image_path
+    )
+
+    assert payload is not None
+    assert "camila visual hair drift" in payload["identity_negative_signals"]
+    assert "camila visual skin drift" in payload["identity_negative_signals"]
+    assert "camila wardrobe drift" in payload["identity_negative_signals"]
+    assert "camila youth drift" in payload["identity_negative_signals"]
+
+
+async def test_select_best_render_asset_for_selection_fails_closed_when_identity_gate_blocks_all() -> None:
+    selected = comic_render_service.select_best_render_asset_for_selection(
+        [
+            {
+                "id": "asset-low-1",
+                "storage_path": "outputs/asset-low-1.png",
+                "quality_score": 0.18,
+            },
+            {
+                "id": "asset-low-2",
+                "storage_path": "outputs/asset-low-2.png",
+                "quality_score": 0.24,
+            },
+        ],
+        panel_type="closeup",
+    )
+
+    assert selected is None

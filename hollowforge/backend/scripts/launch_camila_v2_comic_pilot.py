@@ -10,6 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from app.services.comic_render_service import select_best_render_asset_for_selection
+
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_STORY_PROMPT = "Camila checks the studio lockbox at closing."
@@ -139,15 +141,17 @@ def _validate_camila_ids(
         raise ValueError("Camila V2 pilot requires a Camila character_series_binding_id")
 
 
-def _pick_selectable_asset(render_assets: list[dict[str, Any]]) -> dict[str, Any]:
-    selected = next(
-        (asset for asset in render_assets if str(asset.get("storage_path") or "").strip()),
-        None,
+def _pick_selectable_asset(
+    render_assets: list[dict[str, Any]],
+    *,
+    panel_type: str | None,
+) -> dict[str, Any]:
+    selected = select_best_render_asset_for_selection(
+        render_assets,
+        panel_type=panel_type,
     )
-    if selected is None and render_assets:
-        selected = render_assets[0]
     if selected is None:
-        raise RuntimeError("Panel render queue did not return any candidate assets")
+        raise RuntimeError("Identity gate rejected all materialized candidates")
     asset_id = str(selected.get("id") or "").strip()
     if not asset_id:
         raise RuntimeError("Panel render candidate is missing id")
@@ -158,11 +162,10 @@ def _poll_render_job_output_path(
     *,
     base_url: str,
     panel_id: str,
-    render_asset_id: str,
-    generation_id: str,
+    generation_ids: set[str],
     poll_attempts: int,
     poll_sec: float,
-) -> str:
+) -> list[dict[str, Any]]:
     import time
 
     render_jobs_url = _build_url(
@@ -174,20 +177,31 @@ def _poll_render_job_output_path(
             _request_json("GET", render_jobs_url),
             label=f"comic panel render jobs {panel_id}",
         )
-        for job in jobs:
-            if str(job.get("render_asset_id") or "").strip() != render_asset_id:
-                continue
-            job_generation_id = str(job.get("generation_id") or "").strip()
-            if generation_id and job_generation_id and job_generation_id != generation_id:
-                continue
-            output_path = str(job.get("output_path") or "").strip()
-            if output_path:
-                return output_path
+        relevant_jobs = [
+            job
+            for job in jobs
+            if str(job.get("generation_id") or "").strip() in generation_ids
+        ]
+        if len(relevant_jobs) >= len(generation_ids):
+            completed_paths = {
+                str(job.get("generation_id") or "").strip(): str(job.get("output_path") or "").strip()
+                for job in relevant_jobs
+                if str(job.get("status") or "").strip() == "completed"
+            }
+            terminal_generation_ids = {
+                str(job.get("generation_id") or "").strip()
+                for job in relevant_jobs
+                if str(job.get("status") or "").strip() in {"completed", "failed", "cancelled"}
+            }
+            if terminal_generation_ids >= generation_ids and all(
+                completed_paths.get(generation_id) for generation_id in generation_ids
+            ):
+                return relevant_jobs
         if attempt < max(1, poll_attempts) - 1:
             time.sleep(max(0.1, poll_sec))
 
     raise RuntimeError(
-        "Timed out waiting for selected render asset to materialize "
+        "Timed out waiting for panel render candidates to materialize "
         f"for panel {panel_id}"
     )
 
@@ -305,7 +319,45 @@ def main() -> int:
                 queue_response.get("render_assets") or [],
                 label=f"comic panel render assets {panel_id}",
             )
-            selected_candidate = _pick_selectable_asset(render_assets)
+            panel_type = str(
+                _require_object(queue_response.get("panel") or {}, label=f"comic panel detail {panel_id}").get("panel_type")
+                or ""
+            ).strip()
+            if args.execution_mode == "remote_worker":
+                generation_ids = {
+                    str(asset.get("generation_id") or "").strip()
+                    for asset in render_assets
+                    if str(asset.get("generation_id") or "").strip()
+                }
+                _poll_render_job_output_path(
+                    base_url=args.base_url,
+                    panel_id=panel_id,
+                    generation_ids=generation_ids,
+                    poll_attempts=args.render_poll_attempts,
+                    poll_sec=args.render_poll_sec,
+                )
+                queue_response = _require_object(
+                    _request_json(
+                        "POST",
+                        _build_url(
+                            args.base_url,
+                            f"/api/v1/comic/panels/{panel_id}/queue-renders",
+                            {
+                                "candidate_count": args.candidate_count,
+                                "execution_mode": args.execution_mode,
+                            },
+                        ),
+                    ),
+                    label=f"comic panel render queue refresh {panel_id}",
+                )
+                render_assets = _require_list(
+                    queue_response.get("render_assets") or [],
+                    label=f"comic panel render assets refresh {panel_id}",
+                )
+            selected_candidate = _pick_selectable_asset(
+                render_assets,
+                panel_type=panel_type,
+            )
             selected_asset = _require_object(
                 _request_json(
                     "POST",
@@ -319,15 +371,6 @@ def main() -> int:
             selected_asset_id = str(selected_asset.get("id") or "").strip()
             selected_generation_id = str(selected_asset.get("generation_id") or "").strip()
             selected_storage_path = str(selected_asset.get("storage_path") or "").strip()
-            if not selected_storage_path and args.execution_mode == "remote_worker":
-                selected_storage_path = _poll_render_job_output_path(
-                    base_url=args.base_url,
-                    panel_id=panel_id,
-                    render_asset_id=selected_asset_id,
-                    generation_id=selected_generation_id,
-                    poll_attempts=args.render_poll_attempts,
-                    poll_sec=args.render_poll_sec,
-                )
             if index == 0:
                 first_storage_path = selected_storage_path
                 first_selected_asset_id = selected_asset_id

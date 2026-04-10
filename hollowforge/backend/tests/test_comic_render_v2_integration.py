@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import io
 import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
+from app.config import settings
 from app.models import ComicEpisodeCreate
+from app.models import AnimationJobCallbackPayload
 from app.services import comic_render_service
-from app.services.comic_render_service import queue_panel_render_candidates
+from app.services.comic_render_service import (
+    materialize_remote_render_job_callback,
+    queue_panel_render_candidates,
+)
 from app.services.comic_render_v2_resolver import ComicRenderV2Contract
 from app.services.comic_repository import create_comic_episode
 from app.services.generation_service import GenerationService
@@ -439,3 +446,366 @@ async def test_v2_remote_job_request_json_carries_lane_binding_and_resolver_summ
         "style_block",
     ]
     assert all(isinstance(value, list) for value in resolver_sections.values())
+
+
+async def test_v2_remote_callback_blends_identity_gate_into_quality_score(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_id="panel_v2_remote_callback_1",
+        scene_id="scene_v2_remote_callback_1",
+        episode_id="episode_v2_remote_callback_1",
+        render_lane="character_canon_v2",
+        character_id="char_camila_duarte",
+        character_version_id="charver_camila_duarte_still_v1",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+    generation_service = GenerationService()
+
+    async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
+        return {
+            "id": f"remote-job-{job['request_index']}",
+            "job_id": f"remote-job-{job['request_index']}",
+            "job_url": f"https://worker.test/jobs/{job['id']}",
+        }
+
+    async def _fake_analyze_image(_image_path: str, pixel_art_mode: bool = False):  # type: ignore[no-untyped-def]
+        return {
+            "wd14": {
+                "bad_tags": [],
+                "good_tags": [],
+                "all_tags": {
+                    "brown_hair": 0.91,
+                    "long_hair": 0.88,
+                    "wavy_hair": 0.74,
+                    "solo": 0.97,
+                },
+            }
+        }
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "dispatch_comic_render_job",
+        _fake_dispatch,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "analyze_image",
+        _fake_analyze_image,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "detect_faces",
+        lambda _path: [(70, 70, 100, 110)],
+    )
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=2,
+        execution_mode="remote_worker",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        job_id = conn.execute(
+            """
+            SELECT id
+            FROM comic_render_jobs
+            WHERE scene_panel_id = ?
+            ORDER BY request_index ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()[0]
+
+    output_dir = settings.DATA_DIR / "outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", (240, 240), (208, 178, 148))
+    for x in range(70, 170):
+        for y in range(25, 90):
+            image.putpixel((x, y), (108, 80, 58))
+    for x in range(88, 152):
+        for y in range(108, 178):
+            image.putpixel((x, y), (186, 156, 134))
+    image.save(output_dir / "camila-v2-panel.png")
+
+    await materialize_remote_render_job_callback(
+        job_id=job_id,
+        payload=AnimationJobCallbackPayload(
+            status="completed",
+            output_path="outputs/camila-v2-panel.png",
+            request_json={
+                "worker": {
+                    "quality_assessment": {
+                        "positive_signals": ["expression readability"],
+                        "negative_signals": [],
+                    }
+                }
+            },
+        ),
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        asset_row = conn.execute(
+            """
+            SELECT quality_score, render_notes, storage_path
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()
+
+    assert asset_row[2] == "outputs/camila-v2-panel.png"
+    assert asset_row[0] is not None
+    assert asset_row[0] > 0.48
+    assert "identity gate: passed" in asset_row[1]
+    assert "identity reward: camila visual hair reference match" in asset_row[1]
+
+
+async def test_v2_remote_callback_downloads_output_url_when_local_file_is_missing(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_id="camila-v2-panel-download",
+        scene_id="camila-v2-scene-download",
+        episode_id="camila-v2-episode-download",
+        render_lane="character_canon_v2",
+        character_id="char_camila_duarte",
+        character_version_id="charver_camila_duarte_still_v1",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+    generation_service = GenerationService()
+
+    async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
+        return {
+            "id": f"remote-job-{job['request_index']}",
+            "job_id": f"remote-job-{job['request_index']}",
+            "job_url": f"https://worker.test/jobs/{job['id']}",
+        }
+
+    async def _fake_analyze_image(_path: str) -> dict[str, object]:
+        return {
+            "wd14": {
+                "all_tags": {
+                    "1girl": 0.98,
+                    "solo": 0.97,
+                    "brown_hair": 0.91,
+                    "long_hair": 0.83,
+                    "wavy_hair": 0.74,
+                    "tanned_skin": 0.72,
+                },
+                "bad_tags": [],
+            }
+        }
+
+    image_bytes = io.BytesIO()
+    image = Image.new("RGB", (240, 240), (208, 178, 148))
+    for x in range(70, 170):
+        for y in range(25, 90):
+            image.putpixel((x, y), (108, 80, 58))
+    for x in range(88, 152):
+        for y in range(108, 178):
+            image.putpixel((x, y), (186, 156, 134))
+    image.save(image_bytes, format="PNG")
+
+    class _FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        async def __aenter__(self) -> "_FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+            return None
+
+        async def get(self, url: str) -> _FakeResponse:
+            assert url == "https://worker.test/data/outputs/camila-v2-panel.png"
+            return _FakeResponse(image_bytes.getvalue())
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "dispatch_comic_render_job",
+        _fake_dispatch,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "analyze_image",
+        _fake_analyze_image,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "detect_faces",
+        lambda _path: [(70, 70, 100, 110)],
+    )
+    monkeypatch.setattr(comic_render_service, "httpx", SimpleNamespace(AsyncClient=_FakeAsyncClient, Timeout=lambda value: value))
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=2,
+        execution_mode="remote_worker",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        job_id = conn.execute(
+            """
+            SELECT id
+            FROM comic_render_jobs
+            WHERE scene_panel_id = ?
+            ORDER BY request_index ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()[0]
+
+    await materialize_remote_render_job_callback(
+        job_id=job_id,
+        payload=AnimationJobCallbackPayload(
+            status="completed",
+            output_path="outputs/camila-v2-panel.png",
+            output_url="https://worker.test/data/outputs/camila-v2-panel.png",
+        ),
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        asset_row = conn.execute(
+            """
+            SELECT quality_score, render_notes, storage_path
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()
+
+    assert asset_row[2] == "outputs/camila-v2-panel.png"
+    assert asset_row[0] is not None
+    assert "identity gate: passed" in asset_row[1]
+    assert (settings.DATA_DIR / "outputs" / "camila-v2-panel.png").exists()
+
+
+async def test_v2_remote_callback_fails_identity_gate_for_reference_drift(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(
+        temp_db,
+        panel_id="camila-v2-panel-drift",
+        scene_id="camila-v2-scene-drift",
+        episode_id="camila-v2-episode-drift",
+        render_lane="character_canon_v2",
+        character_id="char_camila_duarte",
+        character_version_id="charver_camila_duarte_still_v1",
+        series_style_id="camila_pilot_v1",
+        character_series_binding_id="camila_pilot_binding_v1",
+    )
+    generation_service = GenerationService()
+
+    async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
+        return {
+            "id": f"remote-job-{job['request_index']}",
+            "job_id": f"remote-job-{job['request_index']}",
+            "job_url": f"https://worker.test/jobs/{job['id']}",
+        }
+
+    async def _fake_analyze_image(_path: str) -> dict[str, object]:
+        return {
+            "wd14": {
+                "all_tags": {
+                    "1girl": 0.98,
+                    "solo": 0.97,
+                    "school_uniform": 0.82,
+                    "black_hair": 0.88,
+                    "pale_skin": 0.75,
+                },
+                "bad_tags": [],
+            }
+        }
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "dispatch_comic_render_job",
+        _fake_dispatch,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "analyze_image",
+        _fake_analyze_image,
+    )
+    monkeypatch.setattr(
+        comic_render_service,
+        "detect_faces",
+        lambda _path: [(70, 70, 100, 110)],
+    )
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=2,
+        execution_mode="remote_worker",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        job_id = conn.execute(
+            """
+            SELECT id
+            FROM comic_render_jobs
+            WHERE scene_panel_id = ?
+            ORDER BY request_index ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()[0]
+
+    output_dir = settings.DATA_DIR / "outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", (240, 240), (235, 230, 234))
+    for x in range(70, 170):
+        for y in range(25, 90):
+            image.putpixel((x, y), (30, 30, 36))
+    for x in range(88, 152):
+        for y in range(108, 178):
+            image.putpixel((x, y), (238, 231, 236))
+    image.save(output_dir / "camila-v2-drift.png")
+
+    await materialize_remote_render_job_callback(
+        job_id=job_id,
+        payload=AnimationJobCallbackPayload(
+            status="completed",
+            output_path="outputs/camila-v2-drift.png",
+        ),
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        asset_row = conn.execute(
+            """
+            SELECT quality_score, render_notes, storage_path
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()
+
+    assert asset_row[2] == "outputs/camila-v2-drift.png"
+    assert asset_row[0] is not None
+    assert asset_row[0] <= 0.24
+    assert "identity gate: failed" in asset_row[1]
+    assert "identity penalty: camila wardrobe drift" in asset_row[1]

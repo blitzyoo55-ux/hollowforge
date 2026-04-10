@@ -25,6 +25,30 @@ def test_load_camila_v2_character_canon_by_id() -> None:
         "Measured, observant, and direct; she reads as self-possessed rather "
         "than performatively styled."
     )
+    assert camila.reference_descriptor_notes == (
+        "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
+        "adult grounded presentation. Reject school-uniform and youth-coded drift."
+    )
+    assert camila.reference_hair_brightness_range == (0.14, 0.48)
+    assert camila.reference_hair_warmth_range == (0.03, 0.28)
+    assert camila.reference_skin_brightness_range == (0.45, 0.82)
+    assert camila.reference_skin_warmth_range == (0.03, 0.24)
+    assert camila.forbidden_wardrobe_tags == (
+        "school_uniform",
+        "serafuku",
+        "sailor_collar",
+        "necktie",
+        "bow",
+        "neck_ribbon",
+        "plaid_skirt",
+    )
+    assert camila.forbidden_youth_tags == (
+        "child",
+        "loli",
+        "young",
+        "petite",
+        "school_uniform",
+    )
     assert camila.face_structure_notes == (
         "Defined but natural face structure with calm proportions and stable "
         "recognition."

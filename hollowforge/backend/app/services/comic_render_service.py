@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, cast
+
+import httpx
+import numpy as np
+from PIL import Image
 
 from app.config import settings
 from app.db import get_db
@@ -31,6 +37,9 @@ from app.services.comic_render_profiles import (
     select_scene_cues,
     resolve_comic_panel_render_profile,
 )
+from app.services.ai_quality_service import analyze_image
+from app.services.adetailer_service import detect_faces
+from app.services.character_canon_v2_registry import get_character_canon_v2
 from app.services.character_series_binding_registry import get_character_series_binding
 from app.services.comic_render_v2_resolver import resolve_comic_render_v2_contract
 from app.services.generation_service import GenerationService
@@ -714,6 +723,65 @@ _QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
     "portrait pull on non-closeup role": 0.20,
 }
 
+_IDENTITY_POSITIVE_WEIGHTS: dict[str, float] = {
+    "single subject": 0.06,
+    "single face": 0.14,
+    "camila hair color match": 0.18,
+    "camila hair length match": 0.12,
+    "camila hair texture match": 0.08,
+    "camila skin tone match": 0.08,
+    "camila visual hair reference match": 0.24,
+    "camila visual skin reference match": 0.20,
+}
+
+_IDENTITY_NEGATIVE_WEIGHTS: dict[str, float] = {
+    "no readable face": 0.22,
+    "multiple faces": 0.24,
+    "camila hair color drift": 0.26,
+    "camila hair length drift": 0.18,
+    "camila skin tone drift": 0.16,
+    "face integrity issue": 0.20,
+    "camila visual hair drift": 0.34,
+    "camila visual skin drift": 0.28,
+    "camila wardrobe drift": 0.40,
+    "camila youth drift": 0.44,
+    "camila reference descriptor missing": 0.32,
+    "identity analysis unavailable": 0.80,
+}
+
+_CAMILA_HAIR_COLOR_MATCH_TAGS = {"brown_hair"}
+_CAMILA_HAIR_COLOR_DRIFT_TAGS = {
+    "black_hair",
+    "blonde_hair",
+    "white_hair",
+    "grey_hair",
+    "red_hair",
+    "blue_hair",
+    "green_hair",
+    "pink_hair",
+    "purple_hair",
+}
+_CAMILA_HAIR_LENGTH_MATCH_TAGS = {"long_hair", "very_long_hair"}
+_CAMILA_HAIR_LENGTH_DRIFT_TAGS = {"short_hair", "bob_cut"}
+_CAMILA_HAIR_TEXTURE_MATCH_TAGS = {"wavy_hair", "curly_hair"}
+_CAMILA_SKIN_TONE_MATCH_TAGS = {"tan", "tanned_skin", "dark_skin"}
+_CAMILA_SKIN_TONE_DRIFT_TAGS = {"pale_skin"}
+_FACE_INTEGRITY_BAD_TAGS = {"bad_face", "poorly_drawn_face", "duplicate_faces"}
+_CAMILA_V2_CANON_ID = "camila_v2"
+_IDENTITY_GATE_FINAL_SCORE_CAP = 0.24
+_ROLE_IDENTITY_THRESHOLDS: dict[str, float] = {
+    "establish": 0.42,
+    "beat": 0.56,
+    "insert": 0.32,
+    "closeup": 0.62,
+}
+_ROLE_SELECTION_THRESHOLDS: dict[str, float] = {
+    "establish": 0.38,
+    "beat": 0.48,
+    "insert": 0.30,
+    "closeup": 0.54,
+}
+
 
 def _normalize_quality_signal_list(value: Any) -> list[str]:
     if not isinstance(value, list | tuple):
@@ -743,6 +811,34 @@ def _normalize_quality_assessment_payload(
     return positive, negative
 
 
+def _normalize_identity_signal_list(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        cleaned = item.strip().lower()
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_identity_assessment_payload(
+    assessment_payload: dict[str, Any] | None,
+) -> tuple[list[str], list[str]]:
+    if not isinstance(assessment_payload, dict):
+        return [], []
+
+    positive = _normalize_identity_signal_list(
+        assessment_payload.get("identity_positive_signals")
+    )
+    negative = _normalize_identity_signal_list(
+        assessment_payload.get("identity_negative_signals")
+    )
+    return positive, negative
+
+
 def _extract_quality_assessment_payload(request_json: dict[str, Any]) -> dict[str, Any] | None:
     if not request_json:
         return None
@@ -764,6 +860,344 @@ def _extract_quality_assessment_payload(request_json: dict[str, Any]) -> dict[st
             if nested_payload is not None:
                 return nested_payload
     return None
+
+
+def _extract_identity_assessment_payload(request_json: dict[str, Any]) -> dict[str, Any] | None:
+    assessment_payload = _extract_quality_assessment_payload(request_json)
+    if not isinstance(assessment_payload, dict):
+        return None
+    if (
+        "identity_positive_signals" in assessment_payload
+        or "identity_negative_signals" in assessment_payload
+    ):
+        return assessment_payload
+    return None
+
+
+def _resolve_role_threshold(panel_type: str | None, *, thresholds: dict[str, float]) -> float:
+    normalized = str(panel_type or "").strip().lower()
+    return thresholds.get(normalized, thresholds["beat"])
+
+
+def _assess_panel_candidate_identity(
+    *,
+    panel_type: str | None,
+    assessment_payload: dict[str, Any] | None,
+) -> tuple[float, list[str]]:
+    positive_signals, negative_signals = _normalize_identity_assessment_payload(
+        assessment_payload
+    )
+    score = 0.5
+    notes: list[str] = []
+
+    for signal in positive_signals:
+        weight = _IDENTITY_POSITIVE_WEIGHTS.get(signal)
+        if weight is None:
+            continue
+        score += weight
+        notes.append(f"identity reward: {signal}")
+
+    for signal in negative_signals:
+        weight = _IDENTITY_NEGATIVE_WEIGHTS.get(signal)
+        if weight is None:
+            continue
+        score -= weight
+        notes.append(f"identity penalty: {signal}")
+
+    threshold = _resolve_role_threshold(
+        panel_type,
+        thresholds=_ROLE_IDENTITY_THRESHOLDS,
+    )
+    notes.append(f"identity score: {round(max(0.0, min(1.0, score)), 4)}")
+    notes.append(f"identity threshold: {threshold}")
+    return round(max(0.0, min(1.0, score)), 4), notes
+
+
+def _blend_candidate_selection_score(
+    *,
+    panel_type: str | None,
+    quality_score: float | None,
+    quality_notes: list[str],
+    identity_score: float | None,
+    identity_notes: list[str],
+) -> tuple[float | None, list[str]]:
+    if identity_score is None and quality_score is None:
+        return None, []
+
+    notes = [*identity_notes, *quality_notes]
+    if identity_score is None:
+        return quality_score, notes
+
+    threshold = _resolve_role_threshold(
+        panel_type,
+        thresholds=_ROLE_IDENTITY_THRESHOLDS,
+    )
+    if identity_score < threshold:
+        notes.append("identity gate: failed")
+        gated_score = min(
+            _IDENTITY_GATE_FINAL_SCORE_CAP,
+            round(max(0.0, identity_score) * 0.5, 4),
+        )
+        return gated_score, notes
+
+    notes.append("identity gate: passed")
+    effective_quality = quality_score if quality_score is not None else 0.5
+    blended = round((identity_score * 0.6) + (effective_quality * 0.4), 4)
+    return blended, notes
+
+
+def select_best_render_asset_for_selection(
+    render_assets: list[dict[str, Any]],
+    *,
+    panel_type: str | None,
+) -> dict[str, Any] | None:
+    threshold = _resolve_role_threshold(
+        panel_type,
+        thresholds=_ROLE_SELECTION_THRESHOLDS,
+    )
+    candidates = [
+        asset
+        for asset in render_assets
+        if str(asset.get("storage_path") or "").strip()
+    ]
+    if not candidates:
+        return None
+
+    ranked = sorted(
+        candidates,
+        key=lambda asset: (
+            -float(asset.get("quality_score") or 0.0),
+            str(asset.get("id") or ""),
+        ),
+    )
+    for asset in ranked:
+        score = asset.get("quality_score")
+        if isinstance(score, (int, float)) and float(score) >= threshold:
+            return asset
+    return None
+
+
+def _resolve_primary_face_box(
+    face_boxes: list[tuple[int, int, int, int]],
+) -> tuple[int, int, int, int] | None:
+    if not face_boxes:
+        return None
+    return max(face_boxes, key=lambda box: int(box[2]) * int(box[3]))
+
+
+def _crop_region_metrics(
+    image: Image.Image,
+    *,
+    left: int,
+    top: int,
+    right: int,
+    bottom: int,
+) -> tuple[float, float] | None:
+    clamped_left = max(0, min(int(left), image.width))
+    clamped_top = max(0, min(int(top), image.height))
+    clamped_right = max(clamped_left + 1, min(int(right), image.width))
+    clamped_bottom = max(clamped_top + 1, min(int(bottom), image.height))
+    if clamped_right <= clamped_left or clamped_bottom <= clamped_top:
+        return None
+
+    crop = image.crop((clamped_left, clamped_top, clamped_right, clamped_bottom)).convert("RGB")
+    arr = np.asarray(crop, dtype=np.float32)
+    if arr.size == 0:
+        return None
+    rgb_mean = arr.mean(axis=(0, 1))
+    brightness = float(rgb_mean.mean() / 255.0)
+    warmth = float((rgb_mean[0] - rgb_mean[2]) / 255.0)
+    return brightness, warmth
+
+
+def _derive_camila_v2_visual_reference_signals(
+    *,
+    image_path: Path,
+    face_boxes: list[tuple[int, int, int, int]],
+) -> tuple[list[str], list[str]]:
+    primary_face = _resolve_primary_face_box(face_boxes)
+    if primary_face is None:
+        return [], ["camila reference descriptor missing"]
+
+    canon = get_character_canon_v2(_CAMILA_V2_CANON_ID)
+    x, y, w, h = primary_face
+    with Image.open(image_path) as image:
+        hair_metrics = _crop_region_metrics(
+            image,
+            left=x + int(w * 0.08),
+            top=y - int(h * 0.45),
+            right=x + int(w * 0.92),
+            bottom=y + int(h * 0.12),
+        )
+        skin_metrics = _crop_region_metrics(
+            image,
+            left=x + int(w * 0.22),
+            top=y + int(h * 0.40),
+            right=x + int(w * 0.78),
+            bottom=y + int(h * 0.82),
+        )
+
+    positive: list[str] = []
+    negative: list[str] = []
+
+    if hair_metrics is None:
+        negative.append("camila reference descriptor missing")
+    else:
+        hair_brightness, hair_warmth = hair_metrics
+        hair_brightness_min, hair_brightness_max = canon.reference_hair_brightness_range
+        hair_warmth_min, hair_warmth_max = canon.reference_hair_warmth_range
+        if (
+            hair_brightness_min <= hair_brightness <= hair_brightness_max
+            and hair_warmth_min <= hair_warmth <= hair_warmth_max
+        ):
+            positive.append("camila visual hair reference match")
+        else:
+            negative.append("camila visual hair drift")
+
+    if skin_metrics is None:
+        if "camila reference descriptor missing" not in negative:
+            negative.append("camila reference descriptor missing")
+    else:
+        skin_brightness, skin_warmth = skin_metrics
+        skin_brightness_min, skin_brightness_max = canon.reference_skin_brightness_range
+        skin_warmth_min, skin_warmth_max = canon.reference_skin_warmth_range
+        if (
+            skin_brightness_min <= skin_brightness <= skin_brightness_max
+            and skin_warmth_min <= skin_warmth <= skin_warmth_max
+        ):
+            positive.append("camila visual skin reference match")
+        else:
+            negative.append("camila visual skin drift")
+
+    return positive, negative
+
+
+async def _derive_camila_v2_identity_assessment_from_output(
+    *,
+    local_output_path: Path,
+) -> dict[str, Any] | None:
+    analysis = await analyze_image(str(local_output_path))
+    wd14 = analysis.get("wd14") if isinstance(analysis, dict) else None
+    all_tags = wd14.get("all_tags") if isinstance(wd14, dict) else {}
+    bad_tags = wd14.get("bad_tags") if isinstance(wd14, dict) else []
+    if not isinstance(all_tags, dict):
+        all_tags = {}
+    tags = {str(tag).strip().lower() for tag in all_tags.keys()}
+
+    positive: list[str] = []
+    negative: list[str] = []
+
+    if {"1girl", "solo"} & tags:
+        positive.append("single subject")
+    if tags & _CAMILA_HAIR_COLOR_MATCH_TAGS:
+        positive.append("camila hair color match")
+    if tags & _CAMILA_HAIR_LENGTH_MATCH_TAGS:
+        positive.append("camila hair length match")
+    if tags & _CAMILA_HAIR_TEXTURE_MATCH_TAGS:
+        positive.append("camila hair texture match")
+    if tags & _CAMILA_SKIN_TONE_MATCH_TAGS:
+        positive.append("camila skin tone match")
+
+    if tags & _CAMILA_HAIR_COLOR_DRIFT_TAGS:
+        negative.append("camila hair color drift")
+    if tags & _CAMILA_HAIR_LENGTH_DRIFT_TAGS:
+        negative.append("camila hair length drift")
+    if tags & _CAMILA_SKIN_TONE_DRIFT_TAGS:
+        negative.append("camila skin tone drift")
+    if set(str(tag).strip().lower() for tag in bad_tags if isinstance(tag, str)) & _FACE_INTEGRITY_BAD_TAGS:
+        negative.append("face integrity issue")
+
+    face_boxes = await asyncio.to_thread(detect_faces, local_output_path)
+    face_count = len(face_boxes)
+    if face_count == 1:
+        positive.append("single face")
+    elif face_count == 0:
+        negative.append("no readable face")
+    else:
+        negative.append("multiple faces")
+
+    reference_positive, reference_negative = await asyncio.to_thread(
+        _derive_camila_v2_visual_reference_signals,
+        image_path=local_output_path,
+        face_boxes=face_boxes,
+    )
+    for signal in reference_positive:
+        if signal not in positive:
+            positive.append(signal)
+    for signal in reference_negative:
+        if signal not in negative:
+            negative.append(signal)
+
+    canon = get_character_canon_v2(_CAMILA_V2_CANON_ID)
+    if tags & set(canon.forbidden_wardrobe_tags):
+        negative.append("camila wardrobe drift")
+    if tags & set(canon.forbidden_youth_tags):
+        negative.append("camila youth drift")
+    if not any(
+        signal in positive
+        for signal in (
+            "camila hair color match",
+            "camila visual hair reference match",
+            "camila skin tone match",
+            "camila visual skin reference match",
+        )
+    ):
+        if "camila reference descriptor missing" not in negative:
+            negative.append("camila reference descriptor missing")
+
+    if not positive and not negative:
+        return None
+    return {
+        "identity_positive_signals": positive,
+        "identity_negative_signals": negative,
+    }
+
+
+async def _ensure_local_callback_output_path(
+    *,
+    output_path: str,
+    output_url: str | None,
+) -> Path | None:
+    normalized = str(output_path or "").strip().lstrip("/")
+    if not normalized:
+        return None
+
+    local_path = (settings.DATA_DIR / normalized).resolve()
+    if local_path.exists():
+        return local_path
+
+    if not output_url:
+        return None
+
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        response = await client.get(output_url)
+        response.raise_for_status()
+    await asyncio.to_thread(local_path.write_bytes, response.content)
+    return local_path if local_path.exists() else None
+
+
+def _merge_identity_assessment_payloads(
+    base_payload: dict[str, Any] | None,
+    derived_payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if base_payload is None and derived_payload is None:
+        return None
+    merged: dict[str, Any] = {}
+    for key in (
+        "identity_positive_signals",
+        "identity_negative_signals",
+    ):
+        values: list[str] = []
+        for payload in (base_payload, derived_payload):
+            if not isinstance(payload, dict):
+                continue
+            for value in _normalize_identity_signal_list(payload.get(key)):
+                if value not in values:
+                    values.append(value)
+        if values:
+            merged[key] = values
+    return merged or None
 
 
 def _assess_panel_candidate_quality(
@@ -1473,6 +1907,7 @@ async def materialize_remote_render_job_callback(
                 if payload.external_job_url is not None
                 else current.get("external_job_url")
             )
+            next_output_url = payload.output_url
             next_output_path = (
                 payload.output_path
                 if payload.output_path is not None
@@ -1530,18 +1965,68 @@ async def materialize_remote_render_job_callback(
                 )
                 panel_row = await panel_cursor.fetchone()
                 if panel_row is not None:
+                    parsed_request_json = _parse_json_object(next_request_json)
                     assessment_payload = _extract_quality_assessment_payload(
-                        _parse_json_object(next_request_json)
+                        parsed_request_json
                     )
-                    if assessment_payload is not None:
-                        profile = resolve_comic_panel_render_profile(
-                            cast(dict[str, Any], panel_row)
+                    identity_assessment_payload = _extract_identity_assessment_payload(
+                        parsed_request_json
+                    )
+                    comic_payload = parsed_request_json.get("comic")
+                    render_lane = (
+                        str(comic_payload.get("render_lane") or "").strip()
+                        if isinstance(comic_payload, dict)
+                        else ""
+                    )
+                    if render_lane == "character_canon_v2" and next_output_path:
+                        local_output_path = await _ensure_local_callback_output_path(
+                            output_path=next_output_path,
+                            output_url=next_output_url,
                         )
-                        asset_quality_score, quality_notes = _assess_panel_candidate_quality(
+                        if local_output_path is None:
+                            identity_assessment_payload = _merge_identity_assessment_payloads(
+                                identity_assessment_payload,
+                                {
+                                    "identity_negative_signals": [
+                                        "identity analysis unavailable"
+                                    ]
+                                },
+                            )
+                        else:
+                            identity_assessment_payload = _merge_identity_assessment_payloads(
+                                identity_assessment_payload,
+                                await _derive_camila_v2_identity_assessment_from_output(
+                                    local_output_path=local_output_path,
+                                ),
+                            )
+
+                    profile = resolve_comic_panel_render_profile(
+                        cast(dict[str, Any], panel_row)
+                    )
+                    quality_notes: list[str] = []
+                    readability_quality_score: float | None = None
+                    if assessment_payload is not None:
+                        readability_quality_score, quality_notes = _assess_panel_candidate_quality(
                             profile=profile,
                             assessment_payload=assessment_payload,
                         )
-                        asset_render_notes = "; ".join(quality_notes) or None
+
+                    identity_score: float | None = None
+                    identity_notes: list[str] = []
+                    if identity_assessment_payload is not None:
+                        identity_score, identity_notes = _assess_panel_candidate_identity(
+                            panel_type=cast(str | None, panel_row.get("panel_type")),
+                            assessment_payload=identity_assessment_payload,
+                        )
+
+                    asset_quality_score, blended_notes = _blend_candidate_selection_score(
+                        panel_type=cast(str | None, panel_row.get("panel_type")),
+                        quality_score=readability_quality_score,
+                        quality_notes=quality_notes,
+                        identity_score=identity_score,
+                        identity_notes=identity_notes,
+                    )
+                    asset_render_notes = "; ".join(blended_notes) or None
 
             await db.execute(
                 """

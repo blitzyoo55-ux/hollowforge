@@ -934,3 +934,4 @@ def test_worker_completion_callback_uses_data_relative_output_path(
         "completed",
     ]
     assert payloads[-1].output_path == "outputs/worker-job-1.png"
+    assert payloads[-1].output_url == "https://worker.test/data/outputs/worker-job-1.png"

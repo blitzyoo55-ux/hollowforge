@@ -277,6 +277,7 @@ async def _run_worker_job(worker_job_id: str) -> None:
                 external_job_id=row.get("external_job_id"),
                 external_job_url=row.get("external_job_url"),
                 output_path=_callback_output_path(row.get("output_url")),
+                output_url=row.get("output_url"),
                 error_message=row.get("error_message"),
             ),
         )
