@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -26,6 +26,8 @@ from app.workflows import (
     build_ltxv_2b_fast_workflow,
     build_sdxl_still_workflow,
     build_sdxl_ipadapter_frame_workflow,
+    build_sdxl_ipadapter_still_workflow,
+    parse_sdxl_ipadapter_still_payload,
 )
 
 _DUMMY_MP4_BYTES = b"DUMMY_MP4_CONTENT"
@@ -49,6 +51,7 @@ _SUPPORTED_EXECUTOR_BACKENDS = {
 _SUPPORTED_BACKEND_FAMILIES = {
     "ltxv",
     "sdxl_ipadapter",
+    "sdxl_ipadapter_still",
     "sdxl_still",
 }
 
@@ -105,6 +108,11 @@ def _pick_video_suffix(filename: str | None) -> str:
     return ".mp4"
 
 
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def _default_prompt_from_row(row: dict[str, Any]) -> str:
     generation_metadata = _parse_json_object(row.get("generation_metadata")) or {}
     prompt = str(generation_metadata.get("prompt") or "").strip()
@@ -149,6 +157,31 @@ def _download_headers_for_source_image(
     if source_netloc and callback_netloc and source_netloc == callback_netloc:
         return headers
     return {}
+
+
+def _resolve_reference_image_url(
+    reference_image: str,
+    *,
+    callback_url: str | None,
+) -> str:
+    image = str(reference_image or "").strip()
+    if not image:
+        raise RuntimeError("Reference-guided comic still contains an empty reference image")
+
+    parsed = urlparse(image)
+    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
+        return image
+
+    callback_parsed = urlparse(str(callback_url or ""))
+    if not callback_parsed.scheme or not callback_parsed.netloc:
+        raise RuntimeError(
+            "Reference-guided comic still requires callback_url to resolve reference_images"
+        )
+
+    base = f"{callback_parsed.scheme}://{callback_parsed.netloc}"
+    if image.startswith("/"):
+        return f"{base}{image}"
+    return f"{base}/data/outputs/{quote(image, safe='/')}"
 
 
 def _require_image_response_content_type(content_type: str | None) -> None:
@@ -293,6 +326,63 @@ class ComfyUILTXVExecutorAdapter:
             )
         return checkpoint_name
 
+    async def _resolve_reference_image_inputs(
+        self,
+        worker_job_id: str,
+        reference_images: tuple[str, ...],
+        *,
+        callback_url: str | None = None,
+    ) -> list[str]:
+        uploaded_images: list[str] = []
+
+        for index, candidate in enumerate(reference_images):
+            direct_path = Path(candidate)
+            if direct_path.is_file():
+                uploaded_images.append(
+                    await self._client.upload_image(direct_path, filename=direct_path.name)
+                )
+                continue
+
+            resolved_path: Path | None = None
+            for base_dir in (
+                settings.INPUTS_DIR,
+                settings.DATA_DIR / "reference_images",
+                settings.DATA_DIR,
+            ):
+                candidate_path = base_dir / candidate
+                if candidate_path.is_file():
+                    resolved_path = candidate_path
+                    break
+
+            if resolved_path is not None:
+                uploaded_images.append(
+                    await self._client.upload_image(
+                        resolved_path,
+                        filename=resolved_path.name,
+                    )
+                )
+                continue
+
+            reference_image_url = (
+                candidate
+                if _is_http_url(candidate)
+                else _resolve_reference_image_url(candidate, callback_url=callback_url)
+            )
+            local_source = await self._download_source_image(
+                f"{worker_job_id}_reference_{index:02d}",
+                reference_image_url,
+                callback_url=callback_url,
+            )
+            uploaded_images.append(
+                await self._client.upload_image(local_source, filename=local_source.name)
+            )
+
+        if not uploaded_images:
+            raise RuntimeError(
+                "Reference-guided comic still could not resolve a usable reference image"
+            )
+        return uploaded_images
+
     def _build_microanim_schedule(
         self,
         request: SDXLIPAdapterRequest,
@@ -377,6 +467,43 @@ class ComfyUILTXVExecutorAdapter:
         if target_tool == "comic_panel_still":
             generation_metadata = _parse_json_object(row.get("generation_metadata")) or {}
             default_checkpoint = str(generation_metadata.get("checkpoint") or "").strip()
+            callback_url = str(row.get("callback_url") or "").strip() or None
+
+            if backend_family == "sdxl_ipadapter_still":
+                ipadapter_request, reference_images = parse_sdxl_ipadapter_still_payload(
+                    request_json,
+                    default_prompt=_default_still_prompt_from_row(row),
+                    default_checkpoint=default_checkpoint,
+                )
+                missing_nodes = await self._client.missing_nodes(SDXL_IPADAPTER_REQUIRED_NODES)
+                if missing_nodes:
+                    raise RuntimeError(
+                        f"ComfyUI is missing required SDXL IPAdapter nodes: {', '.join(missing_nodes)}"
+                    )
+                ipadapter_request.checkpoint_name = await self._resolve_still_checkpoint_name(
+                    ipadapter_request.checkpoint_name
+                )
+                ipadapter_request.ipadapter_file = await self._resolve_ipadapter_model_name()
+                ipadapter_request.clip_vision_name = await self._resolve_clip_vision_name()
+                uploaded_image_names = await self._resolve_reference_image_inputs(
+                    worker_job_id,
+                    reference_images,
+                    callback_url=callback_url,
+                )
+                workflow, save_node_id = build_sdxl_ipadapter_still_workflow(
+                    uploaded_image_names=uploaded_image_names,
+                    request=ipadapter_request,
+                    filename_prefix=f"lab451_animation_worker/{worker_job_id}",
+                )
+                prompt_id = await self._client.submit_prompt(workflow)
+                self._prompt_id = prompt_id
+                self._save_node_id = save_node_id
+                self._job_mode = "sdxl_ipadapter_still"
+                return SubmissionResult(
+                    external_job_id=prompt_id,
+                    external_job_url=self._history_url(prompt_id),
+                )
+
             still_payload = request_json.get("still_generation")
             still_request = SDXLStillRequest.from_payload(
                 still_payload if isinstance(still_payload, dict) else request_json,
@@ -524,14 +651,18 @@ class ComfyUILTXVExecutorAdapter:
                 self._save_node_id,
             )
             if not assets:
-                asset_kind = "image" if self._job_mode == "sdxl_still" else "video"
+                asset_kind = (
+                    "image"
+                    if self._job_mode in {"sdxl_still", "sdxl_ipadapter_still"}
+                    else "video"
+                )
                 raise RuntimeError(
                     f"ComfyUI finished without returning a saved {asset_kind} asset"
                 )
 
             asset = assets[0]
             asset_bytes = await self._client.download_asset(asset)
-            if self._job_mode == "sdxl_still":
+            if self._job_mode in {"sdxl_still", "sdxl_ipadapter_still"}:
                 suffix = _pick_file_suffix(str(asset.get("filename") or ""), None)
                 output_name = f"{worker_job_id}{suffix}"
                 output_path = self._outputs_dir / output_name

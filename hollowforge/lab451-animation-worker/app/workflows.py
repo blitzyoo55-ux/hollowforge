@@ -151,6 +151,16 @@ def _parse_loras(value: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def _parse_reference_images(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError("Reference-guided still job requires a reference_images list")
+
+    normalized = tuple(str(item).strip() for item in value if str(item).strip())
+    if not normalized:
+        raise ValueError("Reference-guided still job requires at least one reference image")
+    return normalized
+
+
 @dataclass
 class LTXVRequest:
     prompt: str
@@ -363,6 +373,32 @@ class SDXLStillRequest:
             clip_skip=max(1, _int_value(payload.get("clip_skip"), 1)),
             loras=_parse_loras(payload.get("loras")),
         )
+
+
+def parse_sdxl_ipadapter_still_payload(
+    payload: dict[str, Any] | None,
+    *,
+    default_prompt: str,
+    default_checkpoint: str,
+) -> tuple[SDXLIPAdapterRequest, tuple[str, ...]]:
+    payload = payload or {}
+    reference_images = _parse_reference_images(payload.get("reference_images"))
+
+    merged_payload = dict(payload)
+    still_generation = payload.get("still_generation")
+    if isinstance(still_generation, dict):
+        merged_payload.update(still_generation)
+    if "checkpoint_name" not in merged_payload and merged_payload.get("checkpoint"):
+        merged_payload["checkpoint_name"] = merged_payload["checkpoint"]
+    if "sampler_name" not in merged_payload and merged_payload.get("sampler"):
+        merged_payload["sampler_name"] = merged_payload["sampler"]
+
+    request = SDXLIPAdapterRequest.from_payload(
+        merged_payload,
+        default_prompt=default_prompt,
+        default_checkpoint=default_checkpoint,
+    )
+    return request, reference_images
 
 
 def build_ltxv_2b_fast_workflow(
@@ -614,6 +650,165 @@ def build_sdxl_still_workflow(
         "inputs": {
             "samples": [sampler_node, 0],
             "vae": ["1", 2],
+        },
+    }
+    next_node += 1
+
+    save_node = str(next_node)
+    workflow[save_node] = {
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": [decode_node, 0],
+            "filename_prefix": filename_prefix,
+        },
+    }
+    return workflow, save_node
+
+
+def build_sdxl_ipadapter_still_workflow(
+    *,
+    uploaded_image_names: list[str] | tuple[str, ...],
+    request: SDXLIPAdapterRequest,
+    filename_prefix: str,
+) -> tuple[dict[str, Any], str]:
+    image_names = tuple(str(item).strip() for item in uploaded_image_names if str(item).strip())
+    if not image_names:
+        raise ValueError("Still IPAdapter workflow requires at least one uploaded image")
+
+    workflow: dict[str, Any] = {}
+    next_node = 1
+
+    checkpoint_node = str(next_node)
+    workflow[checkpoint_node] = {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+            "ckpt_name": request.checkpoint_name,
+        },
+    }
+    next_node += 1
+
+    positive_node = str(next_node)
+    workflow[positive_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": request.prompt,
+            "clip": [checkpoint_node, 1],
+        },
+    }
+    next_node += 1
+
+    negative_node = str(next_node)
+    workflow[negative_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": request.negative_prompt,
+            "clip": [checkpoint_node, 1],
+        },
+    }
+    next_node += 1
+
+    ipadapter_loader_node = str(next_node)
+    workflow[ipadapter_loader_node] = {
+        "class_type": "IPAdapterModelLoader",
+        "inputs": {
+            "ipadapter_file": request.ipadapter_file,
+        },
+    }
+    next_node += 1
+
+    clip_vision_loader_node = str(next_node)
+    workflow[clip_vision_loader_node] = {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {
+            "clip_name": request.clip_vision_name,
+        },
+    }
+    next_node += 1
+
+    model_ref: list[Any] = [checkpoint_node, 0]
+    latent_image_ref: list[Any] | None = None
+
+    for image_name in image_names:
+        load_node = str(next_node)
+        workflow[load_node] = {
+            "class_type": "LoadImage",
+            "inputs": {
+                "image": image_name,
+            },
+        }
+        next_node += 1
+
+        scale_node = str(next_node)
+        workflow[scale_node] = {
+            "class_type": "ImageScale",
+            "inputs": {
+                "image": [load_node, 0],
+                "upscale_method": request.upscale_method,
+                "width": request.width,
+                "height": request.height,
+                "crop": request.crop,
+            },
+        }
+        next_node += 1
+
+        if latent_image_ref is None:
+            latent_image_ref = [scale_node, 0]
+
+        adapter_node = str(next_node)
+        workflow[adapter_node] = {
+            "class_type": "IPAdapterAdvanced",
+            "inputs": {
+                "model": model_ref,
+                "ipadapter": [ipadapter_loader_node, 0],
+                "image": [scale_node, 0],
+                "weight": request.ipadapter_weight,
+                "weight_type": request.ipadapter_weight_type,
+                "combine_embeds": "concat",
+                "start_at": request.ipadapter_start_at,
+                "end_at": request.ipadapter_end_at,
+                "embeds_scaling": request.embeds_scaling,
+                "clip_vision": [clip_vision_loader_node, 0],
+            },
+        }
+        model_ref = [adapter_node, 0]
+        next_node += 1
+
+    assert latent_image_ref is not None
+
+    latent_node = str(next_node)
+    workflow[latent_node] = {
+        "class_type": "VAEEncode",
+        "inputs": {
+            "pixels": latent_image_ref,
+            "vae": [checkpoint_node, 2],
+        },
+    }
+    next_node += 1
+
+    sampler_node = str(next_node)
+    workflow[sampler_node] = {
+        "class_type": "KSampler",
+        "inputs": {
+            "model": model_ref,
+            "seed": request.seed,
+            "steps": request.steps,
+            "cfg": request.cfg,
+            "sampler_name": request.sampler_name,
+            "scheduler": request.scheduler,
+            "positive": [positive_node, 0],
+            "negative": [negative_node, 0],
+            "latent_image": [latent_node, 0],
+            "denoise": request.denoise,
+        },
+    }
+    next_node += 1
+
+    decode_node = str(next_node)
+    workflow[decode_node] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [sampler_node, 0],
+            "vae": [checkpoint_node, 2],
         },
     }
     next_node += 1

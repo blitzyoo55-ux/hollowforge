@@ -23,7 +23,12 @@ from app.db import init_db
 from app.executors import CompletionResult, SubmissionResult
 from app.executors import ComfyUILTXVExecutorAdapter
 from app.models import HollowForgeCallbackPayload, WorkerJobCreate
-from app.workflows import SDXLStillRequest, build_sdxl_still_workflow
+from app.workflows import (
+    SDXLStillRequest,
+    build_sdxl_ipadapter_still_workflow,
+    build_sdxl_still_workflow,
+    parse_sdxl_ipadapter_still_payload,
+)
 
 
 class FakeComfyUIClient:
@@ -31,6 +36,7 @@ class FakeComfyUIClient:
         self.submitted_workflows: list[dict[str, object]] = []
         self.wait_calls: list[tuple[str, str]] = []
         self.downloaded_assets: list[dict[str, object]] = []
+        self.uploaded_images: list[tuple[str, bytes]] = []
         self.closed = False
 
     async def check_health(self) -> bool:
@@ -63,6 +69,10 @@ class FakeComfyUIClient:
     async def download_asset(self, asset: dict[str, object]) -> bytes:
         self.downloaded_assets.append(asset)
         return b"fake-png-bytes"
+
+    async def upload_image(self, file_path: Path, filename: str) -> str:
+        self.uploaded_images.append((filename, file_path.read_bytes()))
+        return filename
 
     async def close(self) -> None:
         self.closed = True
@@ -720,6 +730,65 @@ def test_build_sdxl_still_workflow_applies_clip_skip_to_clip_path() -> None:
     assert workflow[save_node_id]["class_type"] == "SaveImage"
 
 
+def test_reference_guided_still_payload_parses_nested_still_generation_and_references() -> None:
+    request, reference_images = parse_sdxl_ipadapter_still_payload(
+        {
+            "backend_family": "sdxl_ipadapter_still",
+            "reference_images": [
+                "camila_v2_establish_anchor_hero.png",
+                "camila_v2_establish_anchor_halfbody.png",
+            ],
+            "ipadapter_weight": 0.92,
+            "ipadapter_start_at": 0.1,
+            "ipadapter_end_at": 0.9,
+            "still_generation": {
+                "prompt": "panel prompt",
+                "negative_prompt": "bad anatomy",
+                "checkpoint": "comic-checkpoint.safetensors",
+                "seed": 77,
+                "width": 1216,
+                "height": 960,
+                "steps": 30,
+                "cfg": 5.4,
+                "sampler": "euler_ancestral",
+                "scheduler": "normal",
+            },
+        },
+        default_prompt="fallback prompt",
+        default_checkpoint="fallback-checkpoint.safetensors",
+    )
+
+    assert reference_images == (
+        "camila_v2_establish_anchor_hero.png",
+        "camila_v2_establish_anchor_halfbody.png",
+    )
+    assert request.prompt == "panel prompt"
+    assert request.negative_prompt == "bad anatomy"
+    assert request.checkpoint_name == "comic-checkpoint.safetensors"
+    assert request.seed == 77
+    assert request.width == 1216
+    assert request.height == 960
+    assert request.steps == 30
+    assert request.cfg == pytest.approx(5.4)
+    assert request.ipadapter_weight == pytest.approx(0.92)
+    assert request.ipadapter_start_at == pytest.approx(0.1)
+    assert request.ipadapter_end_at == pytest.approx(0.9)
+
+    workflow, save_node_id = build_sdxl_ipadapter_still_workflow(
+        uploaded_image_names=reference_images,
+        request=request,
+        filename_prefix="lab451_animation_worker/worker-job-reference-guided",
+    )
+
+    assert workflow[save_node_id]["class_type"] == "SaveImage"
+    assert not any(node["class_type"] == "SaveVideo" for node in workflow.values())
+    assert sum(1 for node in workflow.values() if node["class_type"] == "LoadImage") == 2
+    assert (
+        sum(1 for node in workflow.values() if node["class_type"] == "IPAdapterAdvanced")
+        == 2
+    )
+
+
 def test_render_video_from_frames_uses_configured_ffmpeg_binary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -826,6 +895,112 @@ def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:
     assert fake_client.wait_calls == [("prompt-123", save_image_node_id)]
     assert fake_client.closed is True
     assert (tmp_path / "outputs" / "worker-job-1.png").read_bytes() == b"fake-png-bytes"
+
+def test_reference_guided_comic_panel_still_routes_to_ipadapter_png_workflow(
+    tmp_path: Path,
+) -> None:
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+    fake_client = FakeComfyUIClient()
+    adapter._client = fake_client
+
+    download_calls: list[tuple[str, str, str | None]] = []
+
+    async def fake_download_source_image(
+        worker_job_id: str,
+        source_image_url: str,
+        *,
+        callback_url: str | None = None,
+    ) -> Path:
+        download_calls.append((worker_job_id, source_image_url, callback_url))
+        local_path = tmp_path / "inputs" / f"{worker_job_id}.png"
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(f"image:{worker_job_id}".encode("utf-8"))
+        return local_path
+
+    adapter._download_source_image = fake_download_source_image  # type: ignore[method-assign]
+
+    row = {
+        "id": "worker-job-reference-guided",
+        "target_tool": "comic_panel_still",
+        "source_image_url": "",
+        "callback_url": "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        "generation_metadata": json.dumps(
+            {
+                "prompt": "fallback prompt",
+                "checkpoint": "fallback-checkpoint.safetensors",
+            }
+        ),
+        "request_json": json.dumps(
+            {
+                "backend_family": "sdxl_ipadapter_still",
+                "model_profile": "comic_panel_sdxl_v1",
+                "reference_images": [
+                    "camila_v2_establish_anchor_hero.png",
+                    "camila_v2_establish_anchor_halfbody.png",
+                ],
+                "ipadapter_weight": 0.92,
+                "ipadapter_start_at": 0.0,
+                "ipadapter_end_at": 1.0,
+                "still_generation": {
+                    "prompt": "panel prompt",
+                    "negative_prompt": "bad anatomy",
+                    "checkpoint": "comic-checkpoint.safetensors",
+                    "width": 1216,
+                    "height": 960,
+                    "steps": 30,
+                    "cfg": 5.4,
+                    "seed": 77,
+                    "sampler": "euler_ancestral",
+                    "scheduler": "normal",
+                },
+            }
+        ),
+    }
+
+    submission = asyncio.run(adapter.submit(row))
+
+    assert submission.external_job_id == "prompt-123"
+    assert submission.external_job_url == "https://comfy.example/history/prompt-123"
+    assert download_calls == [
+        (
+            "worker-job-reference-guided_reference_00",
+            "https://sec.hlfglll.com/data/outputs/camila_v2_establish_anchor_hero.png",
+            "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        ),
+        (
+            "worker-job-reference-guided_reference_01",
+            "https://sec.hlfglll.com/data/outputs/camila_v2_establish_anchor_halfbody.png",
+            "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        ),
+    ]
+    assert [item[0] for item in fake_client.uploaded_images] == [
+        "worker-job-reference-guided_reference_00.png",
+        "worker-job-reference-guided_reference_01.png",
+    ]
+    assert fake_client.requested_nodes == worker_executors.SDXL_IPADAPTER_REQUIRED_NODES
+    assert len(fake_client.submitted_workflows) == 1
+    workflow = fake_client.submitted_workflows[0]
+    assert sum(1 for node in workflow.values() if node["class_type"] == "LoadImage") == 2
+    assert sum(1 for node in workflow.values() if node["class_type"] == "SaveImage") == 1
+    assert not any(node["class_type"] == "SaveVideo" for node in workflow.values())
+    save_image_node_id = next(
+        node_id for node_id, node in workflow.items() if node["class_type"] == "SaveImage"
+    )
+
+    completed = asyncio.run(adapter.wait_for_completion("worker-job-reference-guided"))
+
+    assert completed.output_url == "https://worker.test/data/outputs/worker-job-reference-guided.png"
+    assert fake_client.wait_calls == [("prompt-123", save_image_node_id)]
+    assert fake_client.closed is True
+    assert (tmp_path / "outputs" / "worker-job-reference-guided.png").read_bytes() == (
+        b"fake-png-bytes"
+    )
+
 
 
 def test_worker_config_defaults_to_shared_repo_data_dir(
