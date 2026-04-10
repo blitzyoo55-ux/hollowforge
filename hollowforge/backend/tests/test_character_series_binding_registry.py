@@ -26,11 +26,28 @@ def test_load_camila_binding_by_explicit_id() -> None:
         "simple functional everyday wardrobe"
     )
     assert binding.binding_negative_rules == (
-        "No wardrobe drift, no glamour drift, no editorial styling drift."
+        "No wardrobe drift, no glamour drift, no editorial styling drift, no "
+        "camera-frame drift, no UI overlay drift, no random text drift, no "
+        "school uniform, no necktie, no blazer-and-tie school look."
     )
     assert binding.do_not_mutate == (
         "Do not mutate Camila identity ownership or style ownership through this "
         "binding."
+    )
+    assert binding.reference_sets == {
+        "establish": (
+            "camila_v2_establish_primary.png",
+            "camila_v2_establish_secondary.png",
+        )
+    }
+
+
+def test_camila_binding_exposes_establish_reference_set() -> None:
+    binding = get_character_series_binding("camila_pilot_binding_v1")
+
+    assert binding.reference_sets["establish"] == (
+        "camila_v2_establish_primary.png",
+        "camila_v2_establish_secondary.png",
     )
 
 

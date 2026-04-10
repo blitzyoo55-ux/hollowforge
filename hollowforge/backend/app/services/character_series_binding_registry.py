@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, Field
 
 
@@ -16,6 +18,7 @@ class CharacterSeriesBindingEntry(BaseModel):
     face_lock_strength: str = Field(min_length=1, max_length=120)
     allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
     binding_negative_rules: str = Field(min_length=1, max_length=1000)
+    reference_sets: Mapping[str, tuple[str, ...]] = Field(default_factory=dict)
     do_not_mutate: str = Field(min_length=1, max_length=1000)
     notes: str = Field(min_length=1, max_length=1000)
 
@@ -31,8 +34,15 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         allowed_wardrobe_family="simple functional everyday wardrobe",
         binding_negative_rules=(
             "No wardrobe drift, no glamour drift, no editorial styling drift, no "
-            "camera-frame drift, no UI overlay drift, no random text drift."
+            "camera-frame drift, no UI overlay drift, no random text drift, no "
+            "school uniform, no necktie, no blazer-and-tie school look."
         ),
+        reference_sets={
+            "establish": (
+                "camila_v2_establish_primary.png",
+                "camila_v2_establish_secondary.png",
+            )
+        },
         do_not_mutate=(
             "Do not mutate Camila identity ownership or style ownership through this "
             "binding."
