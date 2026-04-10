@@ -28,6 +28,21 @@ def _make_role_profile() -> ComicPanelRenderProfile:
     )
 
 
+def _make_establish_role_profile() -> ComicPanelRenderProfile:
+    return ComicPanelRenderProfile(
+        profile_id="establish_static_v1",
+        panel_types=("establish",),
+        lora_mode="inherit_all",
+        width=1216,
+        height=960,
+        negative_prompt_append="plastic skin, waxy face, dead eyes",
+        anchor_filter_mode="drop_face_gloss_bias",
+        prompt_order_mode="default_subject_first",
+        subject_prominence_mode="default",
+        scene_cue_mode="none",
+    )
+
+
 def test_resolve_comic_render_v2_contract_materializes_required_sections() -> None:
     contract = resolve_comic_render_v2_contract(
         character_id="camila_v2",
@@ -49,6 +64,20 @@ def test_resolve_comic_render_v2_contract_materializes_required_sections() -> No
     )
 
 
+def test_resolve_comic_render_v2_contract_uses_establish_style_override() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_establish_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert contract.execution_params["loras"] == ()
+
 
 def test_series_style_canon_exposes_role_override() -> None:
     pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
@@ -61,6 +90,24 @@ def test_series_style_canon_exposes_role_override() -> None:
         }
     }
     assert motion_test.role_execution_overrides == {}
+
+
+def test_resolve_comic_render_v2_contract_keeps_base_stack_for_beat() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="beat",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
+    assert contract.execution_params["loras"] == (
+        {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+        {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
+    )
 
 
 def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract() -> None:

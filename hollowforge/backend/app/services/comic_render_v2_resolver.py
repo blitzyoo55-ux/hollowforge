@@ -108,6 +108,16 @@ def _resolve_style_execution_params(series_style_id: str) -> dict[str, Any]:
     return deepcopy(style_execution)
 
 
+def _merge_style_execution_override(
+    style_execution: dict[str, Any],
+    role_execution_override: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    merged_execution = deepcopy(style_execution)
+    if role_execution_override:
+        merged_execution.update(deepcopy(role_execution_override))
+    return merged_execution
+
+
 def _deep_freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType({key: _deep_freeze(item) for key, item in value.items()})
@@ -189,9 +199,12 @@ def resolve_comic_render_v2_contract(
         binding_fragments.append(f"Continuity: {continuity_notes.strip()}")
     binding_block = tuple(binding_fragments)
 
-    style_execution = _resolve_style_execution_params(series_style_id)
+    style_execution = _merge_style_execution_override(
+        _resolve_style_execution_params(series_style_id),
+        style.role_execution_overrides.get(panel_type),
+    )
 
-    # Precedence: style execution params -> binding lock strengths -> role constraints.
+    # Precedence: style base execution -> style role override -> binding lock strengths -> role constraints.
     execution_params: dict[str, Any] = {
         "checkpoint": style_execution["checkpoint"],
         "loras": style_execution["loras"],
