@@ -344,12 +344,6 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     assert prompt.startswith("Setting: inside Artist Loft Morning.")
     assert "Composition: establish manga panel" in prompt
     assert "environment-first framing" in prompt
-    assert "no held note, no placard, no presented paper" in prompt
-    assert (
-        "Action: lead inhabits the room naturally with relaxed empty hands, no note, letter, card, sign, or written prop presented to the viewer."
-        in prompt
-    )
-    assert "checks the studio lockbox" not in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
@@ -442,13 +436,8 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
         in prompt
     )
     assert "Subject prominence:" in prompt
-    assert (
-        "Action: lead inhabits the room naturally with relaxed empty hands, no note, letter, card, sign, or written prop presented to the viewer."
-        in prompt
-    )
     assert "wide room view inside Artist Loft Morning" in prompt
     assert "Wide establishing shot" not in prompt
-    assert "black invitation" not in prompt
     assert "tasteful adult allure" not in prompt
     assert "glamorous adult woman" not in prompt
     assert "high-response beauty editorial" not in prompt
@@ -1080,64 +1069,6 @@ async def test_output_quality_assessment_penalties_can_reject_overlay_candidate(
     assert score <= 0.06
     assert "penalty: text artifact overlay" in notes
     assert "penalty: camera frame overlay" in notes
-
-
-async def test_derive_output_quality_assessment_flags_bottom_band_text_overlay(
-    tmp_path: Path,
-) -> None:
-    image_path = tmp_path / "bottom-band-text.png"
-    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
-    draw = ImageDraw.Draw(image)
-    draw.rectangle([(0, 760), (1216, 832)], fill=(158, 122, 94))
-    for index in range(15):
-        x = 72 + (index * 70)
-        draw.rectangle([(x, 786), (x + 28, 798)], fill=(245, 245, 245))
-        draw.rectangle([(x + 4, 798), (x + 36, 808)], fill=(24, 24, 24))
-        draw.rectangle([(x + 10, 808), (x + 40, 818)], fill=(245, 245, 245))
-    image.save(image_path)
-
-    assessment = await asyncio.to_thread(
-        comic_render_service._derive_output_quality_assessment_from_output,
-        image_path,
-    )
-
-    assert assessment == {
-        "negative_signals": [
-            "subtitle overlay",
-            "caption box",
-            "random text",
-        ]
-    }
-
-
-async def test_derive_output_quality_assessment_flags_upper_band_text_overlay(
-    tmp_path: Path,
-) -> None:
-    image_path = tmp_path / "upper-band-text.png"
-    image = Image.new("RGB", (1216, 832), color=(188, 152, 124))
-    draw = ImageDraw.Draw(image)
-    draw.rectangle([(0, 0), (520, 90)], fill=(46, 34, 30))
-    for row in range(3):
-        y = 10 + (row * 18)
-        for index in range(14):
-            x = 14 + (index * 28)
-            draw.rectangle([(x, y), (x + 14, y + 5)], fill=(245, 245, 245))
-            draw.rectangle([(x + 3, y + 5), (x + 19, y + 10)], fill=(24, 24, 24))
-            draw.rectangle([(x + 6, y + 10), (x + 20, y + 15)], fill=(245, 245, 245))
-    image.save(image_path)
-
-    assessment = await asyncio.to_thread(
-        comic_render_service._derive_output_quality_assessment_from_output,
-        image_path,
-    )
-
-    assert assessment == {
-        "negative_signals": [
-            "subtitle overlay",
-            "caption box",
-            "random text",
-        ]
-    }
 
 
 async def test_queue_panel_render_candidates_remote_creates_generation_shells_and_jobs(

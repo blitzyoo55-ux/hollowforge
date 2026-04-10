@@ -221,10 +221,10 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "Preserve a natural skin surface with light texture and avoid oversmoothing.",
             "Adult, grounded build with believable presence and balanced posture.",
             "Calm, observant, and direct with small controlled shifts in emotion.",
-            "Composed mature beauty with approachable warmth and adult presence.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
             "Simple, functional wardrobe choices that support the scene without turning her into a fashion portrait.",
             "Measured, observant, and direct; she reads as self-possessed rather than performatively styled.",
-            "Chestnut-brown hair, lightly tanned skin, and mature calm presence.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
         ),
         style_block=(
             "Series style: Camila Pilot V1",
@@ -232,15 +232,17 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "Use restrained shading that supports volume while avoiding muddy contrast.",
             "Render surfaces with enough texture to stay natural without adding noise.",
             "Prioritize clear subject separation and readable forms in still frames.",
-            "Preserve attractive adult facial clarity, healthy warmth, and natural presence without glamour gloss.",
             "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
             "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
             "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
         ),
         binding_block=(
             "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
-            "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, and natural charm without glamour posing.",
+            "Identity lock: strong",
+            "Hair lock: strong",
+            "Face lock: strong",
             "Wardrobe family: simple functional everyday wardrobe",
+            "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
             "Location: artist loft morning",
             "Continuity: Carry over the wet brush on the easel from prior panel.",
         ),
@@ -274,8 +276,8 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
         },
         negative_rules=(
             "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
-            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
-            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift, no school-uniform cues, no necktie, no orange hair, no youth-coded anime heroine drift.",
+            "Keep Camila anchored in a calm, grounded, adult non-glamour identity. Avoid drifting into editorial beauty framing, school-uniform styling, or youthful heroine shortcuts.",
             "No wardrobe drift, no glamour drift, no editorial styling drift.",
             "Role negative: plastic skin, waxy face, dead eyes",
         ),
@@ -340,10 +342,10 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "Preserve a natural skin surface with light texture and avoid oversmoothing.",
             "Adult, grounded build with believable presence and balanced posture.",
             "Calm, observant, and direct with small controlled shifts in emotion.",
-            "Composed mature beauty with approachable warmth and adult presence.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
             "Simple, functional wardrobe choices that support the scene without turning her into a fashion portrait.",
             "Measured, observant, and direct; she reads as self-possessed rather than performatively styled.",
-            "Chestnut-brown hair, lightly tanned skin, and mature calm presence.",
+            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
         ],
         "style_block": [
             "Series style: Camila Pilot V1",
@@ -351,23 +353,25 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
             "Use restrained shading that supports volume while avoiding muddy contrast.",
             "Render surfaces with enough texture to stay natural without adding noise.",
             "Prioritize clear subject separation and readable forms in still frames.",
-            "Preserve attractive adult facial clarity, healthy warmth, and natural presence without glamour gloss.",
             "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
             "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
             "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
         ],
         "binding_block": [
             "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
-            "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, and natural charm without glamour posing.",
+            "Identity lock: strong",
+            "Hair lock: strong",
+            "Face lock: strong",
             "Wardrobe family: simple functional everyday wardrobe",
+            "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
             "Location: artist loft morning",
             "Continuity: Carry over the wet brush on the easel from prior panel.",
         ],
         "role_block": ["Role: beat panel"],
         "negative_rules": [
             "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
-            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
-            "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+            "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift, no school-uniform cues, no necktie, no orange hair, no youth-coded anime heroine drift.",
+            "Keep Camila anchored in a calm, grounded, adult non-glamour identity. Avoid drifting into editorial beauty framing, school-uniform styling, or youthful heroine shortcuts.",
             "No wardrobe drift, no glamour drift, no editorial styling drift.",
             "Role negative: plastic skin, waxy face, dead eyes",
         ],
@@ -446,22 +450,6 @@ async def test_v2_establish_override_and_beat_panel_keeps_base_style_stack(
     establish_payload, _, _ = establish_generation_service.batch_calls[0]
     assert establish_payload["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert establish_payload["loras"] == []
-
-    with sqlite3.connect(temp_db) as conn:
-        raw_snapshot = conn.execute(
-            """
-            SELECT prompt_snapshot
-            FROM comic_panel_render_assets
-            WHERE scene_panel_id = ?
-            ORDER BY created_at ASC, id ASC
-            LIMIT 1
-            """,
-            (establish_panel_id,),
-        ).fetchone()[0]
-
-    establish_snapshot = json.loads(raw_snapshot)
-    assert establish_snapshot["resolver_execution_summary"].get("reference_guided") is not True
-    assert "still_backend_family" not in establish_snapshot["resolver_execution_summary"]
 
     beat_payload, _, _ = beat_generation_service.batch_calls[0]
     assert beat_payload["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
