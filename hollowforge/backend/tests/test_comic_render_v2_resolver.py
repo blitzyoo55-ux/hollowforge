@@ -349,8 +349,12 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
     )
     assert contract.binding_block == (
         "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
+        "Identity lock: strong",
+        "Hair lock: strong",
+        "Face lock: strong",
         "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, and natural charm without glamour posing.",
         "Wardrobe family: simple functional everyday wardrobe",
+        "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
         "Location: artist loft morning",
         "Continuity: Carry over the wet brush on the easel from prior panel.",
     )

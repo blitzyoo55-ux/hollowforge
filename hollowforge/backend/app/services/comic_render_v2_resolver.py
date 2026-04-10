@@ -194,8 +194,12 @@ def resolve_comic_render_v2_contract(
 
     binding_fragments: list[str] = [
         f"Binding notes: {binding.notes}",
+        f"Identity lock: {binding.identity_lock_strength}",
+        f"Hair lock: {binding.hair_lock_strength}",
+        f"Face lock: {binding.face_lock_strength}",
         binding.appeal_notes,
         f"Wardrobe family: {binding.allowed_wardrobe_family}",
+        f"Do not mutate: {binding.do_not_mutate}",
     ]
     if location_label and location_label.strip():
         binding_fragments.append(f"Location: {location_label.strip()}")
