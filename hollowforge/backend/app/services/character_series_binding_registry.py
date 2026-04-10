@@ -30,7 +30,8 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         face_lock_strength="strong",
         allowed_wardrobe_family="simple functional everyday wardrobe",
         binding_negative_rules=(
-            "No wardrobe drift, no glamour drift, no editorial styling drift."
+            "No wardrobe drift, no glamour drift, no editorial styling drift, no "
+            "camera-frame drift, no UI overlay drift, no random text drift."
         ),
         do_not_mutate=(
             "Do not mutate Camila identity ownership or style ownership through this "

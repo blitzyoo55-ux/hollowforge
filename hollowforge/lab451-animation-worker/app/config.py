@@ -53,7 +53,10 @@ class Settings:
     )
     WORKER_DEFAULT_NEGATIVE_PROMPT: str = os.getenv(
         "WORKER_DEFAULT_NEGATIVE_PROMPT",
-        "child, teen, underage, school uniform, text, logo, watermark, blurry, lowres, deformed, cropped face",
+        "child, teen, underage, school uniform, text, unreadable text, random letters, "
+        "logo, watermark, subtitle overlay, caption box, speech bubble outline, "
+        "camera frame, viewfinder, screenshot border, interface overlay, recording "
+        "overlay, blurry, lowres, deformed, cropped face",
     ).strip()
     WORKER_COMFYUI_URL: str = os.getenv(
         "WORKER_COMFYUI_URL",

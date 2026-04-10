@@ -269,7 +269,9 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
         "hands, explicit nudity, graphic sexual content, single-subject glamour "
         "poster, beauty key visual, pinup composition, close portrait, fashion "
-        "editorial, waxy skin, dead eyes"
+        "editorial, waxy skin, dead eyes, unreadable text, random letters, gibberish "
+        "text, logo, watermark, subtitle overlay, caption box, speech bubble outline, "
+        "camera frame, viewfinder, screenshot border, interface overlay, recording overlay"
     )
     assert generation_payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
     assert generation_payload["workflow_lane"] == "sdxl_illustrious"
@@ -458,7 +460,10 @@ async def test_establish_negative_prompt_appends_single_subject_glamour_poster_a
         "hands, explicit nudity, graphic sexual content, glamour shoot, "
         "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
         "single-subject glamour poster, pinup composition, beauty key visual, "
-        "empty background, minimal room detail, subject filling frame"
+        "empty background, minimal room detail, subject filling frame, unreadable text, "
+        "random letters, gibberish text, logo, watermark, subtitle overlay, caption box, "
+        "speech bubble outline, camera frame, viewfinder, screenshot border, interface overlay, "
+        "recording overlay"
     )
 
 
@@ -533,7 +538,10 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
         "hands, explicit nudity, graphic sexual content, glamour shoot, "
         "fashion editorial, close portrait, airbrushed skin, copy-paste composition, "
         "single-subject glamour poster, pinup composition, beauty key visual, "
-        "empty background, minimal room detail, subject filling frame"
+        "empty background, minimal room detail, subject filling frame, unreadable text, "
+        "random letters, gibberish text, logo, watermark, subtitle overlay, caption box, "
+        "speech bubble outline, camera frame, viewfinder, screenshot border, interface overlay, "
+        "recording overlay"
     )
     assert payload["source_id"] == source_id
 
@@ -1830,6 +1838,81 @@ async def test_materialize_remote_render_job_callback_persists_structured_qualit
     assert asset_row[1] == (
         "reward: expression readability; reward: natural body pose; "
         "penalty: dead eyes"
+    )
+
+
+async def test_materialize_remote_render_job_callback_penalizes_text_and_camera_overlay_artifacts(
+    temp_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel_id = await _create_panel_fixture(temp_db)
+    generation_service = GenerationService()
+
+    async def _fake_dispatch(job, generation, render_asset, panel_context):  # type: ignore[no-untyped-def]
+        return {
+            "id": f"remote-job-{job['request_index']}",
+            "job_id": f"remote-job-{job['request_index']}",
+            "job_url": f"https://worker.test/jobs/{job['id']}",
+        }
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "dispatch_comic_render_job",
+        _fake_dispatch,
+    )
+
+    await queue_panel_render_candidates(
+        panel_id=panel_id,
+        generation_service=generation_service,
+        candidate_count=2,
+        execution_mode="remote_worker",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        job_id = conn.execute(
+            """
+            SELECT id
+            FROM comic_render_jobs
+            WHERE scene_panel_id = ?
+            ORDER BY request_index ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()[0]
+
+    await materialize_remote_render_job_callback(
+        job_id=job_id,
+        payload=AnimationJobCallbackPayload(
+            status="completed",
+            output_path="images/comics/panel-text-overlay.png",
+            request_json={
+                "worker": {
+                    "quality_assessment": {
+                        "positive_signals": ["expression readability"],
+                        "negative_signals": ["unreadable text", "camera frame"],
+                    }
+                }
+            },
+        ),
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        asset_row = conn.execute(
+            """
+            SELECT quality_score, render_notes, storage_path
+            FROM comic_panel_render_assets
+            WHERE scene_panel_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (panel_id,),
+        ).fetchone()
+
+    assert asset_row[2] == "images/comics/panel-text-overlay.png"
+    assert asset_row[0] == pytest.approx(0.14)
+    assert asset_row[1] == (
+        "reward: expression readability; penalty: text artifact overlay; "
+        "penalty: camera frame overlay"
     )
 
 

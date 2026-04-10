@@ -6,6 +6,13 @@ from dataclasses import dataclass
 import re
 
 
+_TEXT_AND_OVERLAY_NEGATIVE = (
+    "unreadable text, random letters, gibberish text, logo, watermark, subtitle "
+    "overlay, caption box, speech bubble outline, camera frame, viewfinder, "
+    "screenshot border, interface overlay, recording overlay"
+)
+
+
 @dataclass(frozen=True)
 class ComicPanelRenderProfile:
     profile_id: str
@@ -176,7 +183,8 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         negative_prompt_append=(
             "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
             "copy-paste composition, single-subject glamour poster, pinup composition, "
-            "beauty key visual, empty background, minimal room detail, subject filling frame"
+            "beauty key visual, empty background, minimal room detail, subject filling frame, "
+            f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
             "room readability",
@@ -196,7 +204,8 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         height=1216,
         negative_prompt_append=(
             "single-subject glamour poster, beauty key visual, pinup composition, "
-            "close portrait, fashion editorial, waxy skin, dead eyes"
+            "close portrait, fashion editorial, waxy skin, dead eyes, "
+            f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
             "expression readability",
@@ -214,7 +223,8 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         negative_prompt_append=(
             "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
             "copy-paste composition, single-subject glamour poster, beauty key visual, "
-            "floating props, portrait pull"
+            "floating props, portrait pull, "
+            f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
             "prop readability",
@@ -229,7 +239,10 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         lora_mode="inherit_all",
         width=832,
         height=1216,
-        negative_prompt_append="plastic skin, waxy face, dead eyes, malformed hands",
+        negative_prompt_append=(
+            "plastic skin, waxy face, dead eyes, malformed hands, "
+            f"{_TEXT_AND_OVERLAY_NEGATIVE}"
+        ),
         quality_selector_hints=(
             "emotion clarity",
             "alive eyes",

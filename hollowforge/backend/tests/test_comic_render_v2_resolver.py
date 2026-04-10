@@ -88,7 +88,7 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Use restrained shading that supports volume while avoiding muddy contrast.",
         "Render surfaces with enough texture to stay natural without adding noise.",
         "Prioritize clear subject separation and readable forms in still frames.",
-        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+        "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
         "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
         "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
     )
@@ -116,12 +116,12 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "role_quality",
     )
     assert contract.negative_rules == (
-        "Avoid blur, melt, warped anatomy, over-smoothing, and other generation artifacts.",
+        "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
         (
             "Keep Camila anchored in a calm, grounded, non-glamour identity. "
             "Avoid drifting into editorial beauty framing."
         ),
-        "No wardrobe drift, no glamour drift, no editorial styling drift.",
+        "No wardrobe drift, no glamour drift, no editorial styling drift, no camera-frame drift, no UI overlay drift, no random text drift.",
         "Role negative: plastic skin, waxy face, dead eyes",
     )
 

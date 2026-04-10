@@ -712,6 +712,24 @@ _QUALITY_PENALTY_MARKERS: dict[str, tuple[str, ...]] = {
         "beauty editorial",
         "glamour poster",
     ),
+    "text artifact overlay": (
+        "unreadable text",
+        "random text",
+        "gibberish text",
+        "logo",
+        "watermark",
+        "subtitle overlay",
+        "caption box",
+        "speech bubble outline",
+    ),
+    "camera frame overlay": (
+        "camera frame",
+        "viewfinder",
+        "screenshot border",
+        "interface overlay",
+        "recording overlay",
+        "ui overlay",
+    ),
 }
 
 _QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
@@ -721,6 +739,8 @@ _QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
     "floating props": 0.18,
     "empty establish room": 0.22,
     "portrait pull on non-closeup role": 0.20,
+    "text artifact overlay": 0.24,
+    "camera frame overlay": 0.24,
 }
 
 _IDENTITY_POSITIVE_WEIGHTS: dict[str, float] = {

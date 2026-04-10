@@ -39,8 +39,9 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
             "Prioritize clear subject separation and readable forms in still frames."
         ),
         artifact_avoidance_policy=(
-            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation "
-            "artifacts."
+            "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
+            "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
+            "screenshot borders, and other generation artifacts."
         ),
         hand_face_reliability_policy=(
             "Preserve hands and faces with extra care because they are the highest "
@@ -66,8 +67,9 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
             "Prioritize clear subject separation and readable forms in still frames."
         ),
         artifact_avoidance_policy=(
-            "Avoid blur, melt, warped anatomy, over-smoothing, and other generation "
-            "artifacts."
+            "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, "
+            "subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, "
+            "screenshot borders, and other generation artifacts."
         ),
         hand_face_reliability_policy=(
             "Preserve hands and faces with extra care because they are the highest "
