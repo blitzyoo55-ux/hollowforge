@@ -126,18 +126,27 @@ def _deep_freeze(value: Any) -> Any:
     return deepcopy(value)
 
 
-def _should_use_reference_guided_still_lane(
-    *,
-    style_execution: Mapping[str, Any],
-    binding_reference_set: Any,
-    panel_type: str,
-) -> bool:
-    return (
-        panel_type == "establish"
-        and bool(binding_reference_set)
-        and style_execution.get("reference_guided") is True
-        and "still_backend_family" in style_execution
-    )
+def _resolve_reference_guided_still_backend_family(
+    role_execution_override: Mapping[str, Any] | None,
+) -> str | None:
+    if not role_execution_override:
+        return None
+
+    reference_guided = role_execution_override.get("reference_guided")
+    still_backend_family = role_execution_override.get("still_backend_family")
+
+    if reference_guided is None and still_backend_family is None:
+        return None
+    if reference_guided is not True:
+        raise ValueError(
+            "Invalid reference-guided role override; expected reference_guided is True"
+        )
+    if not isinstance(still_backend_family, str) or not still_backend_family.strip():
+        raise ValueError(
+            "Invalid reference-guided role override; expected a non-empty "
+            "still_backend_family"
+        )
+    return still_backend_family
 
 
 def resolve_comic_render_v2_contract(
@@ -217,6 +226,9 @@ def resolve_comic_render_v2_contract(
         _resolve_style_execution_params(series_style_id),
         style.role_execution_overrides.get(panel_type),
     )
+    reference_guided_backend_family = _resolve_reference_guided_still_backend_family(
+        style.role_execution_overrides.get(panel_type)
+    )
 
     # Precedence: style base execution -> style role override -> binding lock strengths -> role constraints.
     execution_params: dict[str, Any] = {
@@ -235,13 +247,13 @@ def resolve_comic_render_v2_contract(
     execution_params["height"] = role_profile.height
     execution_params["framing_profile"] = role_profile.profile_id
 
-    if _should_use_reference_guided_still_lane(
-        style_execution=style_execution,
-        binding_reference_set=binding.reference_sets.get(panel_type),
-        panel_type=panel_type,
+    if (
+        panel_type == "establish"
+        and binding.reference_sets.get(panel_type)
+        and reference_guided_backend_family is not None
     ):
-        execution_params["still_backend_family"] = style_execution["still_backend_family"]
-        execution_params["reference_guided"] = style_execution["reference_guided"]
+        execution_params["still_backend_family"] = reference_guided_backend_family
+        execution_params["reference_guided"] = True
 
     negative_rules = (
         style.artifact_avoidance_policy,
