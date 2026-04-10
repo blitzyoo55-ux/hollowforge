@@ -221,6 +221,14 @@ def resolve_comic_render_v2_contract(
     execution_params["height"] = role_profile.height
     execution_params["framing_profile"] = role_profile.profile_id
 
+    if (
+        character_id == "camila_v2"
+        and panel_type == "establish"
+        and binding.reference_sets.get("establish")
+    ):
+        execution_params["still_backend_family"] = "sdxl_ipadapter_still"
+        execution_params["reference_guided"] = True
+
     negative_rules = (
         style.artifact_avoidance_policy,
         character.anti_drift,

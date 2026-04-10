@@ -79,6 +79,23 @@ def test_resolve_comic_render_v2_contract_uses_establish_style_override() -> Non
     assert contract.execution_params["loras"] == ()
 
 
+def test_camila_v2_establish_uses_reference_guided_execution_lane() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_establish_role_profile(),
+    )
+
+    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert contract.execution_params["loras"] == ()
+    assert contract.execution_params["still_backend_family"] == "sdxl_ipadapter_still"
+    assert contract.execution_params["reference_guided"] is True
+
+
 def test_series_style_canon_exposes_role_override() -> None:
     pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
     motion_test = get_series_style_canon(series_style_id="camila_motion_test_v1")
@@ -108,6 +125,8 @@ def test_resolve_comic_render_v2_contract_keeps_base_stack_for_beat() -> None:
         {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
         {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
     )
+    assert contract.execution_params.get("reference_guided") is not True
+    assert "still_backend_family" not in contract.execution_params
 
 
 def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract() -> None:
