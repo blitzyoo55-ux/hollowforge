@@ -128,16 +128,15 @@ def _deep_freeze(value: Any) -> Any:
 
 def _should_use_reference_guided_still_lane(
     *,
-    style_role_override: Mapping[str, Any] | None,
+    style_execution: Mapping[str, Any],
     binding_reference_set: Any,
     panel_type: str,
 ) -> bool:
     return (
         panel_type == "establish"
         and bool(binding_reference_set)
-        and style_role_override is not None
-        and style_role_override.get("reference_guided") is True
-        and style_role_override.get("still_backend_family") == "sdxl_ipadapter_still"
+        and style_execution.get("reference_guided") is True
+        and "still_backend_family" in style_execution
     )
 
 
@@ -237,12 +236,12 @@ def resolve_comic_render_v2_contract(
     execution_params["framing_profile"] = role_profile.profile_id
 
     if _should_use_reference_guided_still_lane(
-        style_role_override=style.role_execution_overrides.get(panel_type),
+        style_execution=style_execution,
         binding_reference_set=binding.reference_sets.get(panel_type),
         panel_type=panel_type,
     ):
-        execution_params["still_backend_family"] = "sdxl_ipadapter_still"
-        execution_params["reference_guided"] = True
+        execution_params["still_backend_family"] = style_execution["still_backend_family"]
+        execution_params["reference_guided"] = style_execution["reference_guided"]
 
     negative_rules = (
         style.artifact_avoidance_policy,
