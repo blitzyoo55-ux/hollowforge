@@ -12,6 +12,23 @@ from app.services.character_canon_v2_registry import get_character_canon_v2
 from app.services.series_style_canon_registry import get_series_style_canon
 
 
+def test_get_character_series_binding_returns_deep_copy_for_reference_sets() -> None:
+    binding = get_character_series_binding("camila_pilot_binding_v1")
+
+    binding.reference_sets["establish"] = binding.reference_sets["establish"].model_copy(
+        update={"primary": ("camila_v2_establish_anchor_hero_mutated.png",)}
+    )
+
+    fresh_binding = get_character_series_binding("camila_pilot_binding_v1")
+
+    assert binding.reference_sets["establish"].primary == (
+        "camila_v2_establish_anchor_hero_mutated.png",
+    )
+    assert fresh_binding.reference_sets["establish"].primary == (
+        "camila_v2_establish_anchor_hero.png",
+    )
+
+
 def test_load_camila_binding_by_explicit_id() -> None:
     binding = get_character_series_binding("camila_pilot_binding_v1")
 
@@ -34,10 +51,10 @@ def test_load_camila_binding_by_explicit_id() -> None:
         "Do not mutate Camila identity ownership or style ownership through this "
         "binding."
     )
-    assert binding.reference_sets["establish"]["primary"] == (
+    assert binding.reference_sets["establish"].primary == (
         "camila_v2_establish_anchor_hero.png",
     )
-    assert binding.reference_sets["establish"]["secondary"] == (
+    assert binding.reference_sets["establish"].secondary == (
         "camila_v2_establish_anchor_halfbody.png",
     )
 
@@ -45,10 +62,10 @@ def test_load_camila_binding_by_explicit_id() -> None:
 def test_camila_binding_exposes_establish_reference_set() -> None:
     binding = get_character_series_binding("camila_pilot_binding_v1")
 
-    assert binding.reference_sets["establish"]["primary"] == (
+    assert binding.reference_sets["establish"].primary == (
         "camila_v2_establish_anchor_hero.png",
     )
-    assert binding.reference_sets["establish"]["secondary"] == (
+    assert binding.reference_sets["establish"].secondary == (
         "camila_v2_establish_anchor_halfbody.png",
     )
 
@@ -96,12 +113,12 @@ def test_character_series_binding_registry_rejects_duplicate_character_style_pai
         ].model_copy(update={"id": "camila_pilot_binding_v2"}),
     }
 
-    original_registry = dict(_CHARACTER_SERIES_BINDING_REGISTRY)
+    from app.services import character_series_binding_registry as registry_module
+
+    original_registry = registry_module._CHARACTER_SERIES_BINDING_REGISTRY
+    registry_module._CHARACTER_SERIES_BINDING_REGISTRY = duplicate_registry
     try:
-        _CHARACTER_SERIES_BINDING_REGISTRY.clear()
-        _CHARACTER_SERIES_BINDING_REGISTRY.update(duplicate_registry)
         with pytest.raises(RuntimeError, match="Duplicate character-series binding pair"):
             _validate_binding_registry_pairs()
     finally:
-        _CHARACTER_SERIES_BINDING_REGISTRY.clear()
-        _CHARACTER_SERIES_BINDING_REGISTRY.update(original_registry)
+        registry_module._CHARACTER_SERIES_BINDING_REGISTRY = original_registry

@@ -7,6 +7,13 @@ from collections.abc import Mapping
 from pydantic import BaseModel, Field
 
 
+class CharacterSeriesReferenceSetEntry(BaseModel):
+    model_config = {"extra": "forbid", "frozen": True}
+
+    primary: tuple[str, ...] = Field(min_length=1)
+    secondary: tuple[str, ...] = Field(min_length=1)
+
+
 class CharacterSeriesBindingEntry(BaseModel):
     model_config = {"extra": "forbid", "frozen": True}
 
@@ -18,7 +25,7 @@ class CharacterSeriesBindingEntry(BaseModel):
     face_lock_strength: str = Field(min_length=1, max_length=120)
     allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
     binding_negative_rules: str = Field(min_length=1, max_length=1000)
-    reference_sets: Mapping[str, Mapping[str, tuple[str, ...]]] = Field(
+    reference_sets: Mapping[str, CharacterSeriesReferenceSetEntry] = Field(
         default_factory=dict
     )
     do_not_mutate: str = Field(min_length=1, max_length=1000)
@@ -40,10 +47,10 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
             "school uniform, no necktie, no blazer-and-tie school look."
         ),
         reference_sets={
-            "establish": {
-                "primary": ("camila_v2_establish_anchor_hero.png",),
-                "secondary": ("camila_v2_establish_anchor_halfbody.png",),
-            }
+            "establish": CharacterSeriesReferenceSetEntry(
+                primary=("camila_v2_establish_anchor_hero.png",),
+                secondary=("camila_v2_establish_anchor_halfbody.png",),
+            )
         },
         do_not_mutate=(
             "Do not mutate Camila identity ownership or style ownership through this "
