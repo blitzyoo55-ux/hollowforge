@@ -132,7 +132,13 @@ def _should_use_reference_guided_still_lane(
     binding_reference_set: Any,
     panel_type: str,
 ) -> bool:
-    return bool(style_role_override and binding_reference_set and panel_type == "establish")
+    return (
+        panel_type == "establish"
+        and bool(binding_reference_set)
+        and style_role_override is not None
+        and style_role_override.get("reference_guided") is True
+        and style_role_override.get("still_backend_family") == "sdxl_ipadapter_still"
+    )
 
 
 def resolve_comic_render_v2_contract(
