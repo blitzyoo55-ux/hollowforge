@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import hashlib
+import re
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -508,46 +510,197 @@ async def _load_reusable_render_assets_for_request(
     return None, []
 
 
-def _build_prompt(context: dict[str, Any]) -> str:
+def _clean_prompt_fragment(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().rstrip(" .,!?:;")
+    return cleaned or None
+
+
+_POSITIVE_VISUAL_PROMPT_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bwide establishing shot\b", flags=re.IGNORECASE), "wide room view"),
+    (re.compile(r"\bwide shot\b", flags=re.IGNORECASE), "wide room view"),
+    (re.compile(r"\bmedium shot\b", flags=re.IGNORECASE), "mid view"),
+    (re.compile(r"\bclose[- ]up shot\b", flags=re.IGNORECASE), "tight close view"),
+    (re.compile(r"\bintimate close camera\b", flags=re.IGNORECASE), "intimate close viewpoint"),
+    (re.compile(r"\bslightly low camera\b", flags=re.IGNORECASE), "slightly low viewpoint"),
+    (re.compile(r"\blow camera\b", flags=re.IGNORECASE), "low viewpoint"),
+    (re.compile(r"\bhigh camera\b", flags=re.IGNORECASE), "high viewpoint"),
+    (re.compile(r"\boverhead camera\b", flags=re.IGNORECASE), "overhead viewpoint"),
+    (re.compile(r"\bclose camera\b", flags=re.IGNORECASE), "close viewpoint"),
+    (re.compile(r"\bcamera\b", flags=re.IGNORECASE), "viewpoint"),
+)
+
+
+def _normalize_positive_visual_prompt_fragment(value: Any) -> str | None:
+    cleaned = _clean_prompt_fragment(value)
+    if cleaned is None:
+        return None
+    normalized = cleaned
+    for pattern, replacement in _POSITIVE_VISUAL_PROMPT_REPLACEMENTS:
+        normalized = pattern.sub(replacement, normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized or None
+
+
+def _build_labeled_sentence(
+    label: str,
+    fragments: list[str | None],
+    *,
+    separator: str = ", ",
+) -> str | None:
+    cleaned_fragments = [fragment for fragment in fragments if fragment]
+    if not cleaned_fragments:
+        return None
+    return f"{label}: {separator.join(cleaned_fragments)}."
+
+
+def _build_quality_focus_sentence(profile: Any) -> str | None:
+    hints = [
+        str(hint).strip()
+        for hint in getattr(profile, "quality_selector_hints", ())
+        if str(hint).strip()
+    ]
+    if not hints:
+        return None
+    return _build_labeled_sentence("Quality focus", hints)
+
+
+def _build_panel_story_prompt_sentences(
+    context: dict[str, Any],
+    *,
+    profile: Any,
+    style_and_subject: str | None = None,
+    include_quality_focus: bool = True,
+) -> list[str]:
     location_label = str(context.get("location_label") or "").strip()
     scene_continuity_notes = str(context.get("scene_continuity_notes") or "").strip()
     panel_type = str(context.get("panel_type") or "").strip()
     continuity_lock = str(context.get("continuity_lock") or "").strip()
-    profile = resolve_comic_panel_render_profile(context)
-
     panel_type_lower = panel_type.lower()
 
-    def _clean_fragment(value: Any) -> str | None:
-        if not isinstance(value, str):
-            return None
-        cleaned = value.strip().rstrip(" .,!?:;")
-        return cleaned or None
+    cleaned_continuity_lock = _clean_prompt_fragment(continuity_lock)
+    continuity_fragments: list[str | None] = [
+        _clean_prompt_fragment(scene_continuity_notes)
+    ]
+    if cleaned_continuity_lock:
+        primary_continuity = continuity_fragments[0]
+        if primary_continuity is None or cleaned_continuity_lock not in primary_continuity:
+            continuity_fragments.append(cleaned_continuity_lock)
 
-    def _build_labeled_sentence(
-        label: str,
-        fragments: list[str | None],
-        *,
-        separator: str = ", ",
-    ) -> str | None:
-        cleaned_fragments = [fragment for fragment in fragments if fragment]
-        if not cleaned_fragments:
-            return None
-        return f"{label}: {separator.join(cleaned_fragments)}."
+    composition_priority_hint = {
+        "establish": (
+            "single adult subject only, no second person, no mirror duplicate, "
+            "environment-first framing, subject smaller in frame, room and props "
+            "clearly readable"
+        ),
+        "beat": (
+            "single adult subject only, no second person, subject and prop both "
+            "readable in frame"
+        ),
+        "insert": (
+            "single pair of adult hands only, no second person, object-led framing, "
+            "hands and invitation prioritized over a full-face portrait"
+        ),
+        "closeup": (
+            "single adult subject only, no second person, emotional reaction framing "
+            "with face and hands dominating the panel"
+        ),
+    }.get(panel_type_lower)
 
-    def _build_quality_focus_sentence() -> str | None:
-        hints = [
-            str(hint).strip()
-            for hint in getattr(profile, "quality_selector_hints", ())
-            if str(hint).strip()
+    setting_sentence = _build_labeled_sentence(
+        "Setting",
+        [f"inside {location_label}" if location_label else None],
+    )
+    action_sentence = _build_labeled_sentence(
+        "Action",
+        [_clean_prompt_fragment(context.get("action_intent"))],
+    )
+    emotion_sentence = _build_labeled_sentence(
+        "Emotion",
+        [_clean_prompt_fragment(context.get("expression_intent"))],
+    )
+    subject_prominence_sentence = _build_labeled_sentence(
+        "Subject prominence",
+        (
+            [
+                "single lead only",
+                "keep the lead secondary to the room",
+                "favor the environment over a glamour portrait",
+            ]
+            if profile.subject_prominence_mode == "reduced"
+            else ["single lead only"]
+        ),
+    )
+    quality_focus_sentence = (
+        _build_quality_focus_sentence(profile) if include_quality_focus else None
+    )
+    composition_sentence = _build_labeled_sentence(
+        "Composition",
+        [
+            f"{panel_type_lower} manga panel" if panel_type_lower else None,
+            composition_priority_hint,
+            _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
+            _normalize_positive_visual_prompt_fragment(context.get("framing")),
+        ],
+    )
+    continuity_sentence = _build_labeled_sentence(
+        "Continuity",
+        continuity_fragments,
+        separator=". ",
+    )
+
+    if panel_type_lower == "establish":
+        location = _resolve_story_planner_location_metadata(location_label)
+        scene_cues = select_scene_cues(
+            location,
+            scene_cue_mode=profile.scene_cue_mode,
+        )
+        scene_cues_sentence = _build_labeled_sentence(
+            "Scene cues",
+            scene_cues,
+        )
+        prompt_sentences = [
+            setting_sentence,
+            scene_cues_sentence,
+            composition_sentence,
+            quality_focus_sentence,
+            subject_prominence_sentence,
+            action_sentence,
+            f"{style_and_subject}." if style_and_subject else None,
+            continuity_sentence,
         ]
-        if not hints:
-            return None
-        return _build_labeled_sentence("Quality focus", hints)
+    elif panel_type_lower == "insert":
+        prompt_sentences = [
+            setting_sentence,
+            action_sentence,
+            composition_sentence,
+            quality_focus_sentence,
+            f"{style_and_subject}." if style_and_subject else None,
+            emotion_sentence,
+            continuity_sentence,
+        ]
+    else:
+        prompt_sentences = [
+            f"{style_and_subject}." if style_and_subject else None,
+            setting_sentence,
+            action_sentence,
+            emotion_sentence,
+            composition_sentence,
+            quality_focus_sentence,
+            continuity_sentence,
+        ]
+
+    return [sentence for sentence in prompt_sentences if sentence]
+
+
+def _build_prompt(context: dict[str, Any]) -> str:
+    profile = resolve_comic_panel_render_profile(context)
 
     style_subject_fragments: list[str] = []
     for raw_value in (
-        _clean_fragment(context.get("prompt_prefix")),
-        _clean_fragment(context.get("canonical_prompt_anchor")),
+        _clean_prompt_fragment(context.get("prompt_prefix")),
+        _clean_prompt_fragment(context.get("canonical_prompt_anchor")),
     ):
         if raw_value is None:
             continue
@@ -601,98 +754,12 @@ def _build_prompt(context: dict[str, Any]) -> str:
             if not _is_reduced_subject_fragment(fragment)
         ]
     style_and_subject = ", ".join(style_subject_fragments)
-    continuity_fragments: list[str | None] = [_clean_fragment(scene_continuity_notes)]
-    cleaned_continuity_lock = _clean_fragment(continuity_lock)
-    if cleaned_continuity_lock:
-        primary_continuity = continuity_fragments[0]
-        if primary_continuity is None or cleaned_continuity_lock not in primary_continuity:
-            continuity_fragments.append(cleaned_continuity_lock)
-    composition_priority_hint = {
-        "establish": "environment-first framing, subject smaller in frame, room and props clearly readable",
-        "beat": "subject and prop both readable in frame",
-        "insert": "object-led framing, hands and invitation prioritized over a full-face portrait",
-        "closeup": "emotional reaction framing with face and hands dominating the panel",
-    }.get(panel_type_lower)
-    setting_sentence = _build_labeled_sentence(
-        "Setting",
-        [f"inside {location_label}" if location_label else None],
+    cleaned = _build_panel_story_prompt_sentences(
+        context,
+        profile=profile,
+        style_and_subject=style_and_subject,
+        include_quality_focus=True,
     )
-    action_sentence = _build_labeled_sentence(
-        "Action",
-        [_clean_fragment(context.get("action_intent"))],
-    )
-    emotion_sentence = _build_labeled_sentence(
-        "Emotion",
-        [_clean_fragment(context.get("expression_intent"))],
-    )
-    subject_prominence_sentence = _build_labeled_sentence(
-        "Subject prominence",
-        (
-            [
-                "keep the lead secondary to the room",
-                "favor the environment over a glamour portrait",
-            ]
-            if profile.subject_prominence_mode == "reduced"
-            else []
-        ),
-    )
-    quality_focus_sentence = _build_quality_focus_sentence()
-    composition_sentence = _build_labeled_sentence(
-        "Composition",
-        [
-            f"{panel_type_lower} manga panel" if panel_type_lower else None,
-            composition_priority_hint,
-            _clean_fragment(context.get("camera_intent")),
-            _clean_fragment(context.get("framing")),
-        ],
-    )
-    continuity_sentence = _build_labeled_sentence(
-        "Continuity",
-        continuity_fragments,
-        separator=". ",
-    )
-
-    if panel_type_lower == "establish":
-        location = _resolve_story_planner_location_metadata(location_label)
-        scene_cues = select_scene_cues(
-            location,
-            scene_cue_mode=profile.scene_cue_mode,
-        )
-        scene_cues_sentence = _build_labeled_sentence(
-            "Scene cues",
-            scene_cues,
-        )
-        prompt_sentences = [
-            setting_sentence,
-            scene_cues_sentence,
-            composition_sentence,
-            quality_focus_sentence,
-            subject_prominence_sentence,
-            action_sentence,
-            f"{style_and_subject}." if style_and_subject else None,
-            continuity_sentence,
-        ]
-    elif panel_type_lower == "insert":
-        prompt_sentences = [
-            setting_sentence,
-            action_sentence,
-            composition_sentence,
-            quality_focus_sentence,
-            f"{style_and_subject}." if style_and_subject else None,
-            emotion_sentence,
-            continuity_sentence,
-        ]
-    else:
-        prompt_sentences = [
-            f"{style_and_subject}." if style_and_subject else None,
-            setting_sentence,
-            action_sentence,
-            emotion_sentence,
-            composition_sentence,
-            quality_focus_sentence,
-            continuity_sentence,
-        ]
-    cleaned = [sentence for sentence in prompt_sentences if sentence]
     if not cleaned:
         raise ValueError("Comic panel render prompt has no content")
     return " ".join(cleaned)
@@ -786,7 +853,7 @@ _QUALITY_PENALTY_WEIGHTS: dict[str, float] = {
     "floating props": 0.18,
     "empty establish room": 0.22,
     "portrait pull on non-closeup role": 0.20,
-    "text artifact overlay": 0.24,
+    "text artifact overlay": 0.30,
     "camera frame overlay": 0.24,
 }
 
@@ -809,7 +876,7 @@ _IDENTITY_NEGATIVE_WEIGHTS: dict[str, float] = {
     "camila skin tone drift": 0.16,
     "face integrity issue": 0.20,
     "camila visual hair drift": 0.34,
-    "camila visual skin drift": 0.28,
+    "camila visual skin drift": 0.50,
     "camila wardrobe drift": 0.40,
     "camila youth drift": 0.44,
     "camila reference descriptor missing": 0.32,
@@ -1336,8 +1403,8 @@ def _has_camera_frame_overlay(arr: np.ndarray) -> bool:
 
 def _has_lower_third_text_overlay(arr: np.ndarray) -> bool:
     height, width, _ = arr.shape
-    top = int(height * 0.68)
-    bottom = int(height * 0.93)
+    top = int(height * 0.72)
+    bottom = int(height * 0.97)
     left = int(width * 0.05)
     right = int(width * 0.95)
     region = arr[top:bottom, left:right]
@@ -1348,10 +1415,25 @@ def _has_lower_third_text_overlay(arr: np.ndarray) -> bool:
     row_dark_ratio = float((luminance.mean(axis=1) < 90.0).mean())
     dark_pixel_ratio = float((luminance < 70.0).mean())
     bright_pixel_ratio = float((luminance > 220.0).mean())
-    return (
+    if (
         row_dark_ratio >= 0.45
         and dark_pixel_ratio >= 0.35
         and bright_pixel_ratio >= 0.004
+    ):
+        return True
+
+    # Bright desks or tabletops with outlined subtitle-like text often evade the
+    # coarse dark-row heuristic above. Detect them via dense local contrast in the
+    # lower third combined with mixed dark/bright text colors.
+    grad_x = np.abs(np.diff(luminance, axis=1))
+    grad_y = np.abs(np.diff(luminance, axis=0))
+    edge_ratio = float(((grad_x > 28.0).mean() + (grad_y > 28.0).mean()) / 2.0)
+    dark_caption_ratio = float((luminance < 110.0).mean())
+    bright_caption_ratio = float((luminance > 205.0).mean())
+    return (
+        edge_ratio >= 0.07
+        and dark_caption_ratio >= 0.30
+        and bright_caption_ratio >= 0.10
     )
 
 
@@ -1427,6 +1509,15 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
         )
         execution_params = contract.execution_params
         lora_items = execution_params.get("loras", ())
+        raw_v2_loras = [
+            dict(item)
+            for item in lora_items
+            if isinstance(item, Mapping)
+        ]
+        filtered_v2_loras = filter_profile_loras(
+            raw_v2_loras,
+            lora_mode=profile.lora_mode,
+        )
         resolver_sections = {
             "identity_block": [str(item) for item in contract.identity_block],
             "style_block": [str(item) for item in contract.style_block],
@@ -1436,14 +1527,44 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
         }
         resolver_execution_summary = {
             key: (
-                [dict(item) for item in value]
+                filtered_v2_loras
                 if key == "loras" and isinstance(value, tuple | list)
                 else value
             )
             for key, value in dict(execution_params).items()
         }
+        if execution_params.get("reference_guided") is True:
+            panel_type = str(context.get("panel_type") or "").strip().lower()
+            binding_reference_set = binding.reference_sets.get(panel_type)
+            if binding_reference_set is None:
+                raise ValueError(
+                    "Reference-guided comic render request missing binding reference set"
+                )
+            reference_images = [
+                *binding_reference_set.primary,
+                *binding_reference_set.secondary,
+            ]
+            if not reference_images:
+                raise ValueError(
+                    "Reference-guided comic render request missing binding reference images"
+                )
+            context["reference_images"] = [str(item) for item in reference_images]
+            context["reference_guided"] = True
+            context["still_backend_family"] = str(
+                execution_params["still_backend_family"]
+            )
+            context["ipadapter_weight"] = _REFERENCE_GUIDED_IPADAPTER_WEIGHT
+            context["ipadapter_start_at"] = _REFERENCE_GUIDED_IPADAPTER_START_AT
+            context["ipadapter_end_at"] = _REFERENCE_GUIDED_IPADAPTER_END_AT
+        story_prompt_fragments = _build_panel_story_prompt_sentences(
+            context,
+            profile=profile,
+            style_and_subject=None,
+            include_quality_focus=False,
+        )
         prompt_fragments = [
             *resolver_sections["role_block"],
+            *story_prompt_fragments,
             *(
                 [
                     f"Quality focus: {', '.join(profile.quality_selector_hints)}."
@@ -1475,8 +1596,7 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
             workflow_lane=infer_workflow_lane(cast(str, execution_params["checkpoint"])),
             loras=[
                 LoraInput.model_validate(item)
-                for item in lora_items
-                if isinstance(item, dict)
+                for item in filtered_v2_loras
             ],
             steps=int(execution_params["steps"]),
             cfg=float(execution_params["cfg"]),

@@ -11,19 +11,22 @@ def test_load_camila_v2_character_canon_by_id() -> None:
     assert camila.id == "camila_v2"
     assert camila.name == "Camila"
     assert camila.identity_anchor == (
-        "Camila, poised adult woman with a practical, grounded presence"
+        "Camila Duarte, adult Brazilian woman with warm sun-kissed tan skin, "
+        "long chestnut-brown wavy hair, and a practical grounded presence"
     )
     assert camila.anti_drift == (
-        "Keep Camila anchored in a calm, grounded, non-glamour identity. "
-        "Avoid drifting into editorial beauty framing."
+        "Keep Camila anchored in a calm, grounded, adult non-glamour identity. "
+        "Avoid drifting into editorial beauty framing, school-uniform styling, "
+        "or youthful heroine shortcuts."
     )
     assert camila.wardrobe_notes == (
-        "Simple, functional wardrobe choices that support the scene without "
-        "turning her into a fashion portrait."
+        "Simple functional studio-casual wardrobe such as soft knits, shirts, "
+        "or adult loungewear that supports the scene without turning her into a "
+        "fashion portrait."
     )
     assert camila.personality_notes == (
-        "Measured, observant, and direct; she reads as self-possessed rather "
-        "than performatively styled."
+        "Measured, observant, and direct; she reads as self-possessed, mature, "
+        "and grounded rather than performatively styled."
     )
     assert camila.reference_descriptor_notes == (
         "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
@@ -50,27 +53,31 @@ def test_load_camila_v2_character_canon_by_id() -> None:
         "school_uniform",
     )
     assert camila.face_structure_notes == (
-        "Defined but natural face structure with calm proportions and stable "
-        "recognition."
+        "Defined adult face structure with calm cheekbone and jawline balance, "
+        "stable recognition, and no youthful simplification."
     )
     assert camila.eye_signature == (
-        "Clear, attentive eyes with a steady directness and consistent gaze."
+        "Warm hazel eyes with steady directness, consistent gaze, and adult calm."
     )
     assert camila.hair_signature == (
-        "Practical, low-fuss hair that reads as lived-in and controlled."
+        "Long chestnut-brown waves with warm highlights; never orange, blonde, "
+        "or school-idol styled."
     )
     assert camila.skin_surface_policy == (
-        "Preserve a natural skin surface with light texture and avoid oversmoothing."
+        "Preserve a natural lightly tanned skin surface with warm undertone, "
+        "light texture, and no oversmoothing."
     )
     assert camila.body_signature == (
-        "Adult, grounded build with believable presence and balanced posture."
+        "Adult grounded build with believable feminine presence, balanced posture, "
+        "and no youth-coded proportions."
     )
     assert camila.expression_range == (
         "Calm, observant, and direct with small controlled shifts in emotion."
     )
     assert camila.identity_negative_rules == (
         "No glamour styling, no editorial beauty language, no resort presentation, "
-        "no model-pose drift."
+        "no model-pose drift, no school-uniform cues, no necktie, no orange hair, "
+        "no youth-coded anime heroine drift."
     )
     for field_name in (
         "identity_anchor",

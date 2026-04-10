@@ -28,11 +28,15 @@ class ComicRenderV2Contract(BaseModel):
 
 _STYLE_EXECUTION_REGISTRY: dict[str, dict[str, Any]] = {
     "camila_pilot_v1": {
-        "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+        "checkpoint": "prefectIllustriousXL_v70.safetensors",
         "loras": (
             {
-                "filename": "camila_pilot_line_treatment_v1.safetensors",
-                "strength": 0.65,
+                "filename": "DetailedEyes_V3.safetensors",
+                "strength": 0.45,
+            },
+            {
+                "filename": "Face_Enhancer_Illustrious.safetensors",
+                "strength": 0.36,
             },
         ),
         "steps": 30,
@@ -40,11 +44,15 @@ _STYLE_EXECUTION_REGISTRY: dict[str, dict[str, Any]] = {
         "sampler": "euler_a",
     },
     "camila_motion_test_v1": {
-        "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+        "checkpoint": "prefectIllustriousXL_v70.safetensors",
         "loras": (
             {
-                "filename": "camila_motion_test_line_treatment_v1.safetensors",
-                "strength": 0.62,
+                "filename": "DetailedEyes_V3.safetensors",
+                "strength": 0.45,
+            },
+            {
+                "filename": "Face_Enhancer_Illustrious.safetensors",
+                "strength": 0.36,
             },
         ),
         "steps": 28,
@@ -194,6 +202,7 @@ def resolve_comic_render_v2_contract(
         character.anti_drift,
         character.wardrobe_notes,
         character.personality_notes,
+        character.reference_descriptor_notes,
     )
     style_block = (
         f"Series style: {style.display_name}",

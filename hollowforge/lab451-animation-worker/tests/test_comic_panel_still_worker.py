@@ -49,6 +49,12 @@ class FakeComfyUIClient:
     async def get_models(self) -> list[str]:
         return ["comic-checkpoint.safetensors"]
 
+    async def get_lora_files(self) -> list[str]:
+        return [
+            "DetailedEyes_V3.safetensors",
+            "Face_Enhancer_Illustrious.safetensors",
+        ]
+
     async def get_text_encoders(self) -> list[str]:
         return ["t5xxl_fp16.safetensors"]
 
@@ -852,6 +858,12 @@ def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:
                     "prompt": "panel prompt",
                     "negative_prompt": "bad anatomy",
                     "checkpoint": "comic-checkpoint.safetensors",
+                    "loras": [
+                        {
+                            "filename": "DetailedEyes_V3.safetensors",
+                            "strength": 0.45,
+                        }
+                    ],
                     "width": 832,
                     "height": 1216,
                     "steps": 34,
@@ -872,6 +884,10 @@ def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:
     assert fake_client.wait_calls == []
     assert len(fake_client.submitted_workflows) == 1
     workflow = fake_client.submitted_workflows[0]
+    lora_loader_node_ids = [
+        node_id for node_id, node in workflow.items() if node["class_type"] == "LoraLoader"
+    ]
+    assert len(lora_loader_node_ids) == 1
     save_image_node_ids = [
         node_id
         for node_id, node in workflow.items()
@@ -895,6 +911,7 @@ def test_comfyui_executor_runs_comic_panel_still_branch(tmp_path: Path) -> None:
     assert fake_client.wait_calls == [("prompt-123", save_image_node_id)]
     assert fake_client.closed is True
     assert (tmp_path / "outputs" / "worker-job-1.png").read_bytes() == b"fake-png-bytes"
+
 
 def test_reference_guided_comic_panel_still_routes_to_ipadapter_png_workflow(
     tmp_path: Path,
@@ -1001,6 +1018,51 @@ def test_reference_guided_comic_panel_still_routes_to_ipadapter_png_workflow(
         b"fake-png-bytes"
     )
 
+
+def test_comfyui_executor_rejects_missing_sdxl_still_loras(tmp_path: Path) -> None:
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+    fake_client = FakeComfyUIClient()
+    adapter._client = fake_client
+
+    row = {
+        "id": "worker-job-missing-lora",
+        "target_tool": "comic_panel_still",
+        "source_image_url": "",
+        "generation_metadata": json.dumps(
+            {
+                "prompt": "fallback prompt",
+                "checkpoint": "fallback-checkpoint.safetensors",
+            }
+        ),
+        "request_json": json.dumps(
+            {
+                "backend_family": "sdxl_still",
+                "model_profile": "comic_panel_sdxl_v1",
+                "still_generation": {
+                    "prompt": "panel prompt",
+                    "negative_prompt": "bad anatomy",
+                    "checkpoint": "comic-checkpoint.safetensors",
+                    "loras": [
+                        {
+                            "filename": "missing-style-lora.safetensors",
+                            "strength": 0.55,
+                        }
+                    ],
+                },
+            }
+        ),
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="ComfyUI is missing requested SDXL still LoRAs: missing-style-lora.safetensors",
+    ):
+        asyncio.run(adapter.submit(row))
 
 
 def test_worker_config_defaults_to_shared_repo_data_dir(

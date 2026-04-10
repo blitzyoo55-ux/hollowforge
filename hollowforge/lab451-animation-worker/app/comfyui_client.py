@@ -159,6 +159,13 @@ class ComfyUIClient:
         models = inputs.get("ckpt_name", [[]])[0]
         return list(models) if isinstance(models, list) else []
 
+    async def get_lora_files(self) -> list[str]:
+        data = await self._get_object_info("LoraLoader")
+        node_info = data.get("LoraLoader", {})
+        inputs = node_info.get("input", {}).get("required", {})
+        loras = inputs.get("lora_name", [[]])[0]
+        return list(loras) if isinstance(loras, list) else []
+
     async def get_text_encoders(self) -> list[str]:
         data = await self._get_object_info("CLIPLoader")
         node_info = data.get("CLIPLoader", {})

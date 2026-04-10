@@ -30,9 +30,10 @@ class WorkerJobCreate(BaseModel):
             normalized_family = (
                 backend_family.strip().lower() if isinstance(backend_family, str) else None
             )
-            if normalized_family != "sdxl_still":
+            if normalized_family not in {"sdxl_still", "sdxl_ipadapter_still"}:
                 raise ValueError(
-                    "comic_panel_still requires request_json.backend_family='sdxl_still'"
+                    "comic_panel_still requires request_json.backend_family in "
+                    "{'sdxl_still', 'sdxl_ipadapter_still'}"
                 )
         if self.target_tool != "comic_panel_still" and self.source_image_url is None:
             raise ValueError(

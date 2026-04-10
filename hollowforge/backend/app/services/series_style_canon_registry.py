@@ -52,7 +52,10 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
             "Preserve hands and faces with extra care because they are the highest "
             "risk regions for still quality."
         ),
-        notes="Pilot series style canon for the Camila-only V2 pilot.",
+        notes=(
+            "Pilot series style canon for the Camila-only V2 pilot, aligned to "
+            "the installed favorite-quality stack rather than an unshipped custom LoRA."
+        ),
         role_execution_overrides={
             "establish": {
                 "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
@@ -90,7 +93,7 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
         ),
         notes=(
             "Test-only alternate style used to validate teaser motion policy "
-            "variance."
+            "variance while staying on the installed favorite-quality stack."
         ),
     ),
 }

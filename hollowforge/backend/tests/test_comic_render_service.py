@@ -260,8 +260,9 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         "Setting: inside Private Lounge. "
         "Action: Kaede turns the invitation over in her hand. "
         "Emotion: measured curiosity with a faint edge of heat. "
-        "Composition: beat manga panel, subject and prop both readable in frame, "
-        "slightly low camera, tight waist-up portrait. "
+        "Composition: beat manga panel, single adult subject only, no second person, "
+        "subject and prop both readable in frame, slightly low viewpoint, "
+        "tight waist-up portrait. "
         "Quality focus: expression readability, natural body pose, clear hand acting. "
         "Continuity: Keep the scene controlled and intimate. Stay on brand for the character version."
     )
@@ -411,6 +412,8 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
         in prompt
     )
     assert "Subject prominence:" in prompt
+    assert "wide room view inside Artist Loft Morning" in prompt
+    assert "Wide establishing shot" not in prompt
     assert "tasteful adult allure" not in prompt
     assert "glamorous adult woman" not in prompt
     assert "high-response beauty editorial" not in prompt
@@ -647,6 +650,9 @@ async def test_build_prompt_adds_role_quality_focus_for_beat_insert_and_closeup(
         "Quality focus: emotion clarity, alive eyes, artifact suppression."
         in closeup_prompt
     )
+    assert "camera" not in beat_prompt.lower()
+    assert "camera" not in insert_prompt.lower()
+    assert "camera" not in closeup_prompt.lower()
 
 
 async def test_build_generation_request_v2_merges_role_quality_focus_and_negatives(
@@ -694,6 +700,44 @@ async def test_build_generation_request_v2_merges_role_quality_focus_and_negativ
     )
     assert generation.width == profile.width
     assert generation.height == profile.height
+
+
+async def test_build_generation_request_v2_filters_style_loras_by_panel_profile() -> None:
+    establish_generation = comic_render_service._build_generation_request(
+        {
+            "render_lane": "character_canon_v2",
+            "panel_type": "establish",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
+            "scheduler": "normal",
+            "clip_skip": 2,
+        }
+    )
+
+    beat_generation = comic_render_service._build_generation_request(
+        {
+            "render_lane": "character_canon_v2",
+            "panel_type": "beat",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
+            "scheduler": "normal",
+            "clip_skip": 2,
+        }
+    )
+
+    assert establish_generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
+    assert establish_generation.loras == []
+    assert beat_generation.checkpoint == "prefectIllustriousXL_v70.safetensors"
+    assert [lora.filename for lora in beat_generation.loras] == [
+        "DetailedEyes_V3.safetensors",
+        "Face_Enhancer_Illustrious.safetensors",
+    ]
+    assert beat_generation.loras[0].strength == pytest.approx(0.45)
+    assert beat_generation.loras[1].strength == pytest.approx(0.36)
 
 
 async def test_build_generation_request_v2_populates_reference_guided_establish_context(
@@ -2116,7 +2160,7 @@ async def test_materialize_remote_render_job_callback_penalizes_text_and_camera_
         ).fetchone()
 
     assert asset_row[2] == "images/comics/panel-text-overlay.png"
-    assert asset_row[0] == pytest.approx(0.14)
+    assert asset_row[0] == pytest.approx(0.08)
     assert asset_row[1] == (
         "reward: expression readability; penalty: text artifact overlay; "
         "penalty: camera frame overlay"
@@ -2228,6 +2272,24 @@ async def test_derive_camila_v2_identity_assessment_flags_youth_and_reference_dr
     assert "camila visual skin drift" in payload["identity_negative_signals"]
     assert "camila wardrobe drift" in payload["identity_negative_signals"]
     assert "camila youth drift" in payload["identity_negative_signals"]
+
+
+async def test_assess_panel_candidate_identity_rejects_skin_drift_for_establish() -> None:
+    score, notes = comic_render_service._assess_panel_candidate_identity(
+        panel_type="establish",
+        assessment_payload={
+            "identity_positive_signals": [
+                "single face",
+                "camila visual hair reference match",
+            ],
+            "identity_negative_signals": [
+                "camila visual skin drift",
+            ],
+        },
+    )
+
+    assert score == pytest.approx(0.38)
+    assert "identity penalty: camila visual skin drift" in notes
 
 
 async def test_select_best_render_asset_for_selection_fails_closed_when_identity_gate_blocks_all() -> None:

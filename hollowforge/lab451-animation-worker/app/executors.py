@@ -526,6 +526,19 @@ class ComfyUILTXVExecutorAdapter:
             still_request.checkpoint_name = await self._resolve_still_checkpoint_name(
                 still_request.checkpoint_name
             )
+            if still_request.loras:
+                available_loras = await self._client.get_lora_files()
+                if available_loras:
+                    missing_loras = [
+                        lora["filename"]
+                        for lora in still_request.loras
+                        if str(lora.get("filename") or "").strip() not in available_loras
+                    ]
+                    if missing_loras:
+                        raise RuntimeError(
+                            "ComfyUI is missing requested SDXL still LoRAs: "
+                            + ", ".join(missing_loras)
+                        )
             workflow, save_node_id = build_sdxl_still_workflow(
                 request=still_request,
                 filename_prefix=f"lab451_animation_worker/{worker_job_id}",

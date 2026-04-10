@@ -29,7 +29,7 @@ def test_main_keeps_bounded_defaults_for_the_single_panel_lane(
     module = _load_module()
     base_url = "http://127.0.0.1:8000"
 
-    assert module.DEFAULT_CANDIDATE_COUNT == 1
+    assert module.DEFAULT_CANDIDATE_COUNT == 2
     assert module.DEFAULT_EXECUTION_MODE == "remote_worker"
     assert module.DEFAULT_PANEL_LIMIT == 1
     assert "artist loft" in module.DEFAULT_STORY_PROMPT.lower()
@@ -88,7 +88,7 @@ def test_main_keeps_bounded_defaults_for_the_single_panel_lane(
         },
         (
             "POST",
-            f"{base_url}/api/v1/comic/panels/panel-1/queue-renders?candidate_count=1&execution_mode=remote_worker",
+            f"{base_url}/api/v1/comic/panels/panel-1/queue-renders?candidate_count=2&execution_mode=remote_worker",
         ): [
             {
                 "queued_generation_count": 1,
@@ -165,7 +165,7 @@ def test_main_keeps_bounded_defaults_for_the_single_panel_lane(
     assert "episode_id: comic-ep-camila-v2-1" in captured.out
     assert "series_style_id: camila_pilot_v1" in captured.out
     assert "character_series_binding_id: camila_pilot_binding_v1" in captured.out
-    assert "candidate_count: 1" in captured.out
+    assert "candidate_count: 2" in captured.out
     assert "execution_mode: remote_worker" in captured.out
     assert "panel_limit: 1" in captured.out
     assert "selected_render_asset_id: asset-1" in captured.out

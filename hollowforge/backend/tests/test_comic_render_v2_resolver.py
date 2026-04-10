@@ -338,22 +338,27 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Role profile: beat_dialogue_v1",
     )
     assert contract.identity_block == (
-        "Camila, poised adult woman with a practical, grounded presence",
-        "Defined but natural face structure with calm proportions and stable recognition.",
-        "Clear, attentive eyes with a steady directness and consistent gaze.",
-        "Practical, low-fuss hair that reads as lived-in and controlled.",
-        "Preserve a natural skin surface with light texture and avoid oversmoothing.",
-        "Adult, grounded build with believable presence and balanced posture.",
+        "Camila Duarte, adult Brazilian woman with warm sun-kissed tan skin, long chestnut-brown wavy hair, and a practical grounded presence",
+        "Defined adult face structure with calm cheekbone and jawline balance, stable recognition, and no youthful simplification.",
+        "Warm hazel eyes with steady directness, consistent gaze, and adult calm.",
+        "Long chestnut-brown waves with warm highlights; never orange, blonde, or school-idol styled.",
+        "Preserve a natural lightly tanned skin surface with warm undertone, light texture, and no oversmoothing.",
+        "Adult grounded build with believable feminine presence, balanced posture, and no youth-coded proportions.",
         "Calm, observant, and direct with small controlled shifts in emotion.",
-        "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift.",
-        "Keep Camila anchored in a calm, grounded, non-glamour identity. Avoid drifting into editorial beauty framing.",
+        "No glamour styling, no editorial beauty language, no resort presentation, no model-pose drift, no school-uniform cues, no necktie, no orange hair, no youth-coded anime heroine drift.",
+        "Keep Camila anchored in a calm, grounded, adult non-glamour identity. Avoid drifting into editorial beauty framing, school-uniform styling, or youthful heroine shortcuts.",
         (
-            "Simple, functional wardrobe choices that support the scene without "
-            "turning her into a fashion portrait."
+            "Simple functional studio-casual wardrobe such as soft knits, shirts, "
+            "or adult loungewear that supports the scene without turning her into a "
+            "fashion portrait."
         ),
         (
-            "Measured, observant, and direct; she reads as self-possessed rather "
-            "than performatively styled."
+            "Measured, observant, and direct; she reads as self-possessed, mature, "
+            "and grounded rather than performatively styled."
+        ),
+        (
+            "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
+            "adult grounded presentation. Reject school-uniform and youth-coded drift."
         ),
     )
     assert contract.style_block == (
@@ -364,7 +369,11 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Prioritize clear subject separation and readable forms in still frames.",
         "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
         "Preserve hands and faces with extra care because they are the highest risk regions for still quality.",
-        "Style notes: Pilot series style canon for the Camila-only V2 pilot.",
+        (
+            "Style notes: Pilot series style canon for the Camila-only V2 pilot, "
+            "aligned to the installed favorite-quality stack rather than an "
+            "unshipped custom LoRA."
+        ),
     )
     assert contract.binding_block == (
         "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
@@ -392,10 +401,11 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
     assert contract.negative_rules == (
         "Avoid blur, melt, warped anatomy, over-smoothing, random unreadable text, subtitle overlays, logo or watermark marks, camera UI, viewfinder frames, screenshot borders, and other generation artifacts.",
         (
-            "Keep Camila anchored in a calm, grounded, non-glamour identity. "
-            "Avoid drifting into editorial beauty framing."
+            "Keep Camila anchored in a calm, grounded, adult non-glamour identity. "
+            "Avoid drifting into editorial beauty framing, school-uniform styling, "
+            "or youthful heroine shortcuts."
         ),
-        "No wardrobe drift, no glamour drift, no editorial styling drift, no camera-frame drift, no UI overlay drift, no random text drift.",
+        "No wardrobe drift, no glamour drift, no editorial styling drift, no camera-frame drift, no UI overlay drift, no random text drift, no school uniform, no necktie, no blazer-and-tie school look.",
         "Role negative: plastic skin, waxy face, dead eyes",
     )
 
@@ -411,9 +421,10 @@ def test_resolve_comic_render_v2_contract_applies_execution_precedence() -> None
         role_profile=_make_role_profile(),
     )
 
-    assert contract.execution_params["checkpoint"] == "waiIllustriousSDXL_v160.safetensors"
+    assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
     assert contract.execution_params["loras"] == (
-        {"filename": "camila_pilot_line_treatment_v1.safetensors", "strength": 0.65},
+        {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+        {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
     )
     assert contract.execution_params["steps"] == 30
     assert contract.execution_params["cfg"] == 5.4
