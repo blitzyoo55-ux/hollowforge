@@ -23,6 +23,7 @@ from app.services.comic_render_service import (
     queue_panel_render_candidates,
 )
 from app.services.comic_render_dispatch_service import ComicRenderDispatchError
+from app.services.character_series_binding_registry import get_character_series_binding
 from app.services.generation_service import GenerationService
 
 pytestmark = pytest.mark.asyncio
@@ -693,6 +694,143 @@ async def test_build_generation_request_v2_merges_role_quality_focus_and_negativ
     )
     assert generation.width == profile.width
     assert generation.height == profile.height
+
+
+async def test_build_generation_request_v2_populates_reference_guided_establish_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = get_character_series_binding("camila_pilot_binding_v1")
+
+    class _ReferenceGuidedContract:
+        execution_params = {
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": (),
+            "steps": 30,
+            "cfg": 5.4,
+            "sampler": "euler_a",
+            "reference_guided": True,
+            "still_backend_family": "sdxl_ipadapter_still",
+        }
+        identity_block = ("Camila identity anchor.",)
+        style_block = ("Camila style anchor.",)
+        binding_block = ("Camila binding anchor.",)
+        role_block = ("Panel type: establish", "Role profile: establish_static_v1")
+        negative_rules = ("Role negative: single-subject glamour poster, beauty key visual",)
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "resolve_comic_render_v2_contract",
+        lambda **_: _ReferenceGuidedContract(),
+    )
+
+    context = {
+        "render_lane": "character_canon_v2",
+        "panel_type": "establish",
+        "series_style_id": "camila_pilot_v1",
+        "character_series_binding_id": "camila_pilot_binding_v1",
+        "scheduler": "normal",
+        "clip_skip": 2,
+    }
+
+    generation = comic_render_service._build_generation_request(context)
+
+    assert generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
+    assert context["reference_guided"] is True
+    assert context["still_backend_family"] == "sdxl_ipadapter_still"
+    assert context["ipadapter_weight"] == pytest.approx(0.92)
+    assert context["ipadapter_start_at"] == pytest.approx(0.0)
+    assert context["ipadapter_end_at"] == pytest.approx(1.0)
+    assert context["reference_images"] == [
+        *binding.reference_sets["establish"].primary,
+        *binding.reference_sets["establish"].secondary,
+    ]
+
+
+async def test_build_remote_render_job_request_json_includes_reference_guided_still_payload() -> None:
+    request_json = comic_render_service._build_remote_render_job_request_json(
+        panel_context={
+            "id": "panel-1",
+            "character_version_id": "charver_camila_v2_still_v1",
+            "render_lane": "character_canon_v2",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "reference_images": [
+                "camila_v2_establish_anchor_hero.png",
+                "camila_v2_establish_anchor_halfbody.png",
+            ],
+            "resolver_sections": {},
+            "resolver_execution_summary": {
+                "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+                "loras": (),
+                "reference_guided": True,
+                "still_backend_family": "sdxl_ipadapter_still",
+            },
+        },
+        render_asset_id="asset-1",
+        generation_row={
+            "prompt": "panel prompt",
+            "negative_prompt": "bad anatomy",
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": [],
+            "seed": 123456789,
+            "steps": 30,
+            "cfg": 5.4,
+            "width": 1216,
+            "height": 960,
+            "sampler": "euler_a",
+            "scheduler": "normal",
+            "clip_skip": 2,
+            "source_id": "comic-panel-render:panel-1:3:remote_worker",
+        },
+    )
+
+    assert request_json["backend_family"] == "sdxl_ipadapter_still"
+    assert request_json["reference_images"] == [
+        "camila_v2_establish_anchor_hero.png",
+        "camila_v2_establish_anchor_halfbody.png",
+    ]
+    assert request_json["ipadapter_weight"] == pytest.approx(0.92)
+    assert request_json["ipadapter_start_at"] == pytest.approx(0.0)
+    assert request_json["ipadapter_end_at"] == pytest.approx(1.0)
+    assert request_json["still_generation"]["prompt"] == "panel prompt"
+    assert request_json["still_generation"]["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert request_json["comic"]["character_version_id"] == "charver_camila_v2_still_v1"
+
+
+async def test_build_remote_render_job_request_json_keeps_text_only_fallback_without_reference_guided_metadata() -> None:
+    request_json = comic_render_service._build_remote_render_job_request_json(
+        panel_context={
+            "id": "panel-1",
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "render_lane": "legacy",
+            "resolver_execution_summary": {
+                "checkpoint": "prefectIllustriousXL_v70.safetensors",
+                "loras": (),
+            },
+        },
+        render_asset_id="asset-1",
+        generation_row={
+            "prompt": "panel prompt",
+            "negative_prompt": "bad anatomy",
+            "checkpoint": "prefectIllustriousXL_v70.safetensors",
+            "loras": [],
+            "seed": 123456789,
+            "steps": 30,
+            "cfg": 5.4,
+            "width": 960,
+            "height": 1216,
+            "sampler": "euler_a",
+            "scheduler": "normal",
+            "clip_skip": 2,
+            "source_id": "comic-panel-render:panel-1:3:remote_worker",
+        },
+    )
+
+    assert request_json["backend_family"] == "sdxl_still"
+    assert "reference_images" not in request_json
+    assert "ipadapter_weight" not in request_json
+    assert "ipadapter_start_at" not in request_json
+    assert "ipadapter_end_at" not in request_json
 
 
 async def test_assess_panel_candidate_quality_is_selection_aware_by_role() -> None:

@@ -56,6 +56,16 @@ def _parse_loras(raw: Any) -> list[dict[str, Any]]:
     raise ComicRenderDispatchError("Generation loras field must be a JSON array")
 
 
+def _parse_reference_images(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if str(item).strip()]
+    if isinstance(raw, tuple):
+        return [str(item) for item in raw if str(item).strip()]
+    raise ComicRenderDispatchError("Comic render reference_images field must be a list")
+
+
 def _build_comic_callback_url(job_id: str) -> str:
     base_url = settings.PUBLIC_API_BASE_URL.strip()
     if not base_url:
@@ -92,6 +102,10 @@ def build_comic_remote_worker_payload(
     request_json = _parse_request_json(comic_render_job.get("request_json"))
     request_json.setdefault("backend_family", "sdxl_still")
     request_json.setdefault("model_profile", "comic_panel_sdxl_v1")
+    if "reference_images" in request_json:
+        request_json["reference_images"] = _parse_reference_images(
+            request_json.get("reference_images")
+        )
     request_json["still_generation"] = {
         "prompt": generation.get("prompt"),
         "negative_prompt": generation.get("negative_prompt"),

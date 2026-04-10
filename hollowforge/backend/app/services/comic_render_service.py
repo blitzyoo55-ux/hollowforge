@@ -62,6 +62,10 @@ _RENDER_ASSET_SELECT_COLUMNS = """
     a.updated_at
 """
 
+_REFERENCE_GUIDED_IPADAPTER_WEIGHT = 0.92
+_REFERENCE_GUIDED_IPADAPTER_START_AT = 0.0
+_REFERENCE_GUIDED_IPADAPTER_END_AT = 1.0
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -216,6 +220,49 @@ def _resolve_story_planner_location_metadata(
         }:
             return location.model_dump()
     return None
+
+
+def _resolve_reference_guided_still_request_metadata(
+    *,
+    panel_context: dict[str, Any],
+) -> dict[str, Any]:
+    resolver_execution_summary = panel_context.get("resolver_execution_summary")
+    if not isinstance(resolver_execution_summary, dict):
+        return {}
+    if resolver_execution_summary.get("reference_guided") is not True:
+        return {}
+
+    still_backend_family = str(
+        resolver_execution_summary.get("still_backend_family") or ""
+    ).strip()
+    if not still_backend_family:
+        raise ValueError(
+            "Reference-guided comic render request missing still_backend_family"
+        )
+
+    raw_reference_images = panel_context.get("reference_images")
+    if not isinstance(raw_reference_images, list) or not raw_reference_images:
+        raise ValueError(
+            "Reference-guided comic render request missing reference_images"
+        )
+
+    reference_images = [
+        str(image).strip()
+        for image in raw_reference_images
+        if str(image).strip()
+    ]
+    if not reference_images:
+        raise ValueError(
+            "Reference-guided comic render request missing reference_images"
+        )
+
+    return {
+        "backend_family": still_backend_family,
+        "reference_images": reference_images,
+        "ipadapter_weight": _REFERENCE_GUIDED_IPADAPTER_WEIGHT,
+        "ipadapter_start_at": _REFERENCE_GUIDED_IPADAPTER_START_AT,
+        "ipadapter_end_at": _REFERENCE_GUIDED_IPADAPTER_END_AT,
+    }
 
 
 async def _load_panel_render_context(panel_id: str) -> dict[str, Any]:
@@ -1543,7 +1590,7 @@ def _build_remote_render_job_request_json(
         if value is not None:
             comic_payload[field] = value
 
-    return {
+    request_json = {
         "backend_family": "sdxl_still",
         "model_profile": "comic_panel_sdxl_v1",
         "still_generation": {
@@ -1563,6 +1610,10 @@ def _build_remote_render_job_request_json(
         },
         "comic": comic_payload,
     }
+    request_json.update(
+        _resolve_reference_guided_still_request_metadata(panel_context=panel_context)
+    )
+    return request_json
 
 
 async def _create_missing_remote_render_jobs(
