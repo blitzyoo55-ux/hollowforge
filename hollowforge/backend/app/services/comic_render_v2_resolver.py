@@ -126,6 +126,15 @@ def _deep_freeze(value: Any) -> Any:
     return deepcopy(value)
 
 
+def _should_use_reference_guided_still_lane(
+    *,
+    style_role_override: Mapping[str, Any] | None,
+    binding_reference_set: Any,
+    panel_type: str,
+) -> bool:
+    return bool(style_role_override and binding_reference_set and panel_type == "establish")
+
+
 def resolve_comic_render_v2_contract(
     *,
     character_id: str,
@@ -221,10 +230,10 @@ def resolve_comic_render_v2_contract(
     execution_params["height"] = role_profile.height
     execution_params["framing_profile"] = role_profile.profile_id
 
-    if (
-        character_id == "camila_v2"
-        and panel_type == "establish"
-        and binding.reference_sets.get("establish")
+    if _should_use_reference_guided_still_lane(
+        style_role_override=style.role_execution_overrides.get(panel_type),
+        binding_reference_set=binding.reference_sets.get(panel_type),
+        panel_type=panel_type,
     ):
         execution_params["still_backend_family"] = "sdxl_ipadapter_still"
         execution_params["reference_guided"] = True
