@@ -342,8 +342,9 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     )
 
     assert prompt.startswith("Setting: inside Artist Loft Morning.")
-    assert "Composition: establish manga panel" in prompt
-    assert "environment-first framing" in prompt
+    assert "Composition: wide room view inside Artist Loft Morning" in prompt
+    assert "subject secondary to environment" in prompt
+    assert "leave negative space for dialogue" in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
@@ -372,10 +373,10 @@ async def test_establish_prompt_uses_composition_cues_without_direct_manga_style
 
     assert "manga style" not in prompt.lower()
     assert "japanese manga style" not in prompt.lower()
-    assert "Composition: establish manga panel" not in prompt
+    assert "establish manga panel" not in prompt.lower()
     assert "wide room view inside Artist Loft Morning" in prompt
     assert "leave negative space for dialogue" in prompt
-    assert "environment-first framing" in prompt
+    assert "subject secondary to environment" in prompt
 
 
 async def test_non_establish_prompt_path_does_not_touch_catalog_lookup(
@@ -430,13 +431,14 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
     assert prompt.startswith(
         "Setting: inside Artist Loft Morning. Scene cues: tall factory windows, easel."
     )
-    assert "Composition: establish manga panel" in prompt
+    assert "Composition: wide room view inside Artist Loft Morning" in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
     )
     assert "Subject prominence:" in prompt
     assert "wide room view inside Artist Loft Morning" in prompt
+    assert "subject secondary to environment" in prompt
     assert "Wide establishing shot" not in prompt
     assert "tasteful adult allure" not in prompt
     assert "glamorous adult woman" not in prompt

@@ -566,6 +566,38 @@ def _build_quality_focus_sentence(profile: Any) -> str | None:
     return _build_labeled_sentence("Quality focus", hints)
 
 
+def _build_establish_action_sentence(context: dict[str, Any]) -> str | None:
+    action_intent = _clean_prompt_fragment(context.get("action_intent"))
+    establish_fragments = [
+        "lead inhabits the room naturally with relaxed empty hands",
+        "no note, letter, card, sign, or written prop presented to the viewer",
+    ]
+    if action_intent and "window" in action_intent.lower():
+        establish_fragments.insert(0, "lead settles naturally near the window side of the room")
+    return _build_labeled_sentence("Action", establish_fragments)
+
+
+def _build_establish_composition_sentence(
+    context: dict[str, Any],
+    *,
+    profile: Any,
+) -> str | None:
+    location_label = str(context.get("location_label") or "").strip()
+    camera_intent = _normalize_positive_visual_prompt_fragment(context.get("camera_intent"))
+    framing = _normalize_positive_visual_prompt_fragment(context.get("framing"))
+    establish_fragments: list[str | None] = [
+        f"wide room view inside {location_label}" if location_label else "wide room view",
+        "single adult subject",
+        "subject secondary to environment",
+        "props readable",
+        "leave negative space for dialogue",
+    ]
+    if profile.subject_prominence_mode == "reduced":
+        establish_fragments.insert(2, "single lead only")
+    establish_fragments.extend([camera_intent, framing])
+    return _build_labeled_sentence("Composition", establish_fragments)
+
+
 def _build_panel_story_prompt_sentences(
     context: dict[str, Any],
     *,
@@ -590,9 +622,10 @@ def _build_panel_story_prompt_sentences(
 
     composition_priority_hint = {
         "establish": (
-            "single adult subject only, no second person, no mirror duplicate, "
-            "environment-first framing, subject smaller in frame, room and props "
-            "clearly readable"
+            "single adult subject, subject secondary to environment, room and props "
+            "clearly readable, leave negative space for dialogue, no second person, "
+            "no mirror duplicate, no held note, no placard, no presented paper, "
+            "no recording HUD, no on-image text"
         ),
         "beat": (
             "single adult subject only, no second person, subject and prop both "
@@ -612,9 +645,13 @@ def _build_panel_story_prompt_sentences(
         "Setting",
         [f"inside {location_label}" if location_label else None],
     )
-    action_sentence = _build_labeled_sentence(
-        "Action",
-        [_clean_prompt_fragment(context.get("action_intent"))],
+    action_sentence = (
+        _build_establish_action_sentence(context)
+        if panel_type_lower == "establish"
+        else _build_labeled_sentence(
+            "Action",
+            [_clean_prompt_fragment(context.get("action_intent"))],
+        )
     )
     emotion_sentence = _build_labeled_sentence(
         "Emotion",
