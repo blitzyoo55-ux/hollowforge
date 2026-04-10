@@ -18,7 +18,7 @@ class CharacterSeriesBindingEntry(BaseModel):
     face_lock_strength: str = Field(min_length=1, max_length=120)
     allowed_wardrobe_family: str = Field(min_length=1, max_length=120)
     binding_negative_rules: str = Field(min_length=1, max_length=1000)
-    reference_sets: Mapping[str, tuple[str, ...]] = Field(default_factory=dict)
+    reference_sets: Mapping[str, Mapping[str, str]] = Field(default_factory=dict)
     do_not_mutate: str = Field(min_length=1, max_length=1000)
     notes: str = Field(min_length=1, max_length=1000)
 
@@ -38,10 +38,10 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
             "school uniform, no necktie, no blazer-and-tie school look."
         ),
         reference_sets={
-            "establish": (
-                "camila_v2_establish_primary.png",
-                "camila_v2_establish_secondary.png",
-            )
+            "establish": {
+                "primary": "camila_v2_establish_primary.png",
+                "secondary": "camila_v2_establish_secondary.png",
+            }
         },
         do_not_mutate=(
             "Do not mutate Camila identity ownership or style ownership through this "

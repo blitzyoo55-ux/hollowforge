@@ -34,20 +34,22 @@ def test_load_camila_binding_by_explicit_id() -> None:
         "Do not mutate Camila identity ownership or style ownership through this "
         "binding."
     )
-    assert binding.reference_sets == {
-        "establish": (
-            "camila_v2_establish_primary.png",
-            "camila_v2_establish_secondary.png",
-        )
-    }
+    assert binding.reference_sets["establish"]["primary"] == (
+        "camila_v2_establish_primary.png"
+    )
+    assert binding.reference_sets["establish"]["secondary"] == (
+        "camila_v2_establish_secondary.png"
+    )
 
 
 def test_camila_binding_exposes_establish_reference_set() -> None:
     binding = get_character_series_binding("camila_pilot_binding_v1")
 
-    assert binding.reference_sets["establish"] == (
-        "camila_v2_establish_primary.png",
-        "camila_v2_establish_secondary.png",
+    assert binding.reference_sets["establish"]["primary"] == (
+        "camila_v2_establish_primary.png"
+    )
+    assert binding.reference_sets["establish"]["secondary"] == (
+        "camila_v2_establish_secondary.png"
     )
 
 
