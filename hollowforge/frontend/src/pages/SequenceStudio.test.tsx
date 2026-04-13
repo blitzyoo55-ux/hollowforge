@@ -35,7 +35,7 @@ function renderPage() {
 test('renders Stage 1 blueprint controls', async () => {
   renderPage()
 
-  expect(await screen.findByRole('heading', { name: /Sequence Studio/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /Animation Track Studio/i })).toBeInTheDocument()
   expect(screen.getByText(/^Stage 1 Sequence$/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/Content Mode/i)).toBeInTheDocument()
   expect(screen.getByLabelText(/Executor Profile/i)).toBeInTheDocument()

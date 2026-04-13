@@ -518,6 +518,9 @@ class ComicStoryPlanImportRequest(BaseModel):
 
 
 class SequenceBlueprintBase(BaseModel):
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     content_mode: SequenceContentMode
     policy_profile_id: str = Field(min_length=1, max_length=120)
     character_id: str = Field(min_length=1, max_length=120)
@@ -534,6 +537,9 @@ class SequenceBlueprintCreate(SequenceBlueprintBase):
 
 
 class SequenceBlueprintUpdate(BaseModel):
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     content_mode: Optional[SequenceContentMode] = None
     policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)

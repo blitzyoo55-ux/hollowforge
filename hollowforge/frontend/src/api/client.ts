@@ -1330,6 +1330,9 @@ export interface QueueSummary {
 export type SequenceContentMode = 'all_ages' | 'adult_nsfw'
 
 export interface SequenceBlueprintCreate {
+  work_id?: string | null
+  series_id?: string | null
+  production_episode_id?: string | null
   content_mode: SequenceContentMode
   policy_profile_id: string
   character_id: string
@@ -1485,6 +1488,7 @@ export async function createSequenceBlueprint(
 export async function listSequenceBlueprints(query: {
   content_mode?: SequenceContentMode
   policy_profile_id?: string
+  production_episode_id?: string
 } = {}): Promise<SequenceBlueprintDetailResponse[]> {
   const res = await api.get<SequenceBlueprintDetailResponse[]>('/sequences/blueprints', {
     params: query,
