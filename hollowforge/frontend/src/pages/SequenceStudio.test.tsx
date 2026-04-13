@@ -3,7 +3,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 
-import { getProductionEpisode, listSequenceBlueprints, type ProductionEpisodeDetailResponse } from '../api/client'
+import {
+  createSequenceBlueprint,
+  getProductionEpisode,
+  listSequenceBlueprints,
+  type ProductionEpisodeDetailResponse,
+} from '../api/client'
 import SequenceStudio from './SequenceStudio'
 
 vi.mock('../api/client', () => ({
@@ -20,6 +25,26 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(listSequenceBlueprints).mockResolvedValue([])
   vi.mocked(getProductionEpisode).mockResolvedValue(buildEpisode())
+  vi.mocked(createSequenceBlueprint).mockResolvedValue({
+    blueprint: {
+      id: 'bp-created-1',
+      work_id: 'work_demo',
+      series_id: 'series_demo',
+      production_episode_id: 'prod-ep-1',
+      content_mode: 'adult_nsfw',
+      policy_profile_id: 'adult_stage1_v1',
+      character_id: 'char_stage1',
+      location_id: 'location_stage1',
+      beat_grammar_id: 'adult_stage1_v1',
+      target_duration_sec: 36,
+      shot_count: 6,
+      tone: 'tense',
+      executor_policy: 'adult_remote_prod',
+      created_at: '2026-04-11T10:00:00Z',
+      updated_at: '2026-04-11T10:00:00Z',
+    },
+    planned_shots: [],
+  })
 })
 
 function buildEpisode(overrides: Partial<ProductionEpisodeDetailResponse> = {}): ProductionEpisodeDetailResponse {
@@ -106,6 +131,51 @@ test('prefills blueprint context from production handoff when mode=create_from_p
   expect(vi.mocked(getProductionEpisode)).toHaveBeenCalledWith('prod-ep-1')
 })
 
+test('blocks create_from_production submission while production context is unresolved', async () => {
+  vi.mocked(getProductionEpisode).mockImplementation(() => new Promise(() => {}))
+
+  renderPage('/sequences?production_episode_id=prod-ep-1&mode=create_from_production')
+
+  const createButton = await screen.findByRole('button', { name: /Create Blueprint/i })
+  expect(createButton).toBeDisabled()
+  expect(screen.getByText(/Loading production episode context before blueprint creation/i)).toBeInTheDocument()
+
+  fireEvent.click(createButton)
+  expect(vi.mocked(createSequenceBlueprint)).not.toHaveBeenCalled()
+})
+
+test('create_from_production submit includes required linkage fields', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildEpisode({
+      id: 'prod-ep-9',
+      work_id: 'work_locked',
+      series_id: 'series_locked',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+
+  renderPage('/sequences?production_episode_id=prod-ep-9&mode=create_from_production')
+
+  await screen.findByText(/Production Episode Context/i)
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Create Blueprint/i })).not.toBeDisabled()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Create Blueprint/i }))
+
+  await waitFor(() => {
+    expect(vi.mocked(createSequenceBlueprint)).toHaveBeenCalled()
+  })
+  expect(vi.mocked(createSequenceBlueprint)).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content_mode: 'adult_nsfw',
+      work_id: 'work_locked',
+      series_id: 'series_locked',
+      production_episode_id: 'prod-ep-9',
+    }),
+  )
+})
+
 test('auto-selects the single linked blueprint when mode=open_current', async () => {
   vi.mocked(listSequenceBlueprints).mockResolvedValue([
     {
@@ -184,6 +254,7 @@ test('keeps ambiguous open_current in filter-only mode when multiple linked blue
 
   expect(await screen.findByText(/char_alpha in location_alpha/i)).toBeInTheDocument()
   expect(screen.getByText(/char_beta in location_beta/i)).toBeInTheDocument()
+  expect(screen.queryByText(/Production Episode Context/i)).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /^Selected$/i })).not.toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: /^Inspect$/i })).toHaveLength(2)
   expect(vi.mocked(listSequenceBlueprints)).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })

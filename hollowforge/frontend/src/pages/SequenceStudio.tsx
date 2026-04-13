@@ -157,13 +157,25 @@ export default function SequenceStudio() {
     }
   }, [isCreateFromProduction, productionEpisodeQuery.data])
 
+  const blueprintFormInitialValuesKey = useMemo(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
+    return productionEpisodeQuery.data.id
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+
+  const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionEpisodeQuery.data)
+  const isBlueprintSubmissionBlocked = Boolean(isCreateFromProduction && !isCreateFromProductionContextReady)
+
+  const blueprintSubmissionBlockedReason = useMemo(() => {
+    if (!isCreateFromProduction) return null
+    if (productionEpisodeQuery.isError) return 'Production episode context failed to load; retry before creating a blueprint.'
+    if (!productionEpisodeQuery.data) return 'Loading production episode context before blueprint creation.'
+    return null
+  }, [isCreateFromProduction, productionEpisodeQuery.data, productionEpisodeQuery.isError])
+
   const productionContextLabel = useMemo(() => {
-    if (!hasProductionContext || !productionEpisodeId) return null
-    if (productionEpisodeQuery.data) {
-      return `${productionEpisodeQuery.data.title} (${productionEpisodeQuery.data.id})`
-    }
-    return `Production Episode ${productionEpisodeId}`
-  }, [hasProductionContext, productionEpisodeId, productionEpisodeQuery.data])
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
+    return `${productionEpisodeQuery.data.title} (${productionEpisodeQuery.data.id})`
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
 
   return (
     <div className="space-y-6">
@@ -201,10 +213,28 @@ export default function SequenceStudio() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <SequenceBlueprintForm
-          onSubmit={(payload) => createBlueprintMutation.mutate(payload)}
+          onSubmit={(payload) => {
+            if (isCreateFromProduction) {
+              if (!productionEpisodeQuery.data) return
+              createBlueprintMutation.mutate({
+                ...payload,
+                content_mode: productionEpisodeQuery.data.content_mode,
+                work_id: productionEpisodeQuery.data.work_id,
+                series_id: productionEpisodeQuery.data.series_id,
+                production_episode_id: productionEpisodeQuery.data.id,
+              })
+              return
+            }
+
+            createBlueprintMutation.mutate(payload)
+          }}
           isSubmitting={createBlueprintMutation.isPending}
           initialValues={blueprintFormInitialValues}
+          initialValuesKey={blueprintFormInitialValuesKey}
           productionContextLabel={productionContextLabel}
+          lockContentMode={isCreateFromProductionContextReady}
+          isSubmissionBlocked={isBlueprintSubmissionBlocked}
+          submissionBlockedReason={blueprintSubmissionBlockedReason}
         />
 
         <section className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">

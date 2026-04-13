@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SequenceBlueprintCreate, SequenceContentMode } from '../api/client'
 
 interface SequenceBlueprintFormProps {
   onSubmit: (payload: SequenceBlueprintCreate) => void
   isSubmitting?: boolean
   initialValues?: Partial<SequenceBlueprintCreate>
+  initialValuesKey?: string | null
   productionContextLabel?: string | null
+  lockContentMode?: boolean
+  isSubmissionBlocked?: boolean
+  submissionBlockedReason?: string | null
 }
 
 interface ModeOption {
@@ -96,7 +100,11 @@ export default function SequenceBlueprintForm({
   onSubmit,
   isSubmitting = false,
   initialValues,
+  initialValuesKey = null,
   productionContextLabel = null,
+  lockContentMode = false,
+  isSubmissionBlocked = false,
+  submissionBlockedReason = null,
 }: SequenceBlueprintFormProps) {
   const defaultContentMode = initialValues?.content_mode ?? 'all_ages'
   const [contentMode, setContentMode] = useState<SequenceContentMode>(defaultContentMode)
@@ -117,6 +125,7 @@ export default function SequenceBlueprintForm({
   const [workId, setWorkId] = useState(initialValues?.work_id ?? null)
   const [seriesId, setSeriesId] = useState(initialValues?.series_id ?? null)
   const [productionEpisodeId, setProductionEpisodeId] = useState(initialValues?.production_episode_id ?? null)
+  const appliedInitialValuesKeyRef = useRef<string | null>(initialValuesKey)
 
   const policyOptions = useMemo(() => POLICY_OPTIONS[contentMode], [contentMode])
   const executorOptions = useMemo(() => EXECUTOR_OPTIONS[contentMode], [contentMode])
@@ -125,11 +134,19 @@ export default function SequenceBlueprintForm({
   const activeMode = CONTENT_MODE_OPTIONS.find((option) => option.value === contentMode)
   const activeExecutor = executorOptions.find((option) => option.value === executorPolicy)
   const activeBeatGrammar = beatGrammarOptions.find((option) => option.value === beatGrammarId)
-  const canSubmit = Boolean(policyProfileId && executorPolicy && beatGrammarId && characterId.trim() && locationId.trim())
+  const canSubmit = Boolean(
+    policyProfileId &&
+      executorPolicy &&
+      beatGrammarId &&
+      characterId.trim() &&
+      locationId.trim() &&
+      !isSubmissionBlocked,
+  )
   const hasProductionContext = Boolean(productionContextLabel || productionEpisodeId || workId || seriesId)
 
   useEffect(() => {
-    if (!initialValues) return
+    if (!initialValuesKey || !initialValues) return
+    if (appliedInitialValuesKeyRef.current === initialValuesKey) return
 
     const nextMode = initialValues.content_mode ?? 'all_ages'
     setContentMode(nextMode)
@@ -144,7 +161,8 @@ export default function SequenceBlueprintForm({
     setWorkId(initialValues.work_id ?? null)
     setSeriesId(initialValues.series_id ?? null)
     setProductionEpisodeId(initialValues.production_episode_id ?? null)
-  }, [initialValues])
+    appliedInitialValuesKeyRef.current = initialValuesKey
+  }, [initialValues, initialValuesKey])
 
   const handleContentModeChange = (nextMode: SequenceContentMode) => {
     setContentMode(nextMode)
@@ -209,6 +227,7 @@ export default function SequenceBlueprintForm({
             aria-label="Content Mode"
             value={contentMode}
             onChange={(event) => handleContentModeChange(event.target.value as SequenceContentMode)}
+            disabled={lockContentMode}
             className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-gray-100 outline-none transition focus:border-violet-500"
           >
             {CONTENT_MODE_OPTIONS.map((option) => (
@@ -324,7 +343,8 @@ export default function SequenceBlueprintForm({
 
       <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-4">
         <p className="text-xs text-gray-500">
-          Blueprint creation stays lane-aware and does not cross safe and adult sequence domains.
+          {submissionBlockedReason ??
+            'Blueprint creation stays lane-aware and does not cross safe and adult sequence domains.'}
         </p>
         <button
           type="submit"
