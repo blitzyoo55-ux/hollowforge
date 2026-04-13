@@ -1160,6 +1160,48 @@ def test_get_comic_episodes_lists_created_episode(temp_db) -> None:
     assert episode_summary["page_count"] == 0
 
 
+def test_get_comic_episodes_filters_by_production_episode_id(temp_db) -> None:
+    asyncio.run(
+        create_comic_episode(
+            ComicEpisodeCreate(
+                character_id="char_kaede_ren",
+                character_version_id="charver_kaede_ren_still_v1",
+                title="Linked Route A",
+                synopsis="A",
+                target_output="oneshot_manga",
+                production_episode_id="prod_ep_route_a",
+            ),
+            episode_id="comic_ep_route_prod_filter_a",
+        )
+    )
+    asyncio.run(
+        create_comic_episode(
+            ComicEpisodeCreate(
+                character_id="char_kaede_ren",
+                character_version_id="charver_kaede_ren_still_v1",
+                title="Linked Route B",
+                synopsis="B",
+                target_output="oneshot_manga",
+                production_episode_id="prod_ep_route_b",
+            ),
+            episode_id="comic_ep_route_prod_filter_b",
+        )
+    )
+    client = _build_client()
+
+    response = client.get(
+        "/api/v1/comic/episodes",
+        params={"production_episode_id": "prod_ep_route_a"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["episode"]["id"] for item in body] == ["comic_ep_route_prod_filter_a"]
+    assert {item["episode"]["production_episode_id"] for item in body} == {
+        "prod_ep_route_a"
+    }
+
+
 def test_get_missing_comic_episode_returns_404(temp_db) -> None:
     client = _build_client()
 
