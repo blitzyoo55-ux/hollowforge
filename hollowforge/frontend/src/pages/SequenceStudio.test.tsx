@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { useEffect } from 'react'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import {
@@ -84,6 +85,40 @@ function renderPage(initialPath = '/sequences') {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+function SequenceStudioRouteDriver({ path }: { path: string }) {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    navigate(path)
+  }, [navigate, path])
+
+  return <SequenceStudio />
+}
+
+function renderPageWithRouteControl(initialPath: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  const renderAtPath = (path: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/sequences']}>
+        <SequenceStudioRouteDriver path={path} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+
+  const view = render(renderAtPath(initialPath))
+  return {
+    ...view,
+    setPath: (path: string) => view.rerender(renderAtPath(path)),
+  }
 }
 
 test('renders Stage 1 blueprint controls', async () => {
@@ -258,4 +293,41 @@ test('keeps ambiguous open_current in filter-only mode when multiple linked blue
   expect(screen.queryByRole('button', { name: /^Selected$/i })).not.toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: /^Inspect$/i })).toHaveLength(2)
   expect(vi.mocked(listSequenceBlueprints)).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })
+})
+
+test('clears stale production linkage after leaving create_from_production without remount', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildEpisode({
+      id: 'prod-ep-transition',
+      work_id: 'work_transition',
+      series_id: 'series_transition',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+
+  const view = renderPageWithRouteControl('/sequences?production_episode_id=prod-ep-transition&mode=create_from_production')
+
+  expect(await screen.findByText(/Production Episode Context/i)).toBeInTheDocument()
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Create Blueprint/i })).not.toBeDisabled()
+  })
+
+  view.setPath('/sequences')
+
+  await waitFor(() => {
+    expect(screen.queryByText(/Production Episode Context/i)).not.toBeInTheDocument()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Create Blueprint/i }))
+
+  await waitFor(() => {
+    expect(vi.mocked(createSequenceBlueprint)).toHaveBeenCalled()
+  })
+  expect(vi.mocked(createSequenceBlueprint)).toHaveBeenCalledWith(
+    expect.objectContaining({
+      work_id: null,
+      series_id: null,
+      production_episode_id: null,
+    }),
+  )
 })

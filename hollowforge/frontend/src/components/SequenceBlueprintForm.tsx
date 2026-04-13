@@ -145,7 +145,16 @@ export default function SequenceBlueprintForm({
   const hasProductionContext = Boolean(productionContextLabel || productionEpisodeId || workId || seriesId)
 
   useEffect(() => {
-    if (!initialValuesKey || !initialValues) return
+    if (!initialValuesKey) {
+      if (appliedInitialValuesKeyRef.current !== null) {
+        setWorkId(null)
+        setSeriesId(null)
+        setProductionEpisodeId(null)
+        appliedInitialValuesKeyRef.current = null
+      }
+      return
+    }
+    if (!initialValues) return
     if (appliedInitialValuesKeyRef.current === initialValuesKey) return
 
     const nextMode = initialValues.content_mode ?? 'all_ages'
