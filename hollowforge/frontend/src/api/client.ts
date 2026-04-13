@@ -1111,6 +1111,12 @@ export interface ComicEpisodeDetailResponse {
   pages: ComicPageAssemblyResponse[]
 }
 
+export interface ComicEpisodeSummaryResponse {
+  episode: ComicEpisodeResponse
+  scene_count: number
+  page_count: number
+}
+
 export interface ComicStoryPlanImportRequest {
   approved_plan: StoryPlannerPlanResponse
   character_version_id: string
@@ -1533,6 +1539,15 @@ export interface ProductionWorkResponse {
   updated_at: string
 }
 
+export interface ProductionWorkCreate {
+  id?: string | null
+  title: string
+  format_family: ProductionFormatFamily
+  default_content_mode: SequenceContentMode
+  status?: string | null
+  canon_notes?: string | null
+}
+
 export interface ProductionSeriesResponse {
   id: string
   work_id: string
@@ -1542,6 +1557,15 @@ export interface ProductionSeriesResponse {
   visual_identity_notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ProductionSeriesCreate {
+  id?: string | null
+  work_id: string
+  title: string
+  delivery_mode: ProductionDeliveryMode
+  audience_mode: SequenceContentMode
+  visual_identity_notes?: string | null
 }
 
 export interface ProductionComicTrackLinkResponse {
@@ -1571,8 +1595,21 @@ export interface ProductionEpisodeDetailResponse {
   status: string
   comic_track: ProductionComicTrackLinkResponse | null
   animation_track: ProductionAnimationTrackLinkResponse | null
+  comic_track_count: number
+  animation_track_count: number
   created_at: string
   updated_at: string
+}
+
+export interface ProductionEpisodeCreate {
+  work_id: string
+  series_id?: string | null
+  title: string
+  synopsis: string
+  content_mode: SequenceContentMode
+  target_outputs: ProductionTargetOutput[]
+  continuity_summary?: string | null
+  status?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -1583,6 +1620,50 @@ export async function listProductionEpisodes(query: {
   work_id?: string
 } = {}): Promise<ProductionEpisodeDetailResponse[]> {
   const res = await api.get<ProductionEpisodeDetailResponse[]>('/production/episodes', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function listProductionWorks(): Promise<ProductionWorkResponse[]> {
+  const res = await api.get<ProductionWorkResponse[]>('/production/works')
+  return res.data
+}
+
+export async function listProductionSeries(query: {
+  work_id?: string
+} = {}): Promise<ProductionSeriesResponse[]> {
+  const res = await api.get<ProductionSeriesResponse[]>('/production/series', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function createProductionWork(
+  data: ProductionWorkCreate,
+): Promise<ProductionWorkResponse> {
+  const res = await api.post<ProductionWorkResponse>('/production/works', data)
+  return res.data
+}
+
+export async function createProductionSeries(
+  data: ProductionSeriesCreate,
+): Promise<ProductionSeriesResponse> {
+  const res = await api.post<ProductionSeriesResponse>('/production/series', data)
+  return res.data
+}
+
+export async function createProductionEpisode(
+  data: ProductionEpisodeCreate,
+): Promise<ProductionEpisodeDetailResponse> {
+  const res = await api.post<ProductionEpisodeDetailResponse>('/production/episodes', data)
+  return res.data
+}
+
+export async function listComicEpisodes(query: {
+  production_episode_id?: string
+} = {}): Promise<ComicEpisodeSummaryResponse[]> {
+  const res = await api.get<ComicEpisodeSummaryResponse[]>('/comic/episodes', {
     params: query,
   })
   return res.data
