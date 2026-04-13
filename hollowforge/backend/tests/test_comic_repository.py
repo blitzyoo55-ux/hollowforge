@@ -165,6 +165,35 @@ async def test_create_comic_episode_and_fetch_detail_returns_empty_scenes_and_pa
 
 
 @pytest.mark.asyncio
+async def test_create_comic_episode_persists_content_mode_and_production_link(
+    temp_db,
+) -> None:
+    payload = ComicEpisodeCreate(
+        character_id="char_kaede_ren",
+        character_version_id="charver_kaede_ren_still_v1",
+        title="Linked Comic Track",
+        synopsis="Episode-level comic track test.",
+        content_mode="adult_nsfw",
+        production_episode_id="prod_ep_1",
+        work_id="work_1",
+        series_id="series_1",
+    )
+
+    created = await create_comic_episode(payload, episode_id="comic_ep_linked_1")
+    detail = await get_comic_episode_detail(created.id)
+
+    assert created.content_mode == "adult_nsfw"
+    assert created.production_episode_id == "prod_ep_1"
+    assert created.work_id == "work_1"
+    assert created.series_id == "series_1"
+    assert detail is not None
+    assert detail.episode.content_mode == "adult_nsfw"
+    assert detail.episode.production_episode_id == "prod_ep_1"
+    assert detail.episode.work_id == "work_1"
+    assert detail.episode.series_id == "series_1"
+
+
+@pytest.mark.asyncio
 async def test_list_comic_character_versions_returns_seeded_versions(
     temp_db,
 ) -> None:

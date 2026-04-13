@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from app.config import settings
 from app.db import get_db
@@ -14,6 +14,7 @@ from app.models import (
     ComicPanelDialogueCreate,
     ComicPanelDialogueResponse,
     ComicScenePanelResponse,
+    SequenceContentMode,
 )
 from app.services.sequence_registry import get_prompt_provider_profile
 
@@ -28,7 +29,7 @@ def _dialogue_response(row: dict[str, Any]) -> ComicPanelDialogueResponse:
 
 async def _fetch_panel_context(
     panel_id: str,
-) -> tuple[ComicScenePanelResponse, dict[str, Any]]:
+) -> tuple[ComicScenePanelResponse, dict[str, Any], SequenceContentMode]:
     async with get_db() as db:
         panel_cursor = await db.execute(
             "SELECT * FROM comic_scene_panels WHERE id = ?",
@@ -39,7 +40,12 @@ async def _fetch_panel_context(
             raise ValueError(f"Comic panel not found: {panel_id}")
 
         scene_cursor = await db.execute(
-            "SELECT * FROM comic_episode_scenes WHERE id = ?",
+            """
+            SELECT s.*, e.content_mode AS episode_content_mode
+            FROM comic_episode_scenes s
+            JOIN comic_episodes e ON e.id = s.episode_id
+            WHERE s.id = ?
+            """,
             (panel_row["episode_scene_id"],),
         )
         scene_row = await scene_cursor.fetchone()
@@ -63,7 +69,17 @@ async def _fetch_panel_context(
             )
         scene_payload["involved_character_ids"] = parsed
 
-    return ComicScenePanelResponse.model_validate(panel_row), scene_payload
+    return (
+        ComicScenePanelResponse.model_validate(panel_row),
+        scene_payload,
+        scene_payload.get("episode_content_mode") or "all_ages",
+    )
+
+
+def _resolve_dialogue_profile_id(content_mode: SequenceContentMode) -> str:
+    if content_mode == "adult_nsfw":
+        return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE
+    return settings.HOLLOWFORGE_SEQUENCE_DEFAULT_SAFE_PROMPT_PROFILE
 
 
 async def _fetch_existing_dialogues(
@@ -152,12 +168,18 @@ def _build_dialogue_generation_messages(
     *,
     panel: ComicScenePanelResponse,
     scene: dict[str, Any],
+    content_mode: SequenceContentMode,
 ) -> list[dict[str, Any]]:
+    mode_instruction = (
+        "adult comic panel dialogue"
+        if content_mode == "adult_nsfw"
+        else "all-ages comic panel dialogue"
+    )
     return [
         {
             "role": "system",
             "content": (
-                "You are drafting adult comic panel dialogue in Japanese comic format. "
+                f"You are drafting {mode_instruction} in Japanese comic format. "
                 "Return JSON only with a top-level 'dialogues' array."
             ),
         },
@@ -232,9 +254,17 @@ async def _draft_panel_dialogue_payloads_with_local_llm_profile(
             base_url=settings.HOLLOWFORGE_SEQUENCE_LOCAL_LLM_BASE_URL,
             api_key="local_llm",
         )
+        content_mode = cast(
+            SequenceContentMode,
+            prompt_provider_profile.get("content_mode") or "all_ages",
+        )
         completion = await client.chat.completions.create(
             model=settings.HOLLOWFORGE_SEQUENCE_LOCAL_LLM_MODEL,
-            messages=_build_dialogue_generation_messages(panel=panel, scene=scene),
+            messages=_build_dialogue_generation_messages(
+                panel=panel,
+                scene=scene,
+                content_mode=content_mode,
+            ),
         )
         raw_content = ""
         try:
@@ -339,8 +369,9 @@ async def generate_panel_dialogues(
     panel_id: str,
     overwrite_existing: bool = False,
 ) -> ComicDialogueGenerationResponse:
-    panel, scene = await _fetch_panel_context(panel_id)
+    panel, scene, content_mode = await _fetch_panel_context(panel_id)
     existing_dialogues = await _fetch_existing_dialogues(panel_id)
+    prompt_provider_profile_id = _resolve_dialogue_profile_id(content_mode)
 
     if existing_dialogues and not overwrite_existing:
         return ComicDialogueGenerationResponse(
@@ -348,12 +379,12 @@ async def generate_panel_dialogues(
             dialogues=existing_dialogues,
             generated_count=len(existing_dialogues),
             overwrite_existing=overwrite_existing,
-            prompt_provider_profile_id=settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE,
+            prompt_provider_profile_id=prompt_provider_profile_id,
         )
 
     profile = get_prompt_provider_profile(
-        settings.HOLLOWFORGE_SEQUENCE_DEFAULT_ADULT_PROMPT_PROFILE,
-        content_mode="adult_nsfw",
+        prompt_provider_profile_id,
+        content_mode=content_mode,
     )
 
     try:

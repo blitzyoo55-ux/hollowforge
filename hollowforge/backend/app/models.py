@@ -493,6 +493,10 @@ class ComicEpisodeDraft(BaseModel):
     model_config = {"extra": "forbid"}
 
     character_version_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode = "all_ages"
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     synopsis: str = Field(min_length=1, max_length=4000)
     source_story_plan_json: str = Field(min_length=1)

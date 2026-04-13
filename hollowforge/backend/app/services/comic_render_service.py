@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 from app.config import settings
 from app.db import get_db
@@ -82,7 +82,7 @@ def _merge_request_json_payload(
     incoming: dict[str, Any] | None,
 ) -> str | None:
     if incoming is None:
-        return cast(str | None, existing_raw)
+        return cast(Optional[str], existing_raw)
 
     merged = _parse_json_object(existing_raw)
     for key, value in incoming.items():
@@ -377,7 +377,7 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
     )
     loras = [
         LoraInput.model_validate(item)
-        for item in _decode_json_list(cast(str | None, context.get("loras")))
+        for item in _decode_json_list(cast(Optional[str], context.get("loras")))
     ]
     return GenerationCreate(
         prompt=_build_prompt(context),
