@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-09
+Last updated: 2026-04-13
 
 ## Snapshot
 
@@ -10,7 +10,15 @@ Last updated: 2026-04-09
 - The runtime stack is FastAPI + React 19 + Tailwind v4 + SQLite + ComfyUI.
 - The backend local entrypoint is `backend/run_local_backend.sh` and binds to
   `127.0.0.1:8000`.
-- The current phase is comic MVP hardening + teaser ops stabilization.
+- The current phase is production hub core + boundary-first UI for comic and
+  animation tracks.
+- `/production` is now the shared production-core route for work, series, and
+  episode orchestration state.
+- `/comic` should now be read as Comic Handoff, not the final manga editor.
+- `/sequences` should now be read as Animation Track, not the final animation
+  editor.
+- The bounded shared-core smoke helper entry point is
+  `backend/scripts/launch_production_hub_smoke.py`.
 - The comic MVP scope is currently one character, one one-shot comic episode,
   and one teaser derivative path from that same source material.
 - `/comic` now carries manuscript profile selection, backed by
@@ -73,31 +81,37 @@ Last updated: 2026-04-09
 ## Resume Here
 
 1. Use `README.md` for the repo map and `ROADMAP.md` for full phase history.
-2. Use `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md` for the current
+2. Use `/production` first when checking shared work, series, and episode
+   linkage state before dropping into `/comic` or `/sequences`.
+3. Use `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md` for the current
    operator path across import, remote render, selected render, handoff export,
    teaser rerun, and stale recovery.
-3. If a change touches frontend runtime behavior, run the relevant `frontend/`
+4. If a change touches frontend runtime behavior, run the relevant `frontend/`
    checks and do not treat the work as deploy-complete before `npm run build`.
-4. If a change touches animation execution, preserve the existing
+5. If a change touches animation execution, preserve the existing
    `request_json` and callback contract, then use the canonical preflight or
    smoke scripts from `docs/ANIMATION_WORKFLOW_PLAYBOOK_20260313.md`.
-5. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
+6. Use `backend/.venv/bin/python scripts/launch_production_hub_smoke.py` when
+   you need a bounded proof that the shared production core can create or reuse
+   a work, series, production episode, comic track, and animation track from
+   one script.
+7. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
    compatibility route for existing bookmarks, and manuscript profile selection
    is now part of the `/comic` workspace. Selected-render teaser ops also live
    there, so operators can inspect the current teaser shot and recent variants
    without dropping to shell-only stale reconcile or rerun steps for the
    bounded teaser flow.
-6. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
+8. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
    http://127.0.0.1:8000` when you need a bounded end-to-end comic backend
    check against a running local API.
-7. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
+9. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
    --base-url http://127.0.0.1:8000` when you need a reproducible real-asset
    local verification before attempting a full one-shot.
-8. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
+10. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
    --base-url http://127.0.0.1:8000` when you need a measured local 4-panel
    throughput report, a fail-fast slow-panel cutoff, and a concrete
    `stay_local` vs `remote_worker_recommended` recommendation.
-9. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
+11. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
    --backend-url http://127.0.0.1:8000` before the remote still lane so the
    local backend, worker reachability, callback base URL, and auth-gated worker
    token state are checked in one place. This helper enforces the local backend
@@ -109,15 +123,15 @@ Last updated: 2026-04-09
    in Cloudflare Access, the worker still needs either an Access bypass on the
    callback path or service-token headers; otherwise remote callbacks get
    redirected to the login flow.
-10. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
+12. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
    --base-url http://127.0.0.1:8000` when you need a bounded callback-driven
    proof that the remote still lane can materialize and select one real panel
    asset through `execution_mode=remote_worker`. This helper stays inside the
    local backend URL boundary.
-11. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
+13. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
    when you need the production handoff validation path with a selected layout
    template and manuscript profile.
-12. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
+14. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
    --base-url http://127.0.0.1:8000 --episode-id
    2d696b08-4899-4a3b-b499-adc37dbaa9f5 --panel-index 0 --preset-id
    sdxl_ipadapter_microanim_v2 --poll-sec 5 --timeout-sec 1800` when you need
@@ -125,17 +139,17 @@ Last updated: 2026-04-09
    the local backend URL boundary, emits `animation_shot_id` and
    `animation_shot_variant_id` markers, and assumes the stable launchd backend
    plus stable launchd animation worker are already healthy.
-13. If a teaser animation job is stuck non-terminal (`queued`, `submitted`, or
+15. If a teaser animation job is stuck non-terminal (`queued`, `submitted`, or
    `processing`), use `backend/.venv/bin/python scripts/reconcile_stale_animation_jobs.py
    --base-url http://127.0.0.1:8000` to mark it `failed / Worker restarted`.
    Once it is failed, rerun the existing teaser helper. Recovery is `fail then
    rerun`, not resume.
-14. Use `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py
+16. Use `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py
    --base-url http://127.0.0.1:8000` for the bounded Camila V2 still lane. The
    helper now defaults to `--panel-limit 1`, `--candidate-count 1`, and
    `--execution-mode remote_worker`, and emits explicit selected-render markers
    for the paired teaser helper.
-15. Use `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py
+17. Use `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py
    --base-url http://127.0.0.1:8000 --episode-id
    09854884-5d52-4c94-9d5b-61800bfec677 --selected-scene-panel-id
    df540260-b759-4d42-b384-637bf60661ed --selected-render-asset-id
@@ -149,6 +163,8 @@ Last updated: 2026-04-09
 ## Active Priorities
 
 - keep the production deploy path explicit, especially the frontend build step
+- keep `/production` as the source-of-truth surface for episode linkage and
+  content-mode normalization
 - keep the production dry-run and handoff export path explicit, including the
   manuscript profile selection and ZIP/report verification steps
 - continue the shift from random image generation toward character, episode,
@@ -169,6 +185,8 @@ Last updated: 2026-04-09
 ## Canonical Entry Points
 
 - backend runtime: `backend/run_local_backend.sh`
+- backend production hub smoke:
+  `backend/.venv/bin/python scripts/launch_production_hub_smoke.py`
 - backend animation preflight:
   `backend/.venv/bin/python scripts/check_local_animation_preflight.py`
 - backend animation smoke:
@@ -194,7 +212,9 @@ Last updated: 2026-04-09
   `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py`
 - backend Camila V2 teaser pilot:
   `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py`
+- frontend production route: `/production`
 - frontend comic route: `/comic`
+- frontend animation track route: `/sequences`
 - frontend checks: `frontend/package.json`
 - animation worker runtime: `lab451-animation-worker/run_local_animation_worker.sh`
 - animation worker launchd:
