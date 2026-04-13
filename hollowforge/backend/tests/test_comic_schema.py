@@ -43,6 +43,17 @@ async def test_init_db_creates_comic_tables(temp_db) -> None:
 
 
 @pytest.mark.asyncio
+async def test_production_hub_core_tables_exist(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+        table_names = {row[0] for row in table_rows}
+    assert {"works", "series", "production_episodes"} <= table_names
+
+
+@pytest.mark.asyncio
 async def test_comic_episode_schema_contract(temp_db) -> None:
     await init_db()
 
@@ -70,6 +81,14 @@ async def test_comic_episode_schema_contract(temp_db) -> None:
     assert character_version_fk[6] == "CASCADE"
 
 
+@pytest.mark.asyncio
+async def test_comic_and_sequence_tables_expose_production_link_columns(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        comic_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(comic_episodes)")
+        }
+    assert {"content_mode", "work_id", "series_id", "production_episode_id"} <= comic_columns
 @pytest.mark.asyncio
 async def test_non_episode_comic_table_contracts(temp_db) -> None:
     await init_db()
