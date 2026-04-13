@@ -1034,6 +1034,7 @@ export default function ComicStudio() {
             </span>
             <div>
               <h1 className="text-2xl font-bold text-gray-100">Comic Studio</h1>
+              <p className="mt-1 text-sm font-medium text-violet-200">Comic Handoff Workspace</p>
               <p className="mt-1 max-w-3xl text-sm text-gray-400">
                 Import one approved Story Planner episode, keep lineage visible from character version to panel, and drive render, dialogue, and Japanese page handoff steps in one workspace.
               </p>

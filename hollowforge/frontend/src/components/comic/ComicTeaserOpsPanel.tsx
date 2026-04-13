@@ -75,12 +75,12 @@ export default function ComicTeaserOpsPanel({
     <section className="space-y-5 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
       <div className="space-y-2">
         <span className="inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-emerald-300">
-          Teaser Operations
+          Animation Track Preview
         </span>
         <div>
-          <h2 className="text-lg font-semibold text-gray-100">Teaser Ops For Selected Render</h2>
+          <h2 className="text-lg font-semibold text-gray-100">Animation Track Preview For Selected Render</h2>
           <p className="mt-1 text-sm text-gray-400">
-            Inspect current shot registry state, reconcile stale remote worker state, and rerun the default teaser preset from the current winning render.
+            Inspect current shot registry state, reconcile stale remote worker state, and rerun the current animation preview from the winning render.
           </p>
         </div>
       </div>
@@ -125,7 +125,7 @@ export default function ComicTeaserOpsPanel({
               disabled={!canRerun || isRerunning}
               className="rounded-xl border border-emerald-500/40 bg-gray-950/80 px-4 py-2.5 text-sm font-medium text-gray-100 transition hover:border-emerald-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isRerunning ? 'Launching...' : 'Rerun Teaser From Selected Panel'}
+              {isRerunning ? 'Launching...' : 'Rerun Animation Preview From Selected Panel'}
             </button>
           </div>
 
@@ -177,8 +177,8 @@ export default function ComicTeaserOpsPanel({
             </div>
           ) : !currentShotErrorMessage ? (
             <EmptyState
-              title="No current teaser shot yet"
-              description="Select and materialize a winning render to load shot registry state and selected-asset-scoped teaser history."
+              title="No current animation preview yet"
+              description="Select and materialize a winning render to load shot registry state and selected-asset-scoped preview history."
             />
           ) : null}
 

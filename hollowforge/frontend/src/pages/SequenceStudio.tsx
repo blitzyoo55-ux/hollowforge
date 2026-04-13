@@ -129,9 +129,9 @@ export default function SequenceStudio() {
               Stage 1 Sequence
             </span>
             <div>
-              <h1 className="text-2xl font-bold text-gray-100">Sequence Studio</h1>
+              <h1 className="text-2xl font-bold text-gray-100">Animation Track Studio</h1>
               <p className="mt-1 max-w-3xl text-sm text-gray-400">
-                Create Stage 1 sequence blueprints, launch orchestration runs, and review per-shot progress with rough-cut candidates in one place.
+                Plan sequence blueprints, launch animation-track runs, and review shot-by-shot progress with rough-cut candidates in one place.
               </p>
             </div>
           </div>

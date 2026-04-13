@@ -160,10 +160,12 @@ async def create_sequence_blueprint(
 async def list_sequence_blueprints(
     content_mode: Optional[SequenceContentMode] = Query(default=None),
     policy_profile_id: Optional[str] = Query(default=None),
+    production_episode_id: Optional[str] = Query(default=None),
 ) -> list[SequenceBlueprintDetailResponse]:
     blueprints = await list_blueprints(
         content_mode=content_mode,
         policy_profile_id=policy_profile_id,
+        production_episode_id=production_episode_id,
     )
     return [_blueprint_detail_response(blueprint) for blueprint in blueprints]
 

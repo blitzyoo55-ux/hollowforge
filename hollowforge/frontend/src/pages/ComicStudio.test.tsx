@@ -681,7 +681,8 @@ test('teaser ops renders current shot and recent variants for the selected rende
     })
   })
 
-  expect(await screen.findByText(/Teaser Ops For Selected Render/i)).toBeInTheDocument()
+  expect(await screen.findByText(/Comic Handoff Workspace/i)).toBeInTheDocument()
+  expect(await screen.findAllByText(/Animation Track Preview/i)).not.toHaveLength(0)
   expect(screen.getByText(/Current Teaser Shot/i)).toBeInTheDocument()
   expect(screen.getByText(/shot-1/i)).toBeInTheDocument()
   expect(screen.getByText(/Recent Variants For Selected Render/i)).toBeInTheDocument()
@@ -708,8 +709,8 @@ test('teaser rerun action is disabled without a materialized selected asset', as
   fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
 
   expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
-  expect(await screen.findByText(/No current teaser shot yet/i)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: /Rerun Teaser From Selected Panel/i })).toBeDisabled()
+  expect(await screen.findByText(/No current animation preview yet/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Rerun Animation Preview From Selected Panel/i })).toBeDisabled()
 })
 
 test('teaser ops reconcile action calls animation reconcile endpoint', async () => {
@@ -784,7 +785,7 @@ test('teaser rerun action launches the default preset from the selected panel as
     expect(selectComicPanelRenderAsset).toHaveBeenCalledWith('panel-1', 'asset-1')
   })
 
-  fireEvent.click(screen.getByRole('button', { name: /Rerun Teaser From Selected Panel/i }))
+  fireEvent.click(screen.getByRole('button', { name: /Rerun Animation Preview From Selected Panel/i }))
 
   await waitFor(() => {
     expect(launchAnimationPreset).toHaveBeenCalledWith('sdxl_ipadapter_microanim_v2', {

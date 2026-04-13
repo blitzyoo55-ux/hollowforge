@@ -312,6 +312,43 @@ def test_list_sequence_blueprints_returns_planned_shots(temp_db: Path) -> None:
     assert len(payload[0]["planned_shots"]) == 6
 
 
+def test_create_sequence_blueprint_accepts_production_episode_id(temp_db: Path) -> None:
+    _init_test_db()
+    client = _build_client()
+
+    response = client.post(
+        "/api/v1/sequences/blueprints",
+        json={
+            "production_episode_id": "prod_ep_1",
+            "work_id": "work_1",
+            "series_id": "series_1",
+            "content_mode": "all_ages",
+            "policy_profile_id": "safe_stage1_v1",
+            "character_id": "char_1",
+            "location_id": "location_1",
+            "beat_grammar_id": "stage1_single_location_v1",
+            "target_duration_sec": 36,
+            "shot_count": 6,
+            "executor_policy": "safe_remote_prod",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["blueprint"]["production_episode_id"] == "prod_ep_1"
+    assert payload["blueprint"]["work_id"] == "work_1"
+    assert payload["blueprint"]["series_id"] == "series_1"
+
+    filtered = client.get(
+        "/api/v1/sequences/blueprints",
+        params={"production_episode_id": "prod_ep_1"},
+    )
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert len(filtered_payload) == 1
+    assert filtered_payload[0]["blueprint"]["production_episode_id"] == "prod_ep_1"
+
+
 def test_create_sequence_run_returns_seeded_shot_detail(
     temp_db: Path,
     monkeypatch,
