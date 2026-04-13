@@ -49,6 +49,10 @@ ComicRenderExecutionMode = Literal["local_preview", "remote_worker"]
 ComicPageExportState = Literal["draft", "preview_ready", "exported"]
 ComicPageLayoutTemplateId = Literal["jp_2x2_v1", "jp_3row_v1"]
 ComicManuscriptProfileId = Literal["jp_manga_rightbound_v1"]
+ComicRenderLane = Literal["legacy", "character_canon_v2"]
+ProductionFormatFamily = Literal["comic", "animation", "mixed"]
+ProductionDeliveryMode = Literal["oneshot", "serial", "anthology"]
+ProductionTargetOutput = Literal["comic", "animation"]
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +679,90 @@ class SequenceRunCreateRequest(BaseModel):
     prompt_provider_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     candidate_count: int = Field(default=4, ge=2, le=24)
     target_tool: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
+class ProductionWorkCreate(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    format_family: ProductionFormatFamily
+    default_content_mode: SequenceContentMode
+    status: str = Field(default="draft", min_length=1, max_length=120)
+    canon_notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+class ProductionSeriesCreate(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    work_id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    delivery_mode: ProductionDeliveryMode
+    audience_mode: SequenceContentMode
+    visual_identity_notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+class ProductionEpisodeBase(BaseModel):
+    work_id: str = Field(min_length=1, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    synopsis: str = Field(min_length=1, max_length=4000)
+    content_mode: SequenceContentMode
+    target_outputs: List[ProductionTargetOutput] = Field(default_factory=list, max_length=4)
+    continuity_summary: Optional[str] = Field(default=None, max_length=4000)
+    status: str = Field(default="draft", min_length=1, max_length=120)
+
+
+class ProductionEpisodeCreate(ProductionEpisodeBase):
+    pass
+
+
+class ProductionWorkResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    title: str
+    format_family: ProductionFormatFamily
+    default_content_mode: SequenceContentMode
+    status: str
+    canon_notes: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ProductionSeriesResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    work_id: str
+    title: str
+    delivery_mode: ProductionDeliveryMode
+    audience_mode: SequenceContentMode
+    visual_identity_notes: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ProductionComicTrackLinkResponse(BaseModel):
+    id: str
+    status: str
+    target_output: ComicTargetOutput
+    character_id: str
+
+
+class ProductionAnimationTrackLinkResponse(BaseModel):
+    id: str
+    content_mode: SequenceContentMode
+    policy_profile_id: str
+    shot_count: int
+    executor_policy: str
+
+
+class ProductionEpisodeDetailResponse(ProductionEpisodeBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    comic_track: Optional[ProductionComicTrackLinkResponse] = None
+    animation_track: Optional[ProductionAnimationTrackLinkResponse] = None
+    created_at: str
+    updated_at: str
 
 
 class StoryPlannerCharacterCatalogEntry(BaseModel):
