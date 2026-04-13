@@ -514,7 +514,6 @@ export default function ComicStudio() {
   const [layoutTemplateId, setLayoutTemplateId] = useState<ComicPageLayoutTemplateId>('jp_2x2_v1')
   const [manuscriptProfileId, setManuscriptProfileId] = useState<ComicManuscriptProfileId>('jp_manga_rightbound_v1')
   const [exportResult, setExportResult] = useState<ComicPageExportResponse | null>(null)
-  const [productionContext, setProductionContext] = useState<ComicProductionContext | null>(null)
   const [latestAnimationReconciliation, setLatestAnimationReconciliation] = useState<AnimationReconciliationResponse | null>(null)
   const [latestLaunchedTeaserLaunch, setLatestLaunchedTeaserLaunch] = useState<{
     generationId: string
@@ -577,6 +576,16 @@ export default function ComicStudio() {
     enabled: Boolean(autoOpenEpisodeId),
     refetchOnWindowFocus: false,
   })
+  const productionContext = useMemo<ComicProductionContext | null>(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
+    const episode = productionEpisodeQuery.data
+    return {
+      productionEpisodeId: episode.id,
+      workId: episode.work_id,
+      seriesId: episode.series_id,
+      contentMode: episode.content_mode,
+    }
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
 
   const effectiveCharacterVersionId = selectedCharacterVersionId ?? draftCharacterVersionsQuery.data?.[0]?.id ?? null
 
@@ -633,6 +642,7 @@ export default function ComicStudio() {
   )
   const activeEpisodeIdRef = useRef<string | null>(null)
   const activeEpisodePanelIdsRef = useRef<Set<string>>(new Set())
+  const titlePrefilledProductionEpisodeIdRef = useRef<string | null>(null)
   const selectedPanelQueueResponseState = selectedPanel
     ? panelQueueResponses[selectedPanel.id] ?? emptyComicPanelQueueResponseState()
     : null
@@ -653,11 +663,27 @@ export default function ComicStudio() {
       || (selectedPanelTrackedRemoteJobHint?.remoteJobCount ?? 0) > 0
     ),
   )
+  const applyLoadedEpisodeDetail = (episodeDetail: ComicEpisodeDetailResponse) => {
+    activeEpisodeIdRef.current = episodeDetail.episode.id
+    activeEpisodePanelIdsRef.current = new Set(
+      episodeDetail.scenes.flatMap((sceneDetail) => sceneDetail.panels.map((panel) => panel.id)),
+    )
+    setCurrentEpisode(episodeDetail)
+    setEpisodeCharacterVersion(null)
+    setSelectedPanelId(firstPanelId(episodeDetail))
+    setPanelAssets({})
+    setPanelQueueResponses({})
+    setPanelDialogues({})
+    setExportResult(null)
+  }
 
   const importMutation = useMutation({
     mutationFn: async () => {
       if (!effectiveCharacterVersionId) {
         throw new Error('Choose a character version before importing a story plan.')
+      }
+      if (isCreateFromProduction && !productionContext) {
+        throw new Error('Production episode context must load before import.')
       }
       if (!approvedPlanDraft.parsed) {
         throw new Error(approvedPlanDraft.error ?? 'Provide a valid approved Story Planner plan.')
@@ -701,36 +727,27 @@ export default function ComicStudio() {
   }, [allPanels, currentEpisodeId])
 
   useEffect(() => {
-    if (!isCreateFromProduction) {
-      setProductionContext(null)
-      return
-    }
-    const episode = productionEpisodeQuery.data
-    if (!episode) return
-    setProductionContext({
-      productionEpisodeId: episode.id,
-      workId: episode.work_id,
-      seriesId: episode.series_id,
-      contentMode: episode.content_mode,
-    })
-    setTitle(episode.title)
-  }, [isCreateFromProduction, productionEpisodeQuery.data])
+    if (!isCreateFromProduction) return
+    if (!productionContext) return
+    if (titlePrefilledProductionEpisodeIdRef.current === productionContext.productionEpisodeId) return
+    setTitle(productionEpisodeQuery.data?.title ?? 'Comic Episode Draft')
+    titlePrefilledProductionEpisodeIdRef.current = productionContext.productionEpisodeId
+  }, [isCreateFromProduction, productionContext, productionEpisodeQuery.data?.title])
 
   useEffect(() => {
     if (!linkedEpisodeDetailQuery.data) return
-    const episodeDetail = linkedEpisodeDetailQuery.data
-    activeEpisodeIdRef.current = episodeDetail.episode.id
-    activeEpisodePanelIdsRef.current = new Set(
-      episodeDetail.scenes.flatMap((sceneDetail) => sceneDetail.panels.map((panel) => panel.id)),
-    )
-    setCurrentEpisode(episodeDetail)
-    setEpisodeCharacterVersion(null)
-    setSelectedPanelId(firstPanelId(episodeDetail))
-    setPanelAssets({})
-    setPanelQueueResponses({})
-    setPanelDialogues({})
-    setExportResult(null)
+    applyLoadedEpisodeDetail(linkedEpisodeDetailQuery.data)
   }, [linkedEpisodeDetailQuery.data])
+
+  const openLinkedEpisodeMutation = useMutation({
+    mutationFn: (episodeId: string) => getComicEpisode(episodeId),
+    onSuccess: (episodeDetail) => {
+      applyLoadedEpisodeDetail(episodeDetail)
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to open linked comic episode'))
+    },
+  })
 
   const queueRenderMutation = useMutation({
     mutationFn: ({
@@ -959,8 +976,23 @@ export default function ComicStudio() {
   const canGenerateDialogues = Boolean(selectedPanel && selectedPanelHasMaterializedSelectedAsset)
   const canAssemblePages = Boolean(currentEpisode && allPanelsHaveMaterializedSelectedAssets)
   const canExportPages = Boolean(currentEpisode && currentEpisode.pages.length > 0 && allPanelsHaveMaterializedSelectedAssets)
-  const canImportStoryPlan = Boolean(effectiveCharacterVersionId && approvedPlanDraft.parsed)
-  const importValidationMessage = !effectiveCharacterVersionId
+  const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionContext)
+  const isImportBlockedByCreateFromProduction = Boolean(isCreateFromProduction && !isCreateFromProductionContextReady)
+  const openCurrentAmbiguousRows = isOpenCurrent
+    ? (linkedEpisodesQuery.data ?? []).filter((row) => row.episode.id !== autoOpenEpisodeId)
+    : []
+  const canImportStoryPlan = Boolean(
+    effectiveCharacterVersionId
+    && approvedPlanDraft.parsed
+    && !isImportBlockedByCreateFromProduction,
+  )
+  const importValidationMessage = isImportBlockedByCreateFromProduction
+    ? (
+      productionEpisodeQuery.isError
+        ? 'Production episode context failed to load; retry before import.'
+        : 'Loading production episode context before import.'
+    )
+    : !effectiveCharacterVersionId
     ? 'Choose a character version before importing a story plan.'
     : approvedPlanDraft.error
   const dialogueReadinessMessage = !selectedPanel
@@ -1149,6 +1181,28 @@ export default function ComicStudio() {
           </div>
         </div>
       </section>
+
+      {openCurrentAmbiguousRows.length > 0 && (
+        <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-200">Open Current Ambiguity</h2>
+          <p className="mt-2 text-sm text-amber-50/90">
+            Multiple comic episodes are linked to this production episode. Select one to open manually.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {openCurrentAmbiguousRows.map((row) => (
+              <button
+                key={row.episode.id}
+                type="button"
+                onClick={() => openLinkedEpisodeMutation.mutate(row.episode.id)}
+                disabled={openLinkedEpisodeMutation.isPending}
+                className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Open {row.episode.title}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
         <ComicEpisodeDraftPanel

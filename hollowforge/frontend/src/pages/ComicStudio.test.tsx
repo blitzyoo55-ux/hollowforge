@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
-import type { ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import {
@@ -71,6 +71,40 @@ function renderWithProviders(ui: ReactElement, initialPath = '/comic') {
       <MemoryRouter initialEntries={[initialPath]}>{ui}</MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+function ComicStudioRouteDriver({ path }: { path: string }) {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    navigate(path)
+  }, [navigate, path])
+
+  return <ComicStudio />
+}
+
+function renderWithRouteControl(initialPath: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  const renderAtPath = (path: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/comic']}>
+        <ComicStudioRouteDriver path={path} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+
+  const view = render(renderAtPath(initialPath))
+  return {
+    ...view,
+    setPath: (path: string) => view.rerender(renderAtPath(path)),
+  }
 }
 
 function buildEpisodeDetail(
@@ -689,10 +723,12 @@ test('create_from_production shows linked intake context, prefill title, and for
 
   renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-1&mode=create_from_production')
 
-  expect(await screen.findByText(/Production Episode Context/i)).toBeInTheDocument()
-  expect(screen.getByText(/Production Episode:\s*prod-ep-1/i)).toBeInTheDocument()
-  expect(screen.getByText(/Work:\s*work_alpha/i)).toBeInTheDocument()
-  expect(screen.getByText(/Series:\s*series_alpha/i)).toBeInTheDocument()
+  const productionContextHeader = await screen.findByText(/^Production Episode Context$/i)
+  const productionContextCard = productionContextHeader.closest('div')
+  expect(productionContextCard).toBeTruthy()
+  expect(productionContextCard).toHaveTextContent(/Production Episode:\s*prod-ep-1/i)
+  expect(productionContextCard).toHaveTextContent(/Work:\s*work_alpha/i)
+  expect(productionContextCard).toHaveTextContent(/Series:\s*series_alpha/i)
   await waitFor(() => {
     expect(screen.getByLabelText(/Episode Title/i)).toHaveValue('Production Episode One')
   })
@@ -713,6 +749,20 @@ test('create_from_production shows linked intake context, prefill title, and for
       }),
     )
   })
+})
+
+test('create_from_production blocks import while production episode context is unresolved', async () => {
+  vi.mocked(getProductionEpisode).mockImplementation(() => new Promise(() => {}))
+
+  renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-1&mode=create_from_production')
+
+  fillApprovedPlanJson()
+  const importButton = screen.getByRole('button', { name: /Import Story Plan/i })
+  expect(importButton).toBeDisabled()
+  expect(screen.getByText(/Loading production episode context before import/i)).toBeInTheDocument()
+
+  fireEvent.click(importButton)
+  expect(importComicStoryPlan).not.toHaveBeenCalled()
 })
 
 test('open_current auto-loads the single linked comic episode detail', async () => {
@@ -745,6 +795,89 @@ test('open_current auto-loads the single linked comic episode detail', async () 
   })
   expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
   expect(screen.getAllByText(/Linked Imported Episode/i).length).toBeGreaterThan(0)
+})
+
+test('open_current ambiguous linked episodes shows manual fallback and does not auto-open', async () => {
+  vi.mocked(listComicEpisodes).mockResolvedValue([
+    {
+      episode: {
+        ...buildEpisodeDetail().episode,
+        id: 'ep-linked-1',
+        title: 'Linked Episode A',
+      },
+      scene_count: 1,
+      page_count: 0,
+    },
+    {
+      episode: {
+        ...buildEpisodeDetail().episode,
+        id: 'ep-linked-2',
+        title: 'Linked Episode B',
+      },
+      scene_count: 2,
+      page_count: 0,
+    },
+  ])
+  vi.mocked(getComicEpisode).mockResolvedValue({
+    ...buildEpisodeDetail(),
+    episode: {
+      ...buildEpisodeDetail().episode,
+      id: 'ep-linked-2',
+      title: 'Linked Episode B',
+    },
+  })
+
+  renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-1&mode=open_current')
+
+  expect(await screen.findByText(/Multiple comic episodes are linked/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Linked Episode A/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Linked Episode B/i })).toBeInTheDocument()
+  expect(getComicEpisode).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: /Open Linked Episode B/i }))
+  await waitFor(() => {
+    expect(getComicEpisode).toHaveBeenCalledWith('ep-linked-2')
+  })
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+  expect(screen.getAllByText(/Linked Episode B/i).length).toBeGreaterThan(0)
+})
+
+test('route transition out of create_from_production clears stale linkage before plain import', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildProductionEpisode({
+      id: 'prod-ep-transition',
+      work_id: 'work_transition',
+      series_id: 'series_transition',
+      title: 'Transition Episode',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+
+  const view = renderWithRouteControl('/comic?production_episode_id=prod-ep-transition&mode=create_from_production')
+
+  expect(await screen.findByText(/Production Episode Context/i)).toBeInTheDocument()
+  await waitFor(() => {
+    expect(screen.getByLabelText(/Episode Title/i)).toHaveValue('Transition Episode')
+  })
+
+  view.setPath('/comic')
+  await waitFor(() => {
+    expect(screen.queryByText(/Production Episode Context/i)).not.toBeInTheDocument()
+  })
+
+  fillApprovedPlanJson()
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Import Story Plan/i })).toBeEnabled()
+  })
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  await waitFor(() => {
+    expect(importComicStoryPlan).toHaveBeenCalledWith(expect.objectContaining({
+      work_id: null,
+      series_id: null,
+      production_episode_id: null,
+    }))
+  })
 })
 
 test('teaser ops renders current shot and recent variants for the selected render', async () => {
