@@ -1625,6 +1625,13 @@ export async function listProductionEpisodes(query: {
   return res.data
 }
 
+export async function getProductionEpisode(
+  productionEpisodeId: string,
+): Promise<ProductionEpisodeDetailResponse> {
+  const res = await api.get<ProductionEpisodeDetailResponse>(`/production/episodes/${productionEpisodeId}`)
+  return res.data
+}
+
 export async function listProductionWorks(): Promise<ProductionWorkResponse[]> {
   const res = await api.get<ProductionWorkResponse[]>('/production/works')
   return res.data

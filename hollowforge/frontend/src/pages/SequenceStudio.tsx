@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import {
   createSequenceBlueprint,
   createSequenceRun,
+  getProductionEpisode,
   getSequenceRun,
   listSequenceBlueprints,
   listSequenceRuns,
@@ -29,13 +31,28 @@ function formatDate(value: string): string {
 
 export default function SequenceStudio() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const productionEpisodeId = searchParams.get('production_episode_id')?.trim() || null
+  const mode = searchParams.get('mode')
+  const hasProductionContext = Boolean(productionEpisodeId)
+  const isCreateFromProduction = hasProductionContext && mode === 'create_from_production'
+  const isOpenCurrent = hasProductionContext && mode === 'open_current'
 
   const blueprintsQuery = useQuery({
-    queryKey: ['sequence-blueprints'],
-    queryFn: () => listSequenceBlueprints(),
+    queryKey: ['sequence-blueprints', productionEpisodeId],
+    queryFn: () =>
+      hasProductionContext && productionEpisodeId
+        ? listSequenceBlueprints({ production_episode_id: productionEpisodeId })
+        : listSequenceBlueprints(),
     refetchInterval: 30_000,
+  })
+
+  const productionEpisodeQuery = useQuery({
+    queryKey: ['production-episode', productionEpisodeId],
+    queryFn: () => getProductionEpisode(productionEpisodeId as string),
+    enabled: isCreateFromProduction,
   })
 
   const runsQuery = useQuery({
@@ -77,6 +94,13 @@ export default function SequenceStudio() {
       return run.status === 'planning' || run.status === 'animating' ? 10_000 : false
     },
   })
+
+  useEffect(() => {
+    if (!isOpenCurrent) return
+    const rows = blueprintsQuery.data ?? []
+    if (rows.length !== 1) return
+    setSelectedBlueprintId(rows[0].blueprint.id)
+  }, [blueprintsQuery.data, isOpenCurrent])
 
   const createBlueprintMutation = useMutation({
     mutationFn: (payload: SequenceBlueprintCreate) => createSequenceBlueprint(payload),
@@ -120,6 +144,25 @@ export default function SequenceStudio() {
     [blueprintsQuery.data, effectiveSelectedBlueprintId],
   )
 
+  const blueprintFormInitialValues = useMemo<Partial<SequenceBlueprintCreate> | undefined>(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return undefined
+    const episode = productionEpisodeQuery.data
+    return {
+      content_mode: episode.content_mode,
+      work_id: episode.work_id,
+      series_id: episode.series_id,
+      production_episode_id: episode.id,
+    }
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+
+  const productionContextLabel = useMemo(() => {
+    if (!hasProductionContext || !productionEpisodeId) return null
+    if (productionEpisodeQuery.data) {
+      return `${productionEpisodeQuery.data.title} (${productionEpisodeQuery.data.id})`
+    }
+    return `Production Episode ${productionEpisodeId}`
+  }, [hasProductionContext, productionEpisodeId, productionEpisodeQuery.data])
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-6">
@@ -158,6 +201,8 @@ export default function SequenceStudio() {
         <SequenceBlueprintForm
           onSubmit={(payload) => createBlueprintMutation.mutate(payload)}
           isSubmitting={createBlueprintMutation.isPending}
+          initialValues={blueprintFormInitialValues}
+          productionContextLabel={productionContextLabel}
         />
 
         <section className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
