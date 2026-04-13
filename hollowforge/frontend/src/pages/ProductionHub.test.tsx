@@ -4,8 +4,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 
 import {
-  createProductionEpisode,
-  createProductionSeries,
   createProductionWork,
   listProductionEpisodes,
   listProductionSeries,
@@ -238,5 +236,37 @@ test('builds comic and animation entry links from production track counts', asyn
   expect(within(oneCard as HTMLElement).getByRole('link', { name: /Open Animation Track/i })).toHaveAttribute(
     'href',
     '/sequences?production_episode_id=prod-ep-2&mode=open_current',
+  )
+})
+
+test('shows duplicate-track warnings and keeps open_current mode when track counts are ambiguous', async () => {
+  vi.mocked(listProductionWorks).mockResolvedValue([])
+  vi.mocked(listProductionSeries).mockResolvedValue([])
+  vi.mocked(listProductionEpisodes).mockResolvedValue([
+    buildEpisode({
+      id: 'prod-ep-3',
+      title: 'Ambiguous Track Episode',
+      comic_track_count: 2,
+      animation_track_count: 3,
+      comic_track: null,
+      animation_track: null,
+    }),
+  ])
+
+  renderPage()
+  expect(await screen.findByText(/Ambiguous Track Episode/i)).toBeInTheDocument()
+
+  expect(screen.getByText(/Comic track count is 2; review duplicate links before final handoff/i)).toBeInTheDocument()
+  expect(screen.getByText(/Animation track count is 3; review duplicate links before final handoff/i)).toBeInTheDocument()
+
+  const ambiguousCard = screen.getByRole('heading', { name: /Ambiguous Track Episode/i }).closest('article')
+  expect(ambiguousCard).not.toBeNull()
+  expect(within(ambiguousCard as HTMLElement).getByRole('link', { name: /Open Comic Handoff/i })).toHaveAttribute(
+    'href',
+    '/comic?production_episode_id=prod-ep-3&mode=open_current',
+  )
+  expect(within(ambiguousCard as HTMLElement).getByRole('link', { name: /Open Animation Track/i })).toHaveAttribute(
+    'href',
+    '/sequences?production_episode_id=prod-ep-3&mode=open_current',
   )
 })
