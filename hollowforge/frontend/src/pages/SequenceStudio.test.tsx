@@ -173,7 +173,9 @@ test('blocks create_from_production submission while production context is unres
 
   const createButton = await screen.findByRole('button', { name: /Create Blueprint/i })
   expect(createButton).toBeDisabled()
-  expect(screen.getByText(/Loading production episode context before blueprint creation/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/Checking linked blueprints for this production episode before creating a new track/i),
+  ).toBeInTheDocument()
 
   fireEvent.click(createButton)
   expect(vi.mocked(createSequenceBlueprint)).not.toHaveBeenCalled()
@@ -209,6 +211,55 @@ test('create_from_production submit includes required linkage fields', async () 
       production_episode_id: 'prod-ep-9',
     }),
   )
+})
+
+test('create_from_production blocks duplicate creation when linked blueprints already exist and shows manual-open fallback', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildEpisode({
+      id: 'prod-ep-dup',
+      work_id: 'work_dup',
+      series_id: 'series_dup',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+  vi.mocked(listSequenceBlueprints).mockImplementation(async (params) => {
+    const productionEpisodeId = (params as { production_episode_id?: string } | undefined)?.production_episode_id
+    if (productionEpisodeId === 'prod-ep-dup') {
+      return [
+        {
+          blueprint: {
+            id: 'bp-linked-dup-1',
+            work_id: 'work_dup',
+            series_id: 'series_dup',
+            production_episode_id: 'prod-ep-dup',
+            content_mode: 'adult_nsfw',
+            policy_profile_id: 'adult_stage1_v1',
+            character_id: 'char_stage1',
+            location_id: 'location_stage1',
+            beat_grammar_id: 'adult_stage1_v1',
+            target_duration_sec: 36,
+            shot_count: 6,
+            tone: 'tense',
+            executor_policy: 'adult_remote_prod',
+            created_at: '2026-04-11T10:00:00Z',
+            updated_at: '2026-04-11T10:00:00Z',
+          },
+          planned_shots: [],
+        },
+      ]
+    }
+    return []
+  })
+
+  renderPage('/sequences?production_episode_id=prod-ep-dup&mode=create_from_production')
+
+  expect(await screen.findByText(/already linked to this production episode/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Linked Blueprint bp-linked-dup-1/i })).toBeInTheDocument()
+
+  const createButton = screen.getByRole('button', { name: /Create Blueprint/i })
+  expect(createButton).toBeDisabled()
+  fireEvent.click(createButton)
+  expect(vi.mocked(createSequenceBlueprint)).not.toHaveBeenCalled()
 })
 
 test('auto-selects the single linked blueprint when mode=open_current', async () => {
@@ -293,6 +344,91 @@ test('keeps ambiguous open_current in filter-only mode when multiple linked blue
   expect(screen.queryByRole('button', { name: /^Selected$/i })).not.toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: /^Inspect$/i })).toHaveLength(2)
   expect(vi.mocked(listSequenceBlueprints)).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })
+})
+
+test('route transition into ambiguous open_current clears stale selected blueprint and shows manual-open fallback', async () => {
+  vi.mocked(listSequenceBlueprints).mockImplementation(async (params) => {
+    const productionEpisodeId = (params as { production_episode_id?: string } | undefined)?.production_episode_id
+    if (productionEpisodeId === 'prod-ep-single') {
+      return [
+        {
+          blueprint: {
+            id: 'bp-linked-single',
+            work_id: 'work_demo',
+            series_id: 'series_demo',
+            production_episode_id: 'prod-ep-single',
+            content_mode: 'adult_nsfw',
+            policy_profile_id: 'adult_stage1_v1',
+            character_id: 'char_single',
+            location_id: 'location_single',
+            beat_grammar_id: 'adult_stage1_v1',
+            target_duration_sec: 36,
+            shot_count: 6,
+            tone: 'tense',
+            executor_policy: 'adult_remote_prod',
+            created_at: '2026-04-11T10:00:00Z',
+            updated_at: '2026-04-11T10:00:00Z',
+          },
+          planned_shots: [],
+        },
+      ]
+    }
+    if (productionEpisodeId === 'prod-ep-ambiguous') {
+      return [
+        {
+          blueprint: {
+            id: 'bp-linked-ambig-1',
+            work_id: 'work_demo',
+            series_id: 'series_demo',
+            production_episode_id: 'prod-ep-ambiguous',
+            content_mode: 'adult_nsfw',
+            policy_profile_id: 'adult_stage1_v1',
+            character_id: 'char_alpha',
+            location_id: 'location_alpha',
+            beat_grammar_id: 'adult_stage1_v1',
+            target_duration_sec: 36,
+            shot_count: 6,
+            tone: 'tense',
+            executor_policy: 'adult_remote_prod',
+            created_at: '2026-04-11T10:00:00Z',
+            updated_at: '2026-04-11T10:00:00Z',
+          },
+          planned_shots: [],
+        },
+        {
+          blueprint: {
+            id: 'bp-linked-ambig-2',
+            work_id: 'work_demo',
+            series_id: 'series_demo',
+            production_episode_id: 'prod-ep-ambiguous',
+            content_mode: 'adult_nsfw',
+            policy_profile_id: 'adult_stage1_v1',
+            character_id: 'char_beta',
+            location_id: 'location_beta',
+            beat_grammar_id: 'adult_stage1_v1',
+            target_duration_sec: 36,
+            shot_count: 6,
+            tone: 'tense',
+            executor_policy: 'adult_remote_prod',
+            created_at: '2026-04-11T10:00:00Z',
+            updated_at: '2026-04-11T10:00:00Z',
+          },
+          planned_shots: [],
+        },
+      ]
+    }
+    return []
+  })
+
+  const view = renderPageWithRouteControl('/sequences?production_episode_id=prod-ep-single&mode=open_current')
+
+  expect(await screen.findByRole('button', { name: /Selected/i })).toBeInTheDocument()
+
+  view.setPath('/sequences?production_episode_id=prod-ep-ambiguous&mode=open_current')
+
+  expect(await screen.findByText(/multiple linked blueprints were found/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Linked Blueprint bp-linked-ambig-1/i })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Selected$/i })).not.toBeInTheDocument()
 })
 
 test('clears stale production linkage after leaving create_from_production without remount', async () => {

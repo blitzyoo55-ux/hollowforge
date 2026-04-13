@@ -163,19 +163,56 @@ export default function SequenceStudio() {
   }, [isCreateFromProduction, productionEpisodeQuery.data])
 
   const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionEpisodeQuery.data)
-  const isBlueprintSubmissionBlocked = Boolean(isCreateFromProduction && !isCreateFromProductionContextReady)
-
-  const blueprintSubmissionBlockedReason = useMemo(() => {
-    if (!isCreateFromProduction) return null
-    if (productionEpisodeQuery.isError) return 'Production episode context failed to load; retry before creating a blueprint.'
-    if (!productionEpisodeQuery.data) return 'Loading production episode context before blueprint creation.'
-    return null
-  }, [isCreateFromProduction, productionEpisodeQuery.data, productionEpisodeQuery.isError])
-
   const productionContextLabel = useMemo(() => {
     if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
     return `${productionEpisodeQuery.data.title} (${productionEpisodeQuery.data.id})`
   }, [isCreateFromProduction, productionEpisodeQuery.data])
+  const createFromProductionLinkedRows = useMemo(
+    () => (isCreateFromProduction ? (blueprintsQuery.data ?? []) : []),
+    [blueprintsQuery.data, isCreateFromProduction],
+  )
+  const openCurrentAmbiguousRows = useMemo(
+    () => (isOpenCurrent && (blueprintsQuery.data?.length ?? 0) > 1 ? (blueprintsQuery.data ?? []) : []),
+    [blueprintsQuery.data, isOpenCurrent],
+  )
+  const hasLinkedBlueprintForCreateFromProduction = createFromProductionLinkedRows.length > 0
+  const isCreateFromProductionLinkageLoading = Boolean(
+    isCreateFromProduction && blueprintsQuery.isLoading && !blueprintsQuery.data,
+  )
+
+  useEffect(() => {
+    if (!isOpenCurrent) return
+    if ((blueprintsQuery.data?.length ?? 0) <= 1) return
+    setSelectedBlueprintId(null)
+  }, [blueprintsQuery.data, isOpenCurrent])
+
+  const isBlueprintSubmissionBlocked = Boolean(
+    isCreateFromProduction
+      && (
+        !isCreateFromProductionContextReady
+        || hasLinkedBlueprintForCreateFromProduction
+        || isCreateFromProductionLinkageLoading
+      ),
+  )
+
+  const blueprintSubmissionBlockedReason = useMemo(() => {
+    if (!isCreateFromProduction) return null
+    if (hasLinkedBlueprintForCreateFromProduction) {
+      return 'A sequence blueprint is already linked to this production episode. Open the linked blueprint below instead of creating a duplicate.'
+    }
+    if (isCreateFromProductionLinkageLoading) {
+      return 'Checking linked blueprints for this production episode before creating a new track.'
+    }
+    if (productionEpisodeQuery.isError) return 'Production episode context failed to load; retry before creating a blueprint.'
+    if (!productionEpisodeQuery.data) return 'Loading production episode context before blueprint creation.'
+    return null
+  }, [
+    hasLinkedBlueprintForCreateFromProduction,
+    isCreateFromProduction,
+    isCreateFromProductionLinkageLoading,
+    productionEpisodeQuery.data,
+    productionEpisodeQuery.isError,
+  ])
 
   return (
     <div className="space-y-6">
@@ -213,9 +250,17 @@ export default function SequenceStudio() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <SequenceBlueprintForm
-          onSubmit={(payload) => {
+          onSubmit={async (payload) => {
             if (isCreateFromProduction) {
               if (!productionEpisodeQuery.data) return
+              const linkedRows = await queryClient.fetchQuery({
+                queryKey: ['sequence-blueprints', productionEpisodeQuery.data.id],
+                queryFn: () => listSequenceBlueprints({ production_episode_id: productionEpisodeQuery.data!.id }),
+              })
+              if (linkedRows.length > 0) {
+                notify.error('Linked sequence blueprints already exist for this production episode. Open the existing blueprint instead of creating a duplicate.')
+                return
+              }
               createBlueprintMutation.mutate({
                 ...payload,
                 content_mode: productionEpisodeQuery.data.content_mode,
@@ -246,6 +291,48 @@ export default function SequenceStudio() {
               </p>
             </div>
           </div>
+
+          {hasLinkedBlueprintForCreateFromProduction ? (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-200">Duplicate Create Blocked</h3>
+              <p className="text-sm text-amber-50/90">
+                This production episode is already linked to one or more sequence blueprints. Use manual open below instead of creating another track from this URL.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {createFromProductionLinkedRows.map((item) => (
+                  <button
+                    key={item.blueprint.id}
+                    type="button"
+                    onClick={() => setSelectedBlueprintId(item.blueprint.id)}
+                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+                  >
+                    Open Linked Blueprint {item.blueprint.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {openCurrentAmbiguousRows.length > 0 ? (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-200">Open Current Ambiguity</h3>
+              <p className="text-sm text-amber-50/90">
+                Multiple linked blueprints were found for this production episode. No blueprint is auto-selected; choose one manually.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {openCurrentAmbiguousRows.map((item) => (
+                  <button
+                    key={item.blueprint.id}
+                    type="button"
+                    onClick={() => setSelectedBlueprintId(item.blueprint.id)}
+                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+                  >
+                    Open Linked Blueprint {item.blueprint.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {blueprintsQuery.isLoading ? (
             <div className="flex items-center justify-center py-12">

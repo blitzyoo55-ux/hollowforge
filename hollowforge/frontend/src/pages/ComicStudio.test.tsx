@@ -759,10 +759,65 @@ test('create_from_production blocks import while production episode context is u
   fillApprovedPlanJson()
   const importButton = screen.getByRole('button', { name: /Import Story Plan/i })
   expect(importButton).toBeDisabled()
-  expect(screen.getByText(/Loading production episode context before import/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/Checking linked comic episodes for this production episode before import/i),
+  ).toBeInTheDocument()
 
   fireEvent.click(importButton)
   expect(importComicStoryPlan).not.toHaveBeenCalled()
+})
+
+test('create_from_production blocks duplicate import when linked episodes already exist and shows manual-open fallback', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildProductionEpisode({
+      id: 'prod-ep-dup',
+      work_id: 'work_dup',
+      series_id: 'series_dup',
+      title: 'Duplicate Episode',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+  vi.mocked(listComicEpisodes).mockImplementation(async (params) => {
+    const productionEpisodeId = (params as { production_episode_id?: string } | undefined)?.production_episode_id
+    if (productionEpisodeId === 'prod-ep-dup') {
+      return [
+        {
+          episode: {
+            ...buildEpisodeDetail().episode,
+            id: 'ep-linked-dup-1',
+            title: 'Existing Linked Episode',
+          },
+          scene_count: 1,
+          page_count: 0,
+        },
+      ]
+    }
+    return []
+  })
+  vi.mocked(getComicEpisode).mockResolvedValue({
+    ...buildEpisodeDetail(),
+    episode: {
+      ...buildEpisodeDetail().episode,
+      id: 'ep-linked-dup-1',
+      title: 'Existing Linked Episode',
+    },
+  })
+
+  renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-dup&mode=create_from_production')
+
+  fillApprovedPlanJson()
+  expect(await screen.findByRole('heading', { name: /Duplicate Import Blocked/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Existing Linked Episode/i })).toBeInTheDocument()
+
+  const importButton = screen.getByRole('button', { name: /Import Story Plan/i })
+  expect(importButton).toBeDisabled()
+  fireEvent.click(importButton)
+  expect(importComicStoryPlan).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: /Open Existing Linked Episode/i }))
+  await waitFor(() => {
+    expect(getComicEpisode).toHaveBeenCalledWith('ep-linked-dup-1')
+  })
 })
 
 test('open_current auto-loads the single linked comic episode detail', async () => {
@@ -840,6 +895,68 @@ test('open_current ambiguous linked episodes shows manual fallback and does not 
   })
   expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
   expect(screen.getAllByText(/Linked Episode B/i).length).toBeGreaterThan(0)
+})
+
+test('route transition into ambiguous open_current clears stale episode view and shows manual-open fallback', async () => {
+  vi.mocked(listComicEpisodes).mockImplementation(async (params) => {
+    const productionEpisodeId = (params as { production_episode_id?: string } | undefined)?.production_episode_id
+    if (productionEpisodeId === 'prod-ep-single') {
+      return [
+        {
+          episode: {
+            ...buildEpisodeDetail().episode,
+            id: 'ep-linked-single',
+            title: 'Linked Episode Single',
+          },
+          scene_count: 1,
+          page_count: 0,
+        },
+      ]
+    }
+    if (productionEpisodeId === 'prod-ep-ambiguous') {
+      return [
+        {
+          episode: {
+            ...buildEpisodeDetail().episode,
+            id: 'ep-linked-ambig-1',
+            title: 'Linked Episode A',
+          },
+          scene_count: 1,
+          page_count: 0,
+        },
+        {
+          episode: {
+            ...buildEpisodeDetail().episode,
+            id: 'ep-linked-ambig-2',
+            title: 'Linked Episode B',
+          },
+          scene_count: 2,
+          page_count: 0,
+        },
+      ]
+    }
+    return []
+  })
+  vi.mocked(getComicEpisode).mockResolvedValue({
+    ...buildEpisodeDetail(),
+    episode: {
+      ...buildEpisodeDetail().episode,
+      id: 'ep-linked-single',
+      title: 'Linked Episode Single',
+    },
+  })
+
+  const view = renderWithRouteControl('/comic?production_episode_id=prod-ep-single&mode=open_current')
+
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+  expect(screen.getAllByText(/Linked Episode Single/i).length).toBeGreaterThan(0)
+
+  view.setPath('/comic?production_episode_id=prod-ep-ambiguous&mode=open_current')
+
+  expect(await screen.findByText(/Multiple comic episodes are linked/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Open Linked Episode A/i })).toBeInTheDocument()
+  expect(screen.queryByText(/Linked Episode Single/i)).not.toBeInTheDocument()
+  expect(getComicEpisode).toHaveBeenCalledTimes(1)
 })
 
 test('route transition out of create_from_production clears stale linkage before plain import', async () => {

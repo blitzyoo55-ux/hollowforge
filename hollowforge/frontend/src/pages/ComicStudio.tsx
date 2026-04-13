@@ -677,6 +677,18 @@ export default function ComicStudio() {
     setExportResult(null)
   }
 
+  const clearLoadedEpisodeState = () => {
+    activeEpisodeIdRef.current = null
+    activeEpisodePanelIdsRef.current = new Set()
+    setCurrentEpisode(null)
+    setEpisodeCharacterVersion(null)
+    setSelectedPanelId(null)
+    setPanelAssets({})
+    setPanelQueueResponses({})
+    setPanelDialogues({})
+    setExportResult(null)
+  }
+
   const importMutation = useMutation({
     mutationFn: async () => {
       if (!effectiveCharacterVersionId) {
@@ -687,6 +699,15 @@ export default function ComicStudio() {
       }
       if (!approvedPlanDraft.parsed) {
         throw new Error(approvedPlanDraft.error ?? 'Provide a valid approved Story Planner plan.')
+      }
+      if (isCreateFromProduction && productionContext?.productionEpisodeId) {
+        const linkedRows = await queryClient.fetchQuery({
+          queryKey: ['comic-episodes', productionContext.productionEpisodeId],
+          queryFn: () => listComicEpisodes({ production_episode_id: productionContext.productionEpisodeId }),
+        })
+        if (linkedRows.length > 0) {
+          throw new Error('A comic episode is already linked to this production episode. Open the existing linked episode instead of importing a duplicate.')
+        }
       }
       return importComicStoryPlan({
         approved_plan: approvedPlanDraft.parsed,
@@ -738,6 +759,13 @@ export default function ComicStudio() {
     if (!linkedEpisodeDetailQuery.data) return
     applyLoadedEpisodeDetail(linkedEpisodeDetailQuery.data)
   }, [linkedEpisodeDetailQuery.data])
+
+  useEffect(() => {
+    if (!isOpenCurrent) return
+    const rows = linkedEpisodesQuery.data ?? []
+    if (rows.length <= 1) return
+    clearLoadedEpisodeState()
+  }, [isOpenCurrent, linkedEpisodesQuery.data])
 
   const openLinkedEpisodeMutation = useMutation({
     mutationFn: (episodeId: string) => getComicEpisode(episodeId),
@@ -977,7 +1005,19 @@ export default function ComicStudio() {
   const canAssemblePages = Boolean(currentEpisode && allPanelsHaveMaterializedSelectedAssets)
   const canExportPages = Boolean(currentEpisode && currentEpisode.pages.length > 0 && allPanelsHaveMaterializedSelectedAssets)
   const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionContext)
-  const isImportBlockedByCreateFromProduction = Boolean(isCreateFromProduction && !isCreateFromProductionContextReady)
+  const createFromProductionLinkedRows = isCreateFromProduction ? (linkedEpisodesQuery.data ?? []) : []
+  const hasLinkedEpisodesForCreateFromProduction = createFromProductionLinkedRows.length > 0
+  const isCreateFromProductionLinkageLoading = Boolean(
+    isCreateFromProduction && linkedEpisodesQuery.isLoading && !linkedEpisodesQuery.data,
+  )
+  const isImportBlockedByCreateFromProduction = Boolean(
+    isCreateFromProduction
+    && (
+      !isCreateFromProductionContextReady
+      || hasLinkedEpisodesForCreateFromProduction
+      || isCreateFromProductionLinkageLoading
+    ),
+  )
   const openCurrentAmbiguousRows = isOpenCurrent
     ? (linkedEpisodesQuery.data ?? []).filter((row) => row.episode.id !== autoOpenEpisodeId)
     : []
@@ -988,7 +1028,11 @@ export default function ComicStudio() {
   )
   const importValidationMessage = isImportBlockedByCreateFromProduction
     ? (
-      productionEpisodeQuery.isError
+      hasLinkedEpisodesForCreateFromProduction
+        ? 'A comic episode is already linked to this production episode. Open the linked episode below instead of importing a duplicate.'
+      : isCreateFromProductionLinkageLoading
+        ? 'Checking linked comic episodes for this production episode before import.'
+      : productionEpisodeQuery.isError
         ? 'Production episode context failed to load; retry before import.'
         : 'Loading production episode context before import.'
     )
@@ -1181,6 +1225,28 @@ export default function ComicStudio() {
           </div>
         </div>
       </section>
+
+      {hasLinkedEpisodesForCreateFromProduction && (
+        <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-200">Duplicate Import Blocked</h2>
+          <p className="mt-2 text-sm text-amber-50/90">
+            A comic episode is already linked to this production episode. Open the existing linked episode manually instead of importing another track.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {createFromProductionLinkedRows.map((row) => (
+              <button
+                key={row.episode.id}
+                type="button"
+                onClick={() => openLinkedEpisodeMutation.mutate(row.episode.id)}
+                disabled={openLinkedEpisodeMutation.isPending}
+                className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Open Existing Linked Episode {row.episode.title}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {openCurrentAmbiguousRows.length > 0 && (
         <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
