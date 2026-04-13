@@ -133,6 +133,137 @@ async def _count_animation_tracks(production_episode_id: str) -> int:
     return int(cast(dict[str, Any], row)["track_count"])
 
 
+def _in_clause_placeholders(values: list[str]) -> str:
+    return ", ".join(["?"] * len(values))
+
+
+async def _resolve_comic_tracks_for_episodes(
+    production_episode_ids: list[str],
+) -> dict[str, ProductionComicTrackLinkResponse]:
+    if not production_episode_ids:
+        return {}
+
+    placeholders = _in_clause_placeholders(production_episode_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT production_episode_id, id, status, target_output, character_id
+            FROM comic_episodes
+            WHERE production_episode_id IN ({placeholders})
+            ORDER BY production_episode_id ASC, created_at DESC, id DESC
+            """,
+            production_episode_ids,
+        )
+        rows = await cursor.fetchall()
+
+    tracks_by_episode: dict[str, ProductionComicTrackLinkResponse] = {}
+    for row in rows:
+        row_dict = cast(dict[str, Any], row)
+        production_episode_id = str(row_dict["production_episode_id"])
+        if production_episode_id in tracks_by_episode:
+            continue
+        track_payload = {
+            "id": row_dict["id"],
+            "status": row_dict["status"],
+            "target_output": row_dict["target_output"],
+            "character_id": row_dict["character_id"],
+        }
+        tracks_by_episode[production_episode_id] = (
+            ProductionComicTrackLinkResponse.model_validate(track_payload)
+        )
+    return tracks_by_episode
+
+
+async def _resolve_animation_tracks_for_episodes(
+    production_episode_ids: list[str],
+) -> dict[str, ProductionAnimationTrackLinkResponse]:
+    if not production_episode_ids:
+        return {}
+
+    placeholders = _in_clause_placeholders(production_episode_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT production_episode_id, id, content_mode, policy_profile_id, shot_count, executor_policy
+            FROM sequence_blueprints
+            WHERE production_episode_id IN ({placeholders})
+            ORDER BY production_episode_id ASC, created_at DESC, id DESC
+            """,
+            production_episode_ids,
+        )
+        rows = await cursor.fetchall()
+
+    tracks_by_episode: dict[str, ProductionAnimationTrackLinkResponse] = {}
+    for row in rows:
+        row_dict = cast(dict[str, Any], row)
+        production_episode_id = str(row_dict["production_episode_id"])
+        if production_episode_id in tracks_by_episode:
+            continue
+        track_payload = {
+            "id": row_dict["id"],
+            "content_mode": row_dict["content_mode"],
+            "policy_profile_id": row_dict["policy_profile_id"],
+            "shot_count": row_dict["shot_count"],
+            "executor_policy": row_dict["executor_policy"],
+        }
+        tracks_by_episode[production_episode_id] = (
+            ProductionAnimationTrackLinkResponse.model_validate(track_payload)
+        )
+    return tracks_by_episode
+
+
+async def _count_comic_tracks_for_episodes(
+    production_episode_ids: list[str],
+) -> dict[str, int]:
+    if not production_episode_ids:
+        return {}
+
+    placeholders = _in_clause_placeholders(production_episode_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT production_episode_id, COUNT(*) AS track_count
+            FROM comic_episodes
+            WHERE production_episode_id IN ({placeholders})
+            GROUP BY production_episode_id
+            """,
+            production_episode_ids,
+        )
+        rows = await cursor.fetchall()
+    return {
+        str(cast(dict[str, Any], row)["production_episode_id"]): int(
+            cast(dict[str, Any], row)["track_count"]
+        )
+        for row in rows
+    }
+
+
+async def _count_animation_tracks_for_episodes(
+    production_episode_ids: list[str],
+) -> dict[str, int]:
+    if not production_episode_ids:
+        return {}
+
+    placeholders = _in_clause_placeholders(production_episode_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT production_episode_id, COUNT(*) AS track_count
+            FROM sequence_blueprints
+            WHERE production_episode_id IN ({placeholders})
+            GROUP BY production_episode_id
+            """,
+            production_episode_ids,
+        )
+        rows = await cursor.fetchall()
+    return {
+        str(cast(dict[str, Any], row)["production_episode_id"]): int(
+            cast(dict[str, Any], row)["track_count"]
+        )
+        for row in rows
+    }
+
+
 async def _get_work_row(work_id: str) -> Optional[dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM works WHERE id = ?", (work_id,))
@@ -358,13 +489,27 @@ async def list_production_episodes(
         )
         rows = await cursor.fetchall()
 
+    production_episode_ids = [str(cast(dict[str, Any], row)["id"]) for row in rows]
+    comic_tracks_by_episode = await _resolve_comic_tracks_for_episodes(production_episode_ids)
+    animation_tracks_by_episode = await _resolve_animation_tracks_for_episodes(
+        production_episode_ids
+    )
+    comic_track_counts_by_episode = await _count_comic_tracks_for_episodes(
+        production_episode_ids
+    )
+    animation_track_counts_by_episode = await _count_animation_tracks_for_episodes(
+        production_episode_ids
+    )
+
     details: list[ProductionEpisodeDetailResponse] = []
     for row in rows:
         payload = _episode_payload(cast(dict[str, Any], row))
         production_episode_id = cast(str, payload["id"])
-        payload["comic_track"] = await _resolve_comic_track(production_episode_id)
-        payload["animation_track"] = await _resolve_animation_track(production_episode_id)
-        payload["comic_track_count"] = await _count_comic_tracks(production_episode_id)
-        payload["animation_track_count"] = await _count_animation_tracks(production_episode_id)
+        payload["comic_track"] = comic_tracks_by_episode.get(production_episode_id)
+        payload["animation_track"] = animation_tracks_by_episode.get(production_episode_id)
+        payload["comic_track_count"] = comic_track_counts_by_episode.get(production_episode_id, 0)
+        payload["animation_track_count"] = animation_track_counts_by_episode.get(
+            production_episode_id, 0
+        )
         details.append(ProductionEpisodeDetailResponse.model_validate(payload))
     return details
