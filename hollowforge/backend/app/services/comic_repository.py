@@ -499,6 +499,7 @@ async def list_comic_episodes(
     *,
     character_id: str | None = None,
     status: str | None = None,
+    production_episode_id: str | None = None,
 ) -> list[ComicEpisodeSummaryResponse]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -508,6 +509,9 @@ async def list_comic_episodes(
     if status is not None:
         clauses.append("e.status = ?")
         params.append(status)
+    if production_episode_id is not None:
+        clauses.append("e.production_episode_id = ?")
+        params.append(production_episode_id)
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     async with get_db() as db:

@@ -11,6 +11,7 @@ from app.services.comic_page_assembly_service import assemble_episode_pages
 from app.services.comic_repository import (
     create_comic_episode,
     get_comic_episode_detail,
+    list_comic_episodes,
     list_comic_character_versions,
 )
 
@@ -191,6 +192,33 @@ async def test_create_comic_episode_persists_content_mode_and_production_link(
     assert detail.episode.production_episode_id == "prod_ep_1"
     assert detail.episode.work_id == "work_1"
     assert detail.episode.series_id == "series_1"
+
+
+@pytest.mark.asyncio
+async def test_list_comic_episodes_filters_by_production_episode_id(temp_db) -> None:
+    await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Linked A",
+            synopsis="A",
+            production_episode_id="prod_ep_a",
+        ),
+        episode_id="comic_ep_prod_a",
+    )
+    await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Linked B",
+            synopsis="B",
+            production_episode_id="prod_ep_b",
+        ),
+        episode_id="comic_ep_prod_b",
+    )
+
+    summaries = await list_comic_episodes(production_episode_id="prod_ep_a")
+    assert [row.episode.id for row in summaries] == ["comic_ep_prod_a"]
 
 
 @pytest.mark.asyncio

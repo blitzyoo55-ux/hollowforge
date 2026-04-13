@@ -1379,6 +1379,31 @@ def test_import_story_plan_route_rejects_explicit_v2_missing_required_fields(
     assert "requires series_style_id" in response.text
 
 
+def test_import_story_plan_route_propagates_work_series_and_production_links(
+    temp_db,
+) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Linked Import",
+            "work_id": "work_demo",
+            "series_id": "series_demo",
+            "production_episode_id": "prod_ep_demo",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["episode"]["work_id"] == "work_demo"
+    assert body["episode"]["series_id"] == "series_demo"
+    assert body["episode"]["production_episode_id"] == "prod_ep_demo"
+
+
 def test_import_story_plan_route_rejects_explicit_v2_for_non_camila_character(
     temp_db,
 ) -> None:

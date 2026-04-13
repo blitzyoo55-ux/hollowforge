@@ -548,6 +548,9 @@ class ComicStoryPlanImportRequest(BaseModel):
     approved_plan: "StoryPlannerPlanResponse"
     character_version_id: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     panel_multiplier: int = Field(default=2, ge=1, le=8)
     render_lane: ComicRenderLane = "legacy"
     series_style_id: Optional[str] = Field(default=None, max_length=120)

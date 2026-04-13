@@ -204,9 +204,10 @@ async def import_story_plan(
         )
         draft = draft.model_copy(
             update={
-                "content_mode": _content_mode_from_story_lane(
-                    payload.approved_plan.lane
-                )
+                "content_mode": _content_mode_from_story_lane(payload.approved_plan.lane),
+                "work_id": payload.work_id,
+                "series_id": payload.series_id,
+                "production_episode_id": payload.production_episode_id,
             }
         )
         _bind_selected_character_to_draft(
@@ -228,10 +229,12 @@ async def import_story_plan(
 async def get_comic_episodes(
     character_id: str | None = Query(default=None),
     status_filter: ComicEpisodeStatus | None = Query(default=None, alias="status"),
+    production_episode_id: str | None = Query(default=None),
 ) -> list[ComicEpisodeSummaryResponse]:
     return await list_comic_episodes(
         character_id=character_id,
         status=status_filter,
+        production_episode_id=production_episode_id,
     )
 
 
