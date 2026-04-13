@@ -95,9 +95,10 @@ def _mount_static_dirs(app: FastAPI) -> None:
 
 def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     if lightweight:
-        from app.routes import comic, sequences
+        from app.routes import comic, production, sequences
 
         app.include_router(comic.router)
+        app.include_router(production.router)
         app.include_router(sequences.router)
         return
 
@@ -110,6 +111,7 @@ def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
         gallery,
         generations,
         loras,
+        production,
         presets,
         publishing,
         reproduce,
@@ -134,6 +136,7 @@ def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     app.include_router(reproduce.router)
     app.include_router(sequences.router)
     app.include_router(comic.router)
+    app.include_router(production.router)
     app.include_router(export_router)
     app.include_router(seedance.router)
     app.include_router(quality_ai_router)
