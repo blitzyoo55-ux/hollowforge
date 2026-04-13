@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import aiosqlite
 import json
 import uuid
 from collections.abc import Sequence
@@ -23,6 +24,14 @@ from app.models import (
 )
 
 _UNSET: Final = object()
+
+
+class SequenceBlueprintProductionEpisodeConflictError(RuntimeError):
+    def __init__(self, production_episode_id: str) -> None:
+        super().__init__(
+            f"Production episode {production_episode_id} already has a linked animation track"
+        )
+        self.production_episode_id = production_episode_id
 
 
 def _now_iso() -> str:
@@ -133,6 +142,25 @@ def _build_update_sql(values: dict[str, Any]) -> tuple[str, list[Any]]:
     return set_clause, list(values.values())
 
 
+async def _ensure_production_episode_link_available(
+    db: aiosqlite.Connection,
+    *,
+    production_episode_id: str | None,
+) -> None:
+    if production_episode_id is None:
+        return
+    cursor = await db.execute(
+        "SELECT id FROM sequence_blueprints WHERE production_episode_id = ? LIMIT 1",
+        (production_episode_id,),
+    )
+    if await cursor.fetchone() is not None:
+        raise SequenceBlueprintProductionEpisodeConflictError(production_episode_id)
+
+
+def _is_production_episode_link_conflict(exc: aiosqlite.IntegrityError) -> bool:
+    return "sequence_blueprints.production_episode_id already linked" in str(exc)
+
+
 async def create_blueprint(
     payload: SequenceBlueprintCreate,
     *,
@@ -141,45 +169,56 @@ async def create_blueprint(
     now = _now_iso()
     created_id = blueprint_id or str(uuid.uuid4())
     async with get_db() as db:
-        await db.execute(
-            """
-            INSERT INTO sequence_blueprints (
-                id,
-                work_id,
-                series_id,
-                production_episode_id,
-                content_mode,
-                policy_profile_id,
-                character_id,
-                location_id,
-                beat_grammar_id,
-                target_duration_sec,
-                shot_count,
-                tone,
-                executor_policy,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_id,
-                payload.work_id,
-                payload.series_id,
-                payload.production_episode_id,
-                payload.content_mode,
-                payload.policy_profile_id,
-                payload.character_id,
-                payload.location_id,
-                payload.beat_grammar_id,
-                payload.target_duration_sec,
-                payload.shot_count,
-                payload.tone,
-                payload.executor_policy,
-                now,
-                now,
-            ),
+        await _ensure_production_episode_link_available(
+            db,
+            production_episode_id=payload.production_episode_id,
         )
-        await db.commit()
+        try:
+            await db.execute(
+                """
+                INSERT INTO sequence_blueprints (
+                    id,
+                    work_id,
+                    series_id,
+                    production_episode_id,
+                    content_mode,
+                    policy_profile_id,
+                    character_id,
+                    location_id,
+                    beat_grammar_id,
+                    target_duration_sec,
+                    shot_count,
+                    tone,
+                    executor_policy,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_id,
+                    payload.work_id,
+                    payload.series_id,
+                    payload.production_episode_id,
+                    payload.content_mode,
+                    payload.policy_profile_id,
+                    payload.character_id,
+                    payload.location_id,
+                    payload.beat_grammar_id,
+                    payload.target_duration_sec,
+                    payload.shot_count,
+                    payload.tone,
+                    payload.executor_policy,
+                    now,
+                    now,
+                ),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            if payload.production_episode_id is not None and _is_production_episode_link_conflict(exc):
+                raise SequenceBlueprintProductionEpisodeConflictError(
+                    payload.production_episode_id
+                ) from exc
+            raise
         cursor = await db.execute(
             "SELECT * FROM sequence_blueprints WHERE id = ?",
             (created_id,),

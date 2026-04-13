@@ -349,6 +349,34 @@ def test_create_sequence_blueprint_accepts_production_episode_id(temp_db: Path) 
     assert filtered_payload[0]["blueprint"]["production_episode_id"] == "prod_ep_1"
 
 
+def test_create_sequence_blueprint_rejects_duplicate_production_episode_id(
+    temp_db: Path,
+) -> None:
+    _init_test_db()
+    client = _build_client()
+    payload = {
+        "production_episode_id": "prod_ep_duplicate",
+        "work_id": "work_1",
+        "series_id": "series_1",
+        "content_mode": "all_ages",
+        "policy_profile_id": "safe_stage1_v1",
+        "character_id": "char_1",
+        "location_id": "location_1",
+        "beat_grammar_id": "stage1_single_location_v1",
+        "target_duration_sec": 36,
+        "shot_count": 6,
+        "executor_policy": "safe_remote_prod",
+    }
+
+    first = client.post("/api/v1/sequences/blueprints", json=payload)
+    assert first.status_code == 201
+
+    second = client.post("/api/v1/sequences/blueprints", json=payload)
+
+    assert second.status_code == 409
+    assert "already has a linked animation track" in second.json()["detail"]
+
+
 def test_create_sequence_run_returns_seeded_shot_detail(
     temp_db: Path,
     monkeypatch,

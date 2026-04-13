@@ -148,24 +148,23 @@ def test_production_episode_detail_reports_track_counts(temp_db) -> None:
     assert payload["animation_track_count"] == 0
 
     episode_id = payload["id"]
-    for shot_count in (6, 6):
-        blueprint_response = client.post(
-            "/api/v1/sequences/blueprints",
-            json={
-                "production_episode_id": episode_id,
-                "work_id": "work_tracks",
-                "series_id": "series_tracks",
-                "content_mode": "adult_nsfw",
-                "policy_profile_id": "adult_stage1_v1",
-                "character_id": "char_1",
-                "location_id": "location_1",
-                "beat_grammar_id": "adult_stage1_v1",
-                "target_duration_sec": 36,
-                "shot_count": shot_count,
-                "executor_policy": "adult_remote_prod",
-            },
-        )
-        assert blueprint_response.status_code == 201, blueprint_response.text
+    blueprint_response = client.post(
+        "/api/v1/sequences/blueprints",
+        json={
+            "production_episode_id": episode_id,
+            "work_id": "work_tracks",
+            "series_id": "series_tracks",
+            "content_mode": "adult_nsfw",
+            "policy_profile_id": "adult_stage1_v1",
+            "character_id": "char_1",
+            "location_id": "location_1",
+            "beat_grammar_id": "adult_stage1_v1",
+            "target_duration_sec": 36,
+            "shot_count": 6,
+            "executor_policy": "adult_remote_prod",
+        },
+    )
+    assert blueprint_response.status_code == 201, blueprint_response.text
 
     asyncio.run(
         create_comic_episode(
@@ -187,7 +186,7 @@ def test_production_episode_detail_reports_track_counts(temp_db) -> None:
     assert refreshed_response.status_code == 200
     refreshed_payload = refreshed_response.json()
     assert refreshed_payload["comic_track_count"] == 1
-    assert refreshed_payload["animation_track_count"] == 2
+    assert refreshed_payload["animation_track_count"] == 1
 
 
 def test_production_routes_mount_in_lightweight_and_full_apps(temp_db) -> None:

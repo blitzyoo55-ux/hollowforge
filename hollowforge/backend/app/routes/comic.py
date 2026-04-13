@@ -33,6 +33,7 @@ from app.services.comic_page_assembly_service import (
     export_episode_pages,
 )
 from app.services.comic_repository import (
+    ComicEpisodeProductionEpisodeConflictError,
     create_comic_episode_from_draft,
     create_comic_episode,
     get_comic_episode_detail,
@@ -162,6 +163,11 @@ async def create_comic_episode_endpoint(
 ) -> ComicEpisodeDetailResponse:
     try:
         episode = await create_comic_episode(payload)
+    except ComicEpisodeProductionEpisodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -218,6 +224,11 @@ async def import_story_plan(
             character_id=character_id,
             draft=draft,
         )
+    except ComicEpisodeProductionEpisodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

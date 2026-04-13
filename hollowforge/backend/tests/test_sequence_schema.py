@@ -18,6 +18,62 @@ async def test_sequence_blueprints_expose_production_link_columns(temp_db) -> No
     assert {"work_id", "series_id", "production_episode_id"} <= sequence_columns
 
 
+@pytest.mark.asyncio
+async def test_sequence_blueprints_enforce_unique_production_episode_link(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        _create_blueprint(conn, "bp_existing")
+        conn.execute(
+            "UPDATE sequence_blueprints SET production_episode_id = ? WHERE id = ?",
+            ("prod_ep_unique", "bp_existing"),
+        )
+        conn.commit()
+
+        with pytest.raises(
+            sqlite3.IntegrityError,
+            match=r"sequence_blueprints.production_episode_id already linked",
+        ):
+            conn.execute(
+                """
+                INSERT INTO sequence_blueprints (
+                    id,
+                    work_id,
+                    series_id,
+                    production_episode_id,
+                    content_mode,
+                    policy_profile_id,
+                    character_id,
+                    location_id,
+                    beat_grammar_id,
+                    target_duration_sec,
+                    shot_count,
+                    tone,
+                    executor_policy,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "bp_duplicate",
+                    None,
+                    None,
+                    "prod_ep_unique",
+                    "all_ages",
+                    "safe_stage1_v1",
+                    "char_1",
+                    "location_1",
+                    "stage1_single_location_v1",
+                    36,
+                    6,
+                    "tense",
+                    "safe_remote_prod",
+                    _now(),
+                    _now(),
+                ),
+            )
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

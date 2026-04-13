@@ -1446,6 +1446,47 @@ def test_import_story_plan_route_propagates_work_series_and_production_links(
     assert body["episode"]["production_episode_id"] == "prod_ep_demo"
 
 
+def test_create_comic_episode_route_rejects_duplicate_production_episode_id(temp_db) -> None:
+    client = _build_client()
+    payload = {
+        "character_id": "char_kaede_ren",
+        "character_version_id": "charver_kaede_ren_still_v1",
+        "title": "Linked direct create",
+        "synopsis": "Direct create should own a unique production link.",
+        "target_output": "oneshot_manga",
+        "production_episode_id": "prod_ep_duplicate_direct",
+    }
+
+    first = client.post("/api/v1/comic/episodes", json=payload)
+    assert first.status_code == 201
+
+    second = client.post("/api/v1/comic/episodes", json=payload)
+
+    assert second.status_code == 409
+    assert "already has a linked comic episode" in second.json()["detail"]
+
+
+def test_import_story_plan_route_rejects_duplicate_production_episode_id(temp_db) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+    payload = {
+        "approved_plan": approved_plan.model_dump(mode="json"),
+        "character_version_id": "charver_kaede_ren_still_v1",
+        "title": "Linked Import Duplicate",
+        "work_id": "work_demo",
+        "series_id": "series_demo",
+        "production_episode_id": "prod_ep_duplicate_import",
+    }
+
+    first = client.post("/api/v1/comic/episodes/import-story-plan", json=payload)
+    assert first.status_code == 201
+
+    second = client.post("/api/v1/comic/episodes/import-story-plan", json=payload)
+
+    assert second.status_code == 409
+    assert "already has a linked comic episode" in second.json()["detail"]
+
+
 def test_import_story_plan_route_rejects_explicit_v2_for_non_camila_character(
     temp_db,
 ) -> None:

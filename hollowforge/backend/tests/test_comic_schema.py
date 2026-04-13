@@ -100,6 +100,75 @@ async def test_comic_and_sequence_tables_expose_production_link_columns(temp_db)
     assert {"content_mode", "work_id", "series_id", "production_episode_id"} <= comic_columns
 
 
+@pytest.mark.asyncio
+async def test_comic_episodes_enforce_unique_production_episode_link(temp_db) -> None:
+    await init_db()
+    await create_comic_episode(
+        ComicEpisodeCreate(
+            character_id="char_kaede_ren",
+            character_version_id="charver_kaede_ren_still_v1",
+            title="Existing linked episode",
+            synopsis="The first linked episode owns the production link.",
+            target_output="oneshot_manga",
+            production_episode_id="prod_ep_unique",
+        ),
+        episode_id="comic_ep_existing",
+    )
+
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        with pytest.raises(
+            sqlite3.IntegrityError,
+            match=r"comic_episodes.production_episode_id already linked",
+        ):
+            conn.execute(
+                """
+                INSERT INTO comic_episodes (
+                    id,
+                    character_id,
+                    character_version_id,
+                    content_mode,
+                    work_id,
+                    series_id,
+                    production_episode_id,
+                    title,
+                    synopsis,
+                    source_story_plan_json,
+                    status,
+                    continuity_summary,
+                    canon_delta,
+                    target_output,
+                    render_lane,
+                    series_style_id,
+                    character_series_binding_id,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "comic_ep_duplicate",
+                    "char_kaede_ren",
+                    "charver_kaede_ren_still_v1",
+                    "all_ages",
+                    None,
+                    None,
+                    "prod_ep_unique",
+                    "Duplicate linked episode",
+                    "Should fail because the production link is already owned.",
+                    None,
+                    "draft",
+                    None,
+                    None,
+                    "oneshot_manga",
+                    "legacy_standard",
+                    None,
+                    None,
+                    "2026-04-13T00:00:00+00:00",
+                    "2026-04-13T00:00:00+00:00",
+                ),
+            )
+
+
 def test_comic_episode_create_schema_requires_complete_explicit_v2_fields() -> None:
     with pytest.raises(ValidationError, match="requires series_style_id"):
         ComicEpisodeCreate(

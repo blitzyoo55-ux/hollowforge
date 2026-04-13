@@ -31,6 +31,14 @@ _CAMILA_DUARTE_CHARACTER_ID = "char_camila_duarte"
 _CAMILA_V2_CHARACTER_CANON_ID = "camila_v2"
 
 
+class ComicEpisodeProductionEpisodeConflictError(RuntimeError):
+    def __init__(self, production_episode_id: str) -> None:
+        super().__init__(
+            f"Production episode {production_episode_id} already has a linked comic episode"
+        )
+        self.production_episode_id = production_episode_id
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -61,6 +69,25 @@ def _decode_json_dict(value: str | None, *, field_name: str) -> dict[str, Any] |
 
 def _encode_json_list(values: list[Any]) -> str:
     return json.dumps(values, separators=(",", ":"), ensure_ascii=False)
+
+
+async def _ensure_production_episode_link_available(
+    db: aiosqlite.Connection,
+    *,
+    production_episode_id: str | None,
+) -> None:
+    if production_episode_id is None:
+        return
+    cursor = await db.execute(
+        "SELECT id FROM comic_episodes WHERE production_episode_id = ? LIMIT 1",
+        (production_episode_id,),
+    )
+    if await cursor.fetchone() is not None:
+        raise ComicEpisodeProductionEpisodeConflictError(production_episode_id)
+
+
+def _is_production_episode_link_conflict(exc: aiosqlite.IntegrityError) -> bool:
+    return "comic_episodes.production_episode_id already linked" in str(exc)
 
 
 async def _validate_episode_references(
@@ -266,53 +293,64 @@ async def create_comic_episode(
             series_style_id=payload.series_style_id,
             character_series_binding_id=payload.character_series_binding_id,
         )
-        await db.execute(
-            """
-            INSERT INTO comic_episodes (
-                id,
-                character_id,
-                character_version_id,
-                content_mode,
-                work_id,
-                series_id,
-                production_episode_id,
-                title,
-                synopsis,
-                source_story_plan_json,
-                status,
-                continuity_summary,
-                canon_delta,
-                target_output,
-                render_lane,
-                series_style_id,
-                character_series_binding_id,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_id,
-                payload.character_id,
-                payload.character_version_id,
-                payload.content_mode,
-                payload.work_id,
-                payload.series_id,
-                payload.production_episode_id,
-                payload.title,
-                payload.synopsis,
-                payload.source_story_plan_json,
-                payload.status,
-                payload.continuity_summary,
-                payload.canon_delta,
-                payload.target_output,
-                payload.render_lane,
-                payload.series_style_id,
-                payload.character_series_binding_id,
-                now,
-                now,
-            ),
+        await _ensure_production_episode_link_available(
+            db,
+            production_episode_id=payload.production_episode_id,
         )
-        await db.commit()
+        try:
+            await db.execute(
+                """
+                INSERT INTO comic_episodes (
+                    id,
+                    character_id,
+                    character_version_id,
+                    content_mode,
+                    work_id,
+                    series_id,
+                    production_episode_id,
+                    title,
+                    synopsis,
+                    source_story_plan_json,
+                    status,
+                    continuity_summary,
+                    canon_delta,
+                    target_output,
+                    render_lane,
+                    series_style_id,
+                    character_series_binding_id,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_id,
+                    payload.character_id,
+                    payload.character_version_id,
+                    payload.content_mode,
+                    payload.work_id,
+                    payload.series_id,
+                    payload.production_episode_id,
+                    payload.title,
+                    payload.synopsis,
+                    payload.source_story_plan_json,
+                    payload.status,
+                    payload.continuity_summary,
+                    payload.canon_delta,
+                    payload.target_output,
+                    payload.render_lane,
+                    payload.series_style_id,
+                    payload.character_series_binding_id,
+                    now,
+                    now,
+                ),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            if payload.production_episode_id is not None and _is_production_episode_link_conflict(exc):
+                raise ComicEpisodeProductionEpisodeConflictError(
+                    payload.production_episode_id
+                ) from exc
+            raise
         cursor = await db.execute(
             "SELECT * FROM comic_episodes WHERE id = ?",
             (created_id,),
@@ -360,52 +398,63 @@ async def create_comic_episode_from_draft(
             series_style_id=draft.series_style_id,
             character_series_binding_id=draft.character_series_binding_id,
         )
-        await db.execute(
-            """
-            INSERT INTO comic_episodes (
-                id,
-                character_id,
-                character_version_id,
-                content_mode,
-                work_id,
-                series_id,
-                production_episode_id,
-                title,
-                synopsis,
-                source_story_plan_json,
-                status,
-                continuity_summary,
-                canon_delta,
-                target_output,
-                render_lane,
-                series_style_id,
-                character_series_binding_id,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_id,
-                character_id,
-                draft.character_version_id,
-                draft.content_mode,
-                draft.work_id,
-                draft.series_id,
-                draft.production_episode_id,
-                draft.title,
-                draft.synopsis,
-                draft.source_story_plan_json,
-                draft.status,
-                draft.continuity_summary,
-                draft.canon_delta,
-                draft.target_output,
-                draft.render_lane,
-                draft.series_style_id,
-                draft.character_series_binding_id,
-                now,
-                now,
-            ),
+        await _ensure_production_episode_link_available(
+            db,
+            production_episode_id=draft.production_episode_id,
         )
+        try:
+            await db.execute(
+                """
+                INSERT INTO comic_episodes (
+                    id,
+                    character_id,
+                    character_version_id,
+                    content_mode,
+                    work_id,
+                    series_id,
+                    production_episode_id,
+                    title,
+                    synopsis,
+                    source_story_plan_json,
+                    status,
+                    continuity_summary,
+                    canon_delta,
+                    target_output,
+                    render_lane,
+                    series_style_id,
+                    character_series_binding_id,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_id,
+                    character_id,
+                    draft.character_version_id,
+                    draft.content_mode,
+                    draft.work_id,
+                    draft.series_id,
+                    draft.production_episode_id,
+                    draft.title,
+                    draft.synopsis,
+                    draft.source_story_plan_json,
+                    draft.status,
+                    draft.continuity_summary,
+                    draft.canon_delta,
+                    draft.target_output,
+                    draft.render_lane,
+                    draft.series_style_id,
+                    draft.character_series_binding_id,
+                    now,
+                    now,
+                ),
+            )
+        except aiosqlite.IntegrityError as exc:
+            if draft.production_episode_id is not None and _is_production_episode_link_conflict(exc):
+                raise ComicEpisodeProductionEpisodeConflictError(
+                    draft.production_episode_id
+                ) from exc
+            raise
 
         scene_ids: dict[int, str] = {}
         for scene in sorted(draft.scenes, key=lambda item: item.scene_no):
