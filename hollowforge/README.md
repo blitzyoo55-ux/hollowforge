@@ -44,8 +44,9 @@ Production image generation and orchestration console for Lab451.
   `/production` so operators can open a specific linked work/series/episode
   directly from the shared-core surface.
 - Operator fallback behavior is explicit:
-  `create_from_production` when query context is present, otherwise
-  `open_current`.
+  `create_from_production` and `open_current` are only honored when
+  `production_episode_id` is paired with an explicit `mode`; otherwise the
+  downstream pages stay in manual operator mode.
 - `backend/scripts/launch_production_hub_smoke.py` is the bounded smoke entry
   point for the shared production core plus linked comic and animation tracks.
 

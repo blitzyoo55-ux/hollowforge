@@ -19,8 +19,9 @@ Last updated: 2026-04-13
   editor.
 - `/comic` and `/sequences` now accept query-based production context passed
   from `/production` so operators can land on a specific linked episode state.
-- Route fallback behavior is now explicit: use `create_from_production` when
-  production query context is present, otherwise use `open_current`.
+- Route fallback behavior is now explicit: `create_from_production` and
+  `open_current` are only honored when `production_episode_id` is paired with
+  an explicit `mode`; otherwise the route stays in manual operator mode.
 - The bounded shared-core smoke helper entry point is
   `backend/scripts/launch_production_hub_smoke.py`.
 - The comic MVP scope is currently one character, one one-shot comic episode,
@@ -89,8 +90,8 @@ Last updated: 2026-04-13
    linkage state before dropping into `/comic` or `/sequences`. `/production`
    is now the owner for shared-core creation and episode-aware resume.
 3. `/comic` and `/sequences` now accept query-based production context; when
-   context is present, follow `create_from_production`, otherwise follow
-   `open_current`.
+   `production_episode_id` is paired with an explicit `mode`, follow that
+   downstream handoff. Without both values, stay in manual operator mode.
 4. Use `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md` for the current
    operator path across import, remote render, selected render, handoff export,
    teaser rerun, and stale recovery.
