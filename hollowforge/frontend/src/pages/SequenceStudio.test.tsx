@@ -135,3 +135,56 @@ test('auto-selects the single linked blueprint when mode=open_current', async ()
   expect(await screen.findByRole('button', { name: /Selected/i })).toBeInTheDocument()
   expect(vi.mocked(listSequenceBlueprints)).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })
 })
+
+test('keeps ambiguous open_current in filter-only mode when multiple linked blueprints exist', async () => {
+  vi.mocked(listSequenceBlueprints).mockResolvedValue([
+    {
+      blueprint: {
+        id: 'bp-linked-1',
+        work_id: 'work_demo',
+        series_id: 'series_demo',
+        production_episode_id: 'prod-ep-1',
+        content_mode: 'adult_nsfw',
+        policy_profile_id: 'adult_stage1_v1',
+        character_id: 'char_alpha',
+        location_id: 'location_alpha',
+        beat_grammar_id: 'adult_stage1_v1',
+        target_duration_sec: 36,
+        shot_count: 6,
+        tone: 'tense',
+        executor_policy: 'adult_remote_prod',
+        created_at: '2026-04-11T10:00:00Z',
+        updated_at: '2026-04-11T10:00:00Z',
+      },
+      planned_shots: [],
+    },
+    {
+      blueprint: {
+        id: 'bp-linked-2',
+        work_id: 'work_demo',
+        series_id: 'series_demo',
+        production_episode_id: 'prod-ep-1',
+        content_mode: 'adult_nsfw',
+        policy_profile_id: 'adult_stage1_v1',
+        character_id: 'char_beta',
+        location_id: 'location_beta',
+        beat_grammar_id: 'adult_stage1_v1',
+        target_duration_sec: 36,
+        shot_count: 6,
+        tone: 'tense',
+        executor_policy: 'adult_remote_prod',
+        created_at: '2026-04-11T10:00:00Z',
+        updated_at: '2026-04-11T10:00:00Z',
+      },
+      planned_shots: [],
+    },
+  ])
+
+  renderPage('/sequences?production_episode_id=prod-ep-1&mode=open_current')
+
+  expect(await screen.findByText(/char_alpha in location_alpha/i)).toBeInTheDocument()
+  expect(screen.getByText(/char_beta in location_beta/i)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Selected$/i })).not.toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: /^Inspect$/i })).toHaveLength(2)
+  expect(vi.mocked(listSequenceBlueprints)).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })
+})

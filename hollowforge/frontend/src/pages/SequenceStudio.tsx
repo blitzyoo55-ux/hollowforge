@@ -69,11 +69,13 @@ export default function SequenceStudio() {
   const effectiveSelectedBlueprintId = useMemo(() => {
     const rows = blueprintsQuery.data ?? []
     if (rows.length === 0) return null
+    if (isOpenCurrent && rows.length !== 1 && !selectedBlueprintId) return null
     if (selectedBlueprintId && rows.some((row) => row.blueprint.id === selectedBlueprintId)) {
       return selectedBlueprintId
     }
+    if (isOpenCurrent && rows.length !== 1) return null
     return rows[0].blueprint.id
-  }, [blueprintsQuery.data, selectedBlueprintId])
+  }, [blueprintsQuery.data, isOpenCurrent, selectedBlueprintId])
 
   const effectiveSelectedRunId = useMemo(() => {
     const rows = runsQuery.data ?? []
