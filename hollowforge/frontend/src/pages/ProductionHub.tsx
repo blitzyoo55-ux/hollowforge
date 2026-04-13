@@ -1,8 +1,32 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { AxiosError } from 'axios'
 import { Link } from 'react-router-dom'
 
+import {
+  createProductionEpisode,
+  createProductionSeries,
+  createProductionWork,
+  listProductionEpisodes,
+  listProductionSeries,
+  listProductionWorks,
+  type ProductionEpisodeCreate,
+  type ProductionEpisodeDetailResponse,
+  type ProductionSeriesCreate,
+  type ProductionWorkCreate,
+} from '../api/client'
 import EmptyState from '../components/EmptyState'
-import { listProductionEpisodes, type ProductionEpisodeDetailResponse } from '../api/client'
+import ProductionEpisodeForm from '../components/production/ProductionEpisodeForm'
+import ProductionSeriesForm from '../components/production/ProductionSeriesForm'
+import ProductionWorkForm from '../components/production/ProductionWorkForm'
+import { buildProductionTrackHref } from '../lib/productionEntry'
+import { notify } from '../lib/toast'
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (error instanceof Error && error.message.trim()) return error.message
+  return fallback
+}
 
 function formatDate(value: string): string {
   const parsed = new Date(value)
@@ -12,9 +36,9 @@ function formatDate(value: string): string {
 
 function countLinkedTracks(
   episodes: ProductionEpisodeDetailResponse[],
-  track: 'comic_track' | 'animation_track',
+  track: 'comic_track_count' | 'animation_track_count',
 ): number {
-  return episodes.filter((episode) => episode[track] !== null).length
+  return episodes.filter((episode) => episode[track] > 0).length
 }
 
 function ContentModeBadge({ mode }: { mode: ProductionEpisodeDetailResponse['content_mode'] }) {
@@ -94,15 +118,64 @@ function TrackBoundaryCard({
 }
 
 export default function ProductionHub() {
+  const queryClient = useQueryClient()
+
+  const worksQuery = useQuery({
+    queryKey: ['production-works'],
+    queryFn: () => listProductionWorks(),
+    refetchInterval: 30_000,
+  })
+
+  const seriesQuery = useQuery({
+    queryKey: ['production-series'],
+    queryFn: () => listProductionSeries(),
+    refetchInterval: 30_000,
+  })
+
   const episodesQuery = useQuery({
     queryKey: ['production-episodes'],
     queryFn: () => listProductionEpisodes(),
     refetchInterval: 30_000,
   })
 
+  const createWorkMutation = useMutation({
+    mutationFn: (payload: ProductionWorkCreate) => createProductionWork(payload),
+    onSuccess: async () => {
+      notify.success('Production work created')
+      await queryClient.invalidateQueries({ queryKey: ['production-works'] })
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to create production work'))
+    },
+  })
+
+  const createSeriesMutation = useMutation({
+    mutationFn: (payload: ProductionSeriesCreate) => createProductionSeries(payload),
+    onSuccess: async () => {
+      notify.success('Production series created')
+      await queryClient.invalidateQueries({ queryKey: ['production-series'] })
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to create production series'))
+    },
+  })
+
+  const createEpisodeMutation = useMutation({
+    mutationFn: (payload: ProductionEpisodeCreate) => createProductionEpisode(payload),
+    onSuccess: async () => {
+      notify.success('Production episode created')
+      await queryClient.invalidateQueries({ queryKey: ['production-episodes'] })
+    },
+    onError: (error) => {
+      notify.error(getErrorMessage(error, 'Failed to create production episode'))
+    },
+  })
+
+  const works = worksQuery.data ?? []
+  const series = seriesQuery.data ?? []
   const episodes = episodesQuery.data ?? []
-  const comicLinkedCount = countLinkedTracks(episodes, 'comic_track')
-  const animationLinkedCount = countLinkedTracks(episodes, 'animation_track')
+  const comicLinkedCount = countLinkedTracks(episodes, 'comic_track_count')
+  const animationLinkedCount = countLinkedTracks(episodes, 'animation_track_count')
 
   return (
     <div className="space-y-6">
@@ -128,6 +201,24 @@ export default function ProductionHub() {
             <SummaryCard label="Animation Linked" value={animationLinkedCount} tone="sky" />
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-3">
+        <ProductionWorkForm
+          onSubmit={(payload) => createWorkMutation.mutate(payload)}
+          isSubmitting={createWorkMutation.isPending}
+        />
+        <ProductionSeriesForm
+          works={works}
+          onSubmit={(payload) => createSeriesMutation.mutate(payload)}
+          isSubmitting={createSeriesMutation.isPending}
+        />
+        <ProductionEpisodeForm
+          works={works}
+          series={series}
+          onSubmit={(payload) => createEpisodeMutation.mutate(payload)}
+          isSubmitting={createEpisodeMutation.isPending}
+        />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
@@ -172,96 +263,118 @@ export default function ProductionHub() {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            {episodes.map((episode) => (
-              <article
-                key={episode.id}
-                className="rounded-2xl border border-gray-800 bg-gray-950/70 p-5"
-              >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ContentModeBadge mode={episode.content_mode} />
-                      <span className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-300">
-                        {episode.status}
-                      </span>
-                      {episode.target_outputs.map((target) => (
-                        <span
-                          key={`${episode.id}-${target}`}
-                          className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-200"
-                        >
-                          {target}
+            {episodes.map((episode) => {
+              const comicLinkHref = buildProductionTrackHref('comic', episode)
+              const animationLinkHref = buildProductionTrackHref('animation', episode)
+              const comicLinked = episode.comic_track_count > 0 || episode.comic_track !== null
+              const animationLinked = episode.animation_track_count > 0 || episode.animation_track !== null
+
+              return (
+                <article
+                  key={episode.id}
+                  className="rounded-2xl border border-gray-800 bg-gray-950/70 p-5"
+                >
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ContentModeBadge mode={episode.content_mode} />
+                        <span className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-300">
+                          {episode.status}
                         </span>
-                      ))}
+                        {episode.target_outputs.map((target) => (
+                          <span
+                            key={`${episode.id}-${target}`}
+                            className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-200"
+                          >
+                            {target}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-100">{episode.title}</h3>
+                        <p className="mt-1 max-w-3xl text-sm text-gray-400">{episode.synopsis}</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                        <span>Work: {episode.work_id}</span>
+                        <span>Series: {episode.series_id ?? 'standalone'}</span>
+                        <span>Updated: {formatDate(episode.updated_at)}</span>
+                      </div>
                     </div>
 
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-100">{episode.title}</h3>
-                      <p className="mt-1 max-w-3xl text-sm text-gray-400">{episode.synopsis}</p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-4 text-xs text-gray-500">
-                      <span>Work: {episode.work_id}</span>
-                      <span>Series: {episode.series_id ?? 'standalone'}</span>
-                      <span>Updated: {formatDate(episode.updated_at)}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={comicLinkHref}
+                        className="inline-flex rounded-xl border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 transition hover:border-violet-500/40 hover:text-white"
+                      >
+                        Open Comic Handoff
+                      </Link>
+                      <Link
+                        to={animationLinkHref}
+                        className="inline-flex rounded-xl border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 transition hover:border-violet-500/40 hover:text-white"
+                      >
+                        Open Animation Track
+                      </Link>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      to="/comic"
-                      className="inline-flex rounded-xl border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 transition hover:border-violet-500/40 hover:text-white"
-                    >
-                      Open Comic Handoff
-                    </Link>
-                    <Link
-                      to="/sequences"
-                      className="inline-flex rounded-xl border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 transition hover:border-violet-500/40 hover:text-white"
-                    >
-                      Open Animation Track
-                    </Link>
+                  {(episode.comic_track_count > 1 || episode.animation_track_count > 1) && (
+                    <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                      {episode.comic_track_count > 1 && (
+                        <p>Comic track count is {episode.comic_track_count}; review duplicate links before final handoff.</p>
+                      )}
+                      {episode.animation_track_count > 1 && (
+                        <p>Animation track count is {episode.animation_track_count}; review duplicate links before final handoff.</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                    <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-gray-100">Comic Track</h4>
+                        <TrackStatusBadge linked={comicLinked} />
+                      </div>
+                      {episode.comic_track ? (
+                        <div className="mt-3 space-y-1 text-sm text-gray-300">
+                          <p>Status: {episode.comic_track.status}</p>
+                          <p>Target Output: {episode.comic_track.target_output}</p>
+                          <p>Character: {episode.comic_track.character_id}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-gray-400">
+                          {episode.comic_track_count > 0
+                            ? `No single comic handoff is selected (${episode.comic_track_count} linked).`
+                            : 'No comic handoff episode is linked yet.'}
+                        </p>
+                      )}
+                    </section>
+
+                    <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-gray-100">Animation Track</h4>
+                        <TrackStatusBadge linked={animationLinked} />
+                      </div>
+                      {episode.animation_track ? (
+                        <div className="mt-3 space-y-1 text-sm text-gray-300">
+                          <p>Content Mode: {episode.animation_track.content_mode}</p>
+                          <p>Policy Profile: {episode.animation_track.policy_profile_id}</p>
+                          <p>Shot Count: {episode.animation_track.shot_count}</p>
+                          <p>Executor Policy: {episode.animation_track.executor_policy}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-gray-400">
+                          {episode.animation_track_count > 0
+                            ? `No single animation blueprint is selected (${episode.animation_track_count} linked).`
+                            : 'No animation-track blueprint is linked yet.'}
+                        </p>
+                      )}
+                    </section>
                   </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                  <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-semibold text-gray-100">Comic Track</h4>
-                      <TrackStatusBadge linked={episode.comic_track !== null} />
-                    </div>
-                    {episode.comic_track ? (
-                      <div className="mt-3 space-y-1 text-sm text-gray-300">
-                        <p>Status: {episode.comic_track.status}</p>
-                        <p>Target Output: {episode.comic_track.target_output}</p>
-                        <p>Character: {episode.comic_track.character_id}</p>
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-gray-400">
-                        No comic handoff episode is linked yet.
-                      </p>
-                    )}
-                  </section>
-
-                  <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-semibold text-gray-100">Animation Track</h4>
-                      <TrackStatusBadge linked={episode.animation_track !== null} />
-                    </div>
-                    {episode.animation_track ? (
-                      <div className="mt-3 space-y-1 text-sm text-gray-300">
-                        <p>Content Mode: {episode.animation_track.content_mode}</p>
-                        <p>Policy Profile: {episode.animation_track.policy_profile_id}</p>
-                        <p>Shot Count: {episode.animation_track.shot_count}</p>
-                        <p>Executor Policy: {episode.animation_track.executor_policy}</p>
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-gray-400">
-                        No animation-track blueprint is linked yet.
-                      </p>
-                    )}
-                  </section>
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         )}
       </section>
