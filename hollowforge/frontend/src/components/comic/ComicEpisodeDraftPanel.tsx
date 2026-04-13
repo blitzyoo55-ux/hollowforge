@@ -11,6 +11,12 @@ interface ComicEpisodeDraftPanelProps {
   title: string
   panelMultiplier: number
   approvedPlanJson: string
+  productionContext?: {
+    productionEpisodeId: string
+    workId: string
+    seriesId: string | null
+    contentMode: string
+  } | null
   canImport: boolean
   importValidationMessage: string | null
   isLoadingCatalog: boolean
@@ -31,6 +37,7 @@ export default function ComicEpisodeDraftPanel({
   title,
   panelMultiplier,
   approvedPlanJson,
+  productionContext = null,
   canImport,
   importValidationMessage,
   isLoadingCatalog,
@@ -125,6 +132,18 @@ export default function ComicEpisodeDraftPanel({
           className="min-h-[240px] w-full rounded-2xl border border-gray-700 bg-gray-950/80 px-4 py-3 font-mono text-xs leading-6 text-gray-100 outline-none transition focus:border-violet-500/50"
         />
       </label>
+
+      {productionContext && (
+        <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-100">
+          <p className="font-semibold uppercase tracking-wide text-cyan-200">Production Episode Context</p>
+          <div className="mt-1 space-y-1 text-cyan-50/90">
+            <p>Production Episode: {productionContext.productionEpisodeId}</p>
+            <p>Work: {productionContext.workId}</p>
+            <p>Series: {productionContext.seriesId ?? 'none'}</p>
+            <p>Content Mode: {productionContext.contentMode}</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3 text-xs text-gray-400">

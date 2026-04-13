@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import {
   assembleComicEpisodePages,
   exportComicEpisodePages,
   generateComicPanelDialogues,
+  getComicEpisode,
   getComicCharacterVersions,
   getComicCharacters,
   getCurrentAnimationShot,
+  getProductionEpisode,
   getComicPanelRenderJobs,
   importComicStoryPlan,
   launchAnimationPreset,
+  listComicEpisodes,
   queueComicPanelRenders,
   reconcileStaleAnimationJobs,
   selectComicPanelRenderAsset,
@@ -257,6 +261,13 @@ interface ComicPanelRemoteJobHint {
   pendingRemoteJobCount: number
 }
 
+interface ComicProductionContext {
+  productionEpisodeId: string
+  workId: string
+  seriesId: string | null
+  contentMode: string
+}
+
 function mergeRemoteJobOutputsIntoAssets(
   assets: ComicPanelRenderAssetResponse[],
   renderJobs: ComicRenderJobResponse[],
@@ -488,6 +499,7 @@ function parseApprovedPlanJson(approvedPlanJson: string): {
 
 export default function ComicStudio() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
   const [selectedCharacterVersionId, setSelectedCharacterVersionId] = useState<string | null>(null)
   const [title, setTitle] = useState('Comic Episode Draft')
@@ -502,6 +514,7 @@ export default function ComicStudio() {
   const [layoutTemplateId, setLayoutTemplateId] = useState<ComicPageLayoutTemplateId>('jp_2x2_v1')
   const [manuscriptProfileId, setManuscriptProfileId] = useState<ComicManuscriptProfileId>('jp_manga_rightbound_v1')
   const [exportResult, setExportResult] = useState<ComicPageExportResponse | null>(null)
+  const [productionContext, setProductionContext] = useState<ComicProductionContext | null>(null)
   const [latestAnimationReconciliation, setLatestAnimationReconciliation] = useState<AnimationReconciliationResponse | null>(null)
   const [latestLaunchedTeaserLaunch, setLatestLaunchedTeaserLaunch] = useState<{
     generationId: string
@@ -513,6 +526,11 @@ export default function ComicStudio() {
     () => parseApprovedPlanJson(approvedPlanJson),
     [approvedPlanJson],
   )
+  const productionEpisodeId = searchParams.get('production_episode_id')?.trim() || null
+  const mode = searchParams.get('mode')
+  const hasProductionContext = Boolean(productionEpisodeId)
+  const isCreateFromProduction = hasProductionContext && mode === 'create_from_production'
+  const isOpenCurrent = hasProductionContext && mode === 'open_current'
 
   const charactersQuery = useQuery({
     queryKey: ['comic-characters'],
@@ -526,6 +544,37 @@ export default function ComicStudio() {
     queryKey: ['comic-character-versions', activeCharacterId],
     queryFn: () => getComicCharacterVersions(activeCharacterId),
     enabled: Boolean(activeCharacterId),
+    refetchOnWindowFocus: false,
+  })
+
+  const productionEpisodeQuery = useQuery({
+    queryKey: ['comic-production-episode', productionEpisodeId],
+    queryFn: () => getProductionEpisode(productionEpisodeId as string),
+    enabled: isCreateFromProduction,
+    refetchOnWindowFocus: false,
+  })
+
+  const linkedEpisodesQuery = useQuery({
+    queryKey: ['comic-episodes', productionEpisodeId],
+    queryFn: () =>
+      hasProductionContext && productionEpisodeId
+        ? listComicEpisodes({ production_episode_id: productionEpisodeId })
+        : listComicEpisodes(),
+    enabled: Boolean(productionEpisodeId),
+    refetchOnWindowFocus: false,
+  })
+
+  const autoOpenEpisodeId = useMemo(() => {
+    if (!isOpenCurrent) return null
+    const rows = linkedEpisodesQuery.data ?? []
+    if (rows.length !== 1) return null
+    return rows[0].episode.id
+  }, [isOpenCurrent, linkedEpisodesQuery.data])
+
+  const linkedEpisodeDetailQuery = useQuery({
+    queryKey: ['comic-episode', autoOpenEpisodeId],
+    queryFn: () => getComicEpisode(autoOpenEpisodeId as string),
+    enabled: Boolean(autoOpenEpisodeId),
     refetchOnWindowFocus: false,
   })
 
@@ -618,6 +667,9 @@ export default function ComicStudio() {
         character_version_id: effectiveCharacterVersionId,
         title,
         panel_multiplier: panelMultiplier,
+        work_id: productionContext?.workId ?? null,
+        series_id: productionContext?.seriesId ?? null,
+        production_episode_id: productionContext?.productionEpisodeId ?? null,
       })
     },
     onSuccess: (episodeDetail) => {
@@ -647,6 +699,38 @@ export default function ComicStudio() {
     activeEpisodeIdRef.current = currentEpisodeId
     activeEpisodePanelIdsRef.current = new Set(allPanels.map((panel) => panel.id))
   }, [allPanels, currentEpisodeId])
+
+  useEffect(() => {
+    if (!isCreateFromProduction) {
+      setProductionContext(null)
+      return
+    }
+    const episode = productionEpisodeQuery.data
+    if (!episode) return
+    setProductionContext({
+      productionEpisodeId: episode.id,
+      workId: episode.work_id,
+      seriesId: episode.series_id,
+      contentMode: episode.content_mode,
+    })
+    setTitle(episode.title)
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+
+  useEffect(() => {
+    if (!linkedEpisodeDetailQuery.data) return
+    const episodeDetail = linkedEpisodeDetailQuery.data
+    activeEpisodeIdRef.current = episodeDetail.episode.id
+    activeEpisodePanelIdsRef.current = new Set(
+      episodeDetail.scenes.flatMap((sceneDetail) => sceneDetail.panels.map((panel) => panel.id)),
+    )
+    setCurrentEpisode(episodeDetail)
+    setEpisodeCharacterVersion(null)
+    setSelectedPanelId(firstPanelId(episodeDetail))
+    setPanelAssets({})
+    setPanelQueueResponses({})
+    setPanelDialogues({})
+    setExportResult(null)
+  }, [linkedEpisodeDetailQuery.data])
 
   const queueRenderMutation = useMutation({
     mutationFn: ({
@@ -1075,6 +1159,7 @@ export default function ComicStudio() {
           title={title}
           panelMultiplier={panelMultiplier}
           approvedPlanJson={approvedPlanJson}
+          productionContext={productionContext}
           canImport={canImportStoryPlan}
           importValidationMessage={importValidationMessage}
           isLoadingCatalog={charactersQuery.isLoading || draftCharacterVersionsQuery.isLoading}

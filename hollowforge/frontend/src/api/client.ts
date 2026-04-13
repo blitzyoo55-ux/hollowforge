@@ -1122,6 +1122,9 @@ export interface ComicStoryPlanImportRequest {
   character_version_id: string
   title: string
   panel_multiplier?: number
+  work_id?: string | null
+  series_id?: string | null
+  production_episode_id?: string | null
 }
 
 export interface ComicPanelRenderQueueRequest {
@@ -1673,6 +1676,13 @@ export async function listComicEpisodes(query: {
   const res = await api.get<ComicEpisodeSummaryResponse[]>('/comic/episodes', {
     params: query,
   })
+  return res.data
+}
+
+export async function getComicEpisode(
+  episodeId: string,
+): Promise<ComicEpisodeDetailResponse> {
+  const res = await api.get<ComicEpisodeDetailResponse>(`/comic/episodes/${episodeId}`)
   return res.data
 }
 

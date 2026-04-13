@@ -8,11 +8,14 @@ import {
   assembleComicEpisodePages,
   exportComicEpisodePages,
   generateComicPanelDialogues,
+  getComicEpisode,
   getComicCharacterVersions,
   getComicCharacters,
   getComicPanelRenderJobs,
+  getProductionEpisode,
   importComicStoryPlan,
   launchAnimationPreset,
+  listComicEpisodes,
   queueComicPanelRenders,
   reconcileStaleAnimationJobs,
   selectComicPanelRenderAsset,
@@ -24,6 +27,7 @@ import type {
   StoryPlannerPlanResponse,
   ComicCharacterVersionResponse,
   ComicEpisodeDetailResponse,
+  ProductionEpisodeDetailResponse,
   AnimationShotVariantResponse,
 } from '../api/client'
 import ComicStudio from './ComicStudio'
@@ -31,6 +35,9 @@ import ComicStudio from './ComicStudio'
 vi.mock('../api/client', () => ({
   getComicCharacters: vi.fn().mockResolvedValue([]),
   getComicCharacterVersions: vi.fn().mockResolvedValue([]),
+  getComicEpisode: vi.fn(),
+  listComicEpisodes: vi.fn().mockResolvedValue([]),
+  getProductionEpisode: vi.fn(),
   getComicPanelRenderJobs: vi.fn().mockResolvedValue([]),
   importComicStoryPlan: vi.fn(),
   getCurrentAnimationShot: vi.fn().mockResolvedValue(null),
@@ -50,7 +57,7 @@ vi.mock('../lib/toast', () => ({
   },
 }))
 
-function renderWithProviders(ui: ReactElement) {
+function renderWithProviders(ui: ReactElement, initialPath = '/comic') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -61,7 +68,7 @@ function renderWithProviders(ui: ReactElement) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[initialPath]}>{ui}</MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -400,6 +407,29 @@ function fillApprovedPlanJson() {
   })
 }
 
+function buildProductionEpisode(
+  overrides: Partial<ProductionEpisodeDetailResponse> = {},
+): ProductionEpisodeDetailResponse {
+  return {
+    id: 'prod-ep-1',
+    work_id: 'work_demo',
+    series_id: 'series_demo',
+    title: 'Production Intake Episode',
+    synopsis: 'Production episode synopsis.',
+    content_mode: 'adult_nsfw',
+    target_outputs: ['comic'],
+    continuity_summary: null,
+    status: 'draft',
+    comic_track: null,
+    animation_track: null,
+    comic_track_count: 0,
+    animation_track_count: 0,
+    created_at: '2026-04-11T10:00:00Z',
+    updated_at: '2026-04-11T10:00:00Z',
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getComicCharacters).mockResolvedValue([
@@ -429,6 +459,9 @@ beforeEach(() => {
     return [buildCharacterVersion('charver-1', 'char-1', 'Still v1')]
   })
   vi.mocked(importComicStoryPlan).mockResolvedValue(buildEpisodeDetail())
+  vi.mocked(getComicEpisode).mockResolvedValue(buildEpisodeDetail())
+  vi.mocked(listComicEpisodes).mockResolvedValue([])
+  vi.mocked(getProductionEpisode).mockResolvedValue(buildProductionEpisode())
   vi.mocked(apiClient.getCurrentAnimationShot).mockResolvedValue(buildCurrentAnimationShot())
   vi.mocked(launchAnimationPreset).mockResolvedValue({
     preset: {
@@ -641,6 +674,77 @@ test('shows selected state only after explicit asset selection without blocking 
   expect(screen.getByRole('button', { name: /Generate Dialogues/i })).toBeEnabled()
   expect(screen.getByRole('button', { name: /Assemble Pages/i })).toBeEnabled()
   expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
+})
+
+test('create_from_production shows linked intake context, prefill title, and forwards production linkage on import', async () => {
+  vi.mocked(getProductionEpisode).mockResolvedValue(
+    buildProductionEpisode({
+      id: 'prod-ep-1',
+      work_id: 'work_alpha',
+      series_id: 'series_alpha',
+      title: 'Production Episode One',
+      content_mode: 'adult_nsfw',
+    }),
+  )
+
+  renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-1&mode=create_from_production')
+
+  expect(await screen.findByText(/Production Episode Context/i)).toBeInTheDocument()
+  expect(screen.getByText(/Production Episode:\s*prod-ep-1/i)).toBeInTheDocument()
+  expect(screen.getByText(/Work:\s*work_alpha/i)).toBeInTheDocument()
+  expect(screen.getByText(/Series:\s*series_alpha/i)).toBeInTheDocument()
+  await waitFor(() => {
+    expect(screen.getByLabelText(/Episode Title/i)).toHaveValue('Production Episode One')
+  })
+
+  fillApprovedPlanJson()
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Import Story Plan/i })).toBeEnabled()
+  })
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  await waitFor(() => {
+    expect(importComicStoryPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        work_id: 'work_alpha',
+        series_id: 'series_alpha',
+        production_episode_id: 'prod-ep-1',
+        title: 'Production Episode One',
+      }),
+    )
+  })
+})
+
+test('open_current auto-loads the single linked comic episode detail', async () => {
+  vi.mocked(listComicEpisodes).mockResolvedValue([
+    {
+      episode: {
+        ...buildEpisodeDetail().episode,
+        id: 'ep-linked-1',
+      },
+      scene_count: 1,
+      page_count: 0,
+    },
+  ])
+  vi.mocked(getComicEpisode).mockResolvedValue({
+    ...buildEpisodeDetail(),
+    episode: {
+      ...buildEpisodeDetail().episode,
+      id: 'ep-linked-1',
+      title: 'Linked Imported Episode',
+    },
+  })
+
+  renderWithProviders(<ComicStudio />, '/comic?production_episode_id=prod-ep-1&mode=open_current')
+
+  await waitFor(() => {
+    expect(listComicEpisodes).toHaveBeenCalledWith({ production_episode_id: 'prod-ep-1' })
+  })
+  await waitFor(() => {
+    expect(getComicEpisode).toHaveBeenCalledWith('ep-linked-1')
+  })
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+  expect(screen.getAllByText(/Linked Imported Episode/i).length).toBeGreaterThan(0)
 })
 
 test('teaser ops renders current shot and recent variants for the selected render', async () => {
