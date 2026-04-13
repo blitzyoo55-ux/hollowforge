@@ -6,9 +6,11 @@ Production image generation and orchestration console for Lab451.
 
 - stack: FastAPI + React 19 + Tailwind v4 + SQLite + ComfyUI
 - primary access: `https://sec.hlfglll.com` behind Cloudflare Zero Trust
+- current phase: production hub core + boundary-first comic and animation tracks
 - local backend entrypoint: `backend/run_local_backend.sh`
 - local animation worker entrypoint: `lab451-animation-worker/run_local_animation_worker.sh`
 - operator UI workspace: `frontend/`
+- production hub frontend route: `/production`
 - comic backend routes: `backend/app/routes/comic.py`
 - comic manuscript profile API: `GET /api/v1/comic/manuscript-profiles`
 - comic frontend route: `/comic` with `/comic-studio` kept as a compatibility alias
@@ -16,6 +18,19 @@ Production image generation and orchestration console for Lab451.
 - deploy/runtime assets: `deploy/`
   - launchd templates now include `com.mori.hollowforge.backend` and
     `com.mori.hollowforge.animation-worker`
+
+## Production Boundary
+
+- `/production` is now the shared production-core surface for work, series, and
+  episode state.
+- `/comic` should be read as `Comic Handoff`, not as the final manga editor.
+  HollowForge packages review assets, dialogue drafts, page assembly, and
+  export inputs before CLIP STUDIO EX finishing.
+- `/sequences` should be read as `Animation Track`, not as the final animation
+  editor. HollowForge plans blueprints, launches preview runs, and packages
+  review outputs before external editorial finishing.
+- `backend/scripts/launch_production_hub_smoke.py` is the bounded smoke entry
+  point for the shared production core plus linked comic and animation tracks.
 
 ## Canonical Re-entry Docs
 
@@ -45,6 +60,8 @@ Production image generation and orchestration console for Lab451.
 
 ```bash
 cd backend
+./.venv/bin/python -m pytest -q tests/test_launch_production_hub_smoke.py
+./.venv/bin/python scripts/launch_production_hub_smoke.py
 ./.venv/bin/python -m pytest tests/test_comic_schema.py tests/test_comic_repository.py tests/test_comic_story_bridge_service.py tests/test_comic_render_service.py tests/test_comic_dialogue_service.py tests/test_comic_page_assembly_service.py tests/test_comic_routes.py -q
 ./.venv/bin/python -m pytest -q tests/test_comic_remote_render_scripts.py
 ./run_local_backend.sh
@@ -90,6 +107,11 @@ cd backend
 
 ## Comic MVP Entry Points
 
+- backend production hub routes:
+  `GET /api/v1/production/episodes`,
+  `POST /api/v1/production/works`,
+  `POST /api/v1/production/series`,
+  `POST /api/v1/production/episodes`
 - backend import route: `POST /api/v1/comic/episodes/import-story-plan`
 - backend render queue route:
   `POST /api/v1/comic/panels/{panel_id}/queue-renders?candidate_count=3`
@@ -102,7 +124,9 @@ cd backend
 - backend manuscript profile route:
   `GET /api/v1/comic/manuscript-profiles`
 - backend detail route: `GET /api/v1/comic/episodes/{episode_id}`
-- frontend studio route: `/comic` with manuscript profile selection
+- frontend production route: `/production`
+- frontend comic handoff route: `/comic` with manuscript profile selection
+- frontend animation track route: `/sequences`
 
 ## Production Hand-off Commands
 

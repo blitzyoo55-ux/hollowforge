@@ -1474,9 +1474,75 @@ export interface SequenceRunDetailResponse {
   rough_cut_candidates: SequenceRoughCutCandidateResponse[]
 }
 
+export type ProductionFormatFamily = 'comic' | 'animation' | 'mixed'
+export type ProductionDeliveryMode = 'oneshot' | 'serial' | 'anthology'
+export type ProductionTargetOutput = 'comic' | 'animation'
+
+export interface ProductionWorkResponse {
+  id: string
+  title: string
+  format_family: ProductionFormatFamily
+  default_content_mode: SequenceContentMode
+  status: string
+  canon_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionSeriesResponse {
+  id: string
+  work_id: string
+  title: string
+  delivery_mode: ProductionDeliveryMode
+  audience_mode: SequenceContentMode
+  visual_identity_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionComicTrackLinkResponse {
+  id: string
+  status: string
+  target_output: ComicTargetOutput
+  character_id: string
+}
+
+export interface ProductionAnimationTrackLinkResponse {
+  id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  shot_count: number
+  executor_policy: string
+}
+
+export interface ProductionEpisodeDetailResponse {
+  id: string
+  work_id: string
+  series_id: string | null
+  title: string
+  synopsis: string
+  content_mode: SequenceContentMode
+  target_outputs: ProductionTargetOutput[]
+  continuity_summary: string | null
+  status: string
+  comic_track: ProductionComicTrackLinkResponse | null
+  animation_track: ProductionAnimationTrackLinkResponse | null
+  created_at: string
+  updated_at: string
+}
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
+
+export async function listProductionEpisodes(query: {
+  work_id?: string
+} = {}): Promise<ProductionEpisodeDetailResponse[]> {
+  const res = await api.get<ProductionEpisodeDetailResponse[]>('/production/episodes', {
+    params: query,
+  })
+  return res.data
+}
 
 export async function createSequenceBlueprint(
   data: SequenceBlueprintCreate,
