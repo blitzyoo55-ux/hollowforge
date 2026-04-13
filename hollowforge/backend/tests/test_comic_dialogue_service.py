@@ -14,7 +14,12 @@ def _now() -> str:
     return "2026-04-04T00:00:00+00:00"
 
 
-async def _seed_panel(temp_db, *, involved_character_ids: list[str] | None = None) -> str:
+async def _seed_panel(
+    temp_db,
+    *,
+    involved_character_ids: list[str] | None = None,
+    content_mode: str = "all_ages",
+) -> str:
     if involved_character_ids is None:
         involved_character_ids = ["char_kaede_ren"]
 
@@ -24,6 +29,7 @@ async def _seed_panel(temp_db, *, involved_character_ids: list[str] | None = Non
             character_version_id="charver_kaede_ren_still_v1",
             title="After Hours Entry",
             synopsis="Kaede studies a sealed invitation after closing.",
+            content_mode=content_mode,
             target_output="oneshot_manga",
         ),
         episode_id="comic_ep_dialogue_test",
@@ -105,6 +111,7 @@ async def test_generate_panel_dialogues_uses_local_llm_profile_first_and_decodes
     panel_id = await _seed_panel(
         temp_db,
         involved_character_ids=["char_kaede_ren", "char_imani_adebayo"],
+        content_mode="adult_nsfw",
     )
 
     call_state = {"called": False}
@@ -157,10 +164,52 @@ async def test_generate_panel_dialogues_uses_local_llm_profile_first_and_decodes
 
 
 @pytest.mark.asyncio
-async def test_generate_panel_dialogues_persists_three_separate_rows(
+async def test_generate_panel_dialogues_uses_safe_profile_for_all_ages(
     temp_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     panel_id = await _seed_panel(temp_db)
+    recorder: dict[str, object] = {}
+
+    def _fake_get_prompt_provider_profile(profile_id: str, *, content_mode=None):
+        recorder["profile_id"] = profile_id
+        recorder["content_mode"] = content_mode
+        return {"id": profile_id}
+
+    async def _local_llm_helper(*, panel, scene, prompt_provider_profile, existing_dialogues):
+        return [
+            {
+                "type": "speech",
+                "speaker_character_id": "char_kaede_ren",
+                "text": "Keep this line safe.",
+                "tone": "measured",
+                "priority": 10,
+                "balloon_style_hint": "rounded",
+                "placement_hint": "upper left",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.services.comic_dialogue_service.get_prompt_provider_profile",
+        _fake_get_prompt_provider_profile,
+    )
+    monkeypatch.setattr(
+        "app.services.comic_dialogue_service._draft_panel_dialogue_payloads_with_local_llm_profile",
+        _local_llm_helper,
+        raising=False,
+    )
+
+    response = await generate_panel_dialogues(panel_id=panel_id)
+
+    assert recorder["profile_id"] == "safe_hosted_grok"
+    assert recorder["content_mode"] == "all_ages"
+    assert response.prompt_provider_profile_id == "safe_hosted_grok"
+
+
+@pytest.mark.asyncio
+async def test_generate_panel_dialogues_persists_three_separate_rows(
+    temp_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    panel_id = await _seed_panel(temp_db, content_mode="adult_nsfw")
 
     monkeypatch.setattr(
         "app.services.comic_dialogue_service._draft_panel_dialogue_payloads",
@@ -227,7 +276,7 @@ async def test_generate_panel_dialogues_persists_three_separate_rows(
 async def test_generate_panel_dialogues_overwrite_existing_still_uses_local_llm_first(
     temp_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    panel_id = await _seed_panel(temp_db)
+    panel_id = await _seed_panel(temp_db, content_mode="adult_nsfw")
 
     with sqlite3.connect(temp_db) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -314,7 +363,7 @@ async def test_generate_panel_dialogues_overwrite_existing_still_uses_local_llm_
 async def test_generate_panel_dialogues_invalid_local_payload_falls_back_without_losing_existing_rows(
     temp_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    panel_id = await _seed_panel(temp_db)
+    panel_id = await _seed_panel(temp_db, content_mode="adult_nsfw")
 
     with sqlite3.connect(temp_db) as conn:
         conn.execute("PRAGMA foreign_keys = ON")

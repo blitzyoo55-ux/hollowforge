@@ -1340,6 +1340,24 @@ def test_import_story_plan_route_persists_explicit_v2_episode_fields(temp_db) ->
     assert body["episode"]["character_series_binding_id"] == "camila_pilot_binding_v1"
 
 
+def test_import_story_plan_maps_lane_to_content_mode(temp_db) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Night Intake Adult Lane",
+            "panel_multiplier": 2,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["episode"]["content_mode"] == "adult_nsfw"
+
+
 def test_import_story_plan_route_rejects_explicit_v2_missing_required_fields(
     temp_db,
 ) -> None:

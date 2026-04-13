@@ -156,6 +156,10 @@ class GenerationService:
     """Manages the generation queue and background processing worker."""
 
     def __init__(self, client: ComfyUIClient | None = None) -> None:
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
         self._generation_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()
         self._interactive_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()
         self._favorite_backlog_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()

@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import httpx
 import numpy as np
@@ -108,7 +108,7 @@ def _merge_request_json_payload(
     incoming: dict[str, Any] | None,
 ) -> str | None:
     if incoming is None:
-        return cast(str | None, existing_raw)
+        return cast(Optional[str], existing_raw)
 
     merged = _parse_json_object(existing_raw)
     for key, value in incoming.items():
@@ -423,7 +423,7 @@ async def _load_generation_created_at_for_source(source_id: str) -> str | None:
         row = await cursor.fetchone()
     if row is None:
         return None
-    return cast(str | None, row["created_at"])
+    return cast(Optional[str], row["created_at"])
 
 
 async def _load_render_jobs_for_source(source_id: str) -> list[dict[str, Any]]:
@@ -1601,8 +1601,8 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
             series_style_id=series_style_id,
             binding_id=binding_id,
             panel_type=str(context.get("panel_type") or "").strip().lower(),
-            location_label=cast(str | None, context.get("location_label")),
-            continuity_notes=cast(str | None, context.get("scene_continuity_notes")),
+            location_label=cast(Optional[str], context.get("location_label")),
+            continuity_notes=cast(Optional[str], context.get("scene_continuity_notes")),
             role_profile=profile,
         )
         execution_params = contract.execution_params
@@ -1709,11 +1709,11 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
     negative_prompt = context.get("negative_prompt")
     raw_loras = [
         cast(dict[str, Any], item)
-        for item in _decode_json_list(cast(str | None, context.get("loras")))
+        for item in _decode_json_list(cast(Optional[str], context.get("loras")))
     ]
     filtered_loras = filter_profile_loras(raw_loras, lora_mode=profile.lora_mode)
     merged_negative_prompt = merge_negative_prompt(
-        cast(str | None, negative_prompt),
+        cast(Optional[str], negative_prompt),
         profile.negative_prompt_append,
     )
     return GenerationCreate(
@@ -2419,12 +2419,12 @@ async def materialize_remote_render_job_callback(
                     identity_notes: list[str] = []
                     if identity_assessment_payload is not None:
                         identity_score, identity_notes = _assess_panel_candidate_identity(
-                            panel_type=cast(str | None, panel_row.get("panel_type")),
+                            panel_type=cast(Optional[str], panel_row.get("panel_type")),
                             assessment_payload=identity_assessment_payload,
                         )
 
                     asset_quality_score, blended_notes = _blend_candidate_selection_score(
-                        panel_type=cast(str | None, panel_row.get("panel_type")),
+                        panel_type=cast(Optional[str], panel_row.get("panel_type")),
                         quality_score=readability_quality_score,
                         quality_notes=quality_notes,
                         identity_score=identity_score,
