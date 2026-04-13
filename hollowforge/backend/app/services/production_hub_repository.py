@@ -101,6 +101,38 @@ async def _resolve_animation_track(
     return ProductionAnimationTrackLinkResponse.model_validate(dict(row))
 
 
+async def _count_comic_tracks(production_episode_id: str) -> int:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*) AS track_count
+            FROM comic_episodes
+            WHERE production_episode_id = ?
+            """,
+            (production_episode_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return 0
+    return int(cast(dict[str, Any], row)["track_count"])
+
+
+async def _count_animation_tracks(production_episode_id: str) -> int:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*) AS track_count
+            FROM sequence_blueprints
+            WHERE production_episode_id = ?
+            """,
+            (production_episode_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return 0
+    return int(cast(dict[str, Any], row)["track_count"])
+
+
 async def _get_work_row(work_id: str) -> Optional[dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM works WHERE id = ?", (work_id,))
@@ -120,6 +152,7 @@ async def _get_series_row(series_id: str) -> Optional[dict[str, Any]]:
 
 
 async def create_work(payload: ProductionWorkCreate) -> ProductionWorkResponse:
+    work_id = payload.id or str(uuid.uuid4())
     now = _now_iso()
     async with get_db() as db:
         await db.execute(
@@ -136,7 +169,7 @@ async def create_work(payload: ProductionWorkCreate) -> ProductionWorkResponse:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                payload.id,
+                work_id,
                 payload.title,
                 payload.format_family,
                 payload.default_content_mode,
@@ -147,7 +180,7 @@ async def create_work(payload: ProductionWorkCreate) -> ProductionWorkResponse:
             ),
         )
         await db.commit()
-        cursor = await db.execute("SELECT * FROM works WHERE id = ?", (payload.id,))
+        cursor = await db.execute("SELECT * FROM works WHERE id = ?", (work_id,))
         row = await cursor.fetchone()
     return _work_response(cast(dict[str, Any], row))
 
@@ -157,6 +190,7 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
     if work_row is None:
         raise ValueError(f"Unknown production work: {payload.work_id}")
 
+    series_id = payload.id or str(uuid.uuid4())
     now = _now_iso()
     async with get_db() as db:
         await db.execute(
@@ -173,7 +207,7 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                payload.id,
+                series_id,
                 payload.work_id,
                 payload.title,
                 payload.delivery_mode,
@@ -184,9 +218,44 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
             ),
         )
         await db.commit()
-        cursor = await db.execute("SELECT * FROM series WHERE id = ?", (payload.id,))
+        cursor = await db.execute("SELECT * FROM series WHERE id = ?", (series_id,))
         row = await cursor.fetchone()
     return _series_response(cast(dict[str, Any], row))
+
+
+async def list_works() -> list[ProductionWorkResponse]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT *
+            FROM works
+            ORDER BY created_at DESC, id DESC
+            """
+        )
+        rows = await cursor.fetchall()
+    return [_work_response(cast(dict[str, Any], row)) for row in rows]
+
+
+async def list_series(*, work_id: Optional[str] = None) -> list[ProductionSeriesResponse]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if work_id is not None:
+        clauses.append("work_id = ?")
+        params.append(work_id)
+    where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT *
+            FROM series
+            {where_clause}
+            ORDER BY created_at DESC, id DESC
+            """,
+            params,
+        )
+        rows = await cursor.fetchall()
+    return [_series_response(cast(dict[str, Any], row)) for row in rows]
 
 
 async def create_production_episode(
@@ -261,6 +330,8 @@ async def get_production_episode_detail(
     payload = _episode_payload(cast(dict[str, Any], row))
     payload["comic_track"] = await _resolve_comic_track(production_episode_id)
     payload["animation_track"] = await _resolve_animation_track(production_episode_id)
+    payload["comic_track_count"] = await _count_comic_tracks(production_episode_id)
+    payload["animation_track_count"] = await _count_animation_tracks(production_episode_id)
     return ProductionEpisodeDetailResponse.model_validate(payload)
 
 
@@ -293,5 +364,7 @@ async def list_production_episodes(
         production_episode_id = cast(str, payload["id"])
         payload["comic_track"] = await _resolve_comic_track(production_episode_id)
         payload["animation_track"] = await _resolve_animation_track(production_episode_id)
+        payload["comic_track_count"] = await _count_comic_tracks(production_episode_id)
+        payload["animation_track_count"] = await _count_animation_tracks(production_episode_id)
         details.append(ProductionEpisodeDetailResponse.model_validate(payload))
     return details

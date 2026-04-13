@@ -19,6 +19,8 @@ from app.services.production_hub_repository import (
     create_series,
     create_work,
     get_production_episode_detail,
+    list_series,
+    list_works,
     list_production_episodes,
 )
 
@@ -43,12 +45,24 @@ async def create_work_endpoint(payload: ProductionWorkCreate) -> ProductionWorkR
         raise _http_error_from_value_error(exc) from exc
 
 
+@router.get("/works", response_model=list[ProductionWorkResponse])
+async def list_works_endpoint() -> list[ProductionWorkResponse]:
+    return await list_works()
+
+
 @router.post("/series", response_model=ProductionSeriesResponse, status_code=status.HTTP_201_CREATED)
 async def create_series_endpoint(payload: ProductionSeriesCreate) -> ProductionSeriesResponse:
     try:
         return await create_series(payload)
     except ValueError as exc:
         raise _http_error_from_value_error(exc) from exc
+
+
+@router.get("/series", response_model=list[ProductionSeriesResponse])
+async def list_series_endpoint(
+    work_id: Optional[str] = Query(default=None),
+) -> list[ProductionSeriesResponse]:
+    return await list_series(work_id=work_id)
 
 
 @router.post(
