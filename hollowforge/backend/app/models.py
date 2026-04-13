@@ -692,7 +692,7 @@ class SequenceRunCreateRequest(BaseModel):
 
 
 class ProductionWorkCreate(BaseModel):
-    id: str = Field(min_length=1, max_length=120)
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     format_family: ProductionFormatFamily
     default_content_mode: SequenceContentMode
@@ -701,7 +701,7 @@ class ProductionWorkCreate(BaseModel):
 
 
 class ProductionSeriesCreate(BaseModel):
-    id: str = Field(min_length=1, max_length=120)
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     work_id: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     delivery_mode: ProductionDeliveryMode
@@ -771,6 +771,8 @@ class ProductionEpisodeDetailResponse(ProductionEpisodeBase):
     id: str
     comic_track: Optional[ProductionComicTrackLinkResponse] = None
     animation_track: Optional[ProductionAnimationTrackLinkResponse] = None
+    comic_track_count: int = 0
+    animation_track_count: int = 0
     created_at: str
     updated_at: str
 
