@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.models import ComicEpisodeCreate
+from app.services.comic_repository import create_comic_episode
 
 
 def _build_client() -> TestClient:
@@ -164,9 +167,26 @@ def test_production_episode_detail_reports_track_counts(temp_db) -> None:
         )
         assert blueprint_response.status_code == 201, blueprint_response.text
 
+    asyncio.run(
+        create_comic_episode(
+            ComicEpisodeCreate(
+                character_id="char_kaede_ren",
+                character_version_id="charver_kaede_ren_still_v1",
+                title="Episode 01 Comic Track",
+                synopsis="Linked comic track.",
+                content_mode="adult_nsfw",
+                production_episode_id=episode_id,
+                work_id="work_tracks",
+                series_id="series_tracks",
+            ),
+            episode_id="comic_track_ep_01",
+        )
+    )
+
     refreshed_response = client.get(f"/api/v1/production/episodes/{episode_id}")
     assert refreshed_response.status_code == 200
     refreshed_payload = refreshed_response.json()
+    assert refreshed_payload["comic_track_count"] == 1
     assert refreshed_payload["animation_track_count"] == 2
 
 
