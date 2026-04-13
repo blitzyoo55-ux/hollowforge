@@ -30,14 +30,22 @@ Production image generation and orchestration console for Lab451.
 
 ## Production Boundary
 
-- `/production` is now the shared production-core surface for work, series, and
-  episode state.
+- `/production` now owns shared-core creation and episode-aware resume for
+  work, series, and episode state.
+- `/production` is the primary operator entry for creating or resuming
+  production context before opening track surfaces.
 - `/comic` should be read as `Comic Handoff`, not as the final manga editor.
   HollowForge packages review assets, dialogue drafts, page assembly, and
   export inputs before CLIP STUDIO EX finishing.
 - `/sequences` should be read as `Animation Track`, not as the final animation
   editor. HollowForge plans blueprints, launches preview runs, and packages
   review outputs before external editorial finishing.
+- `/comic` and `/sequences` accept query-based production context from
+  `/production` so operators can open a specific linked work/series/episode
+  directly from the shared-core surface.
+- Operator fallback behavior is explicit:
+  `create_from_production` when query context is present, otherwise
+  `open_current`.
 - `backend/scripts/launch_production_hub_smoke.py` is the bounded smoke entry
   point for the shared production core plus linked comic and animation tracks.
 
