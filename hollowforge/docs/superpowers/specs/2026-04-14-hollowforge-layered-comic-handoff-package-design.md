@@ -27,6 +27,7 @@ CLIP STUDIO EX finishing을 위한 `layered handoff package`로 끌어올린다.
 - text payload: `editable draft text`
 - initial review capability: `검수 전용 overlay + export gate`
 - deferred capability: `anchor 위치 수동 수정 UI`
+- backward compatibility rule: `strictly additive`
 
 ## Current System Fit
 
@@ -54,13 +55,47 @@ CLIP STUDIO EX finishing을 위한 `layered handoff package`로 끌어올린다.
 
 이번 슬라이스는 이 공백만 메운다. panel render, dialogue generation, teaser derivation 같은 기존 생산 경로는 유지한다.
 
+## Backward Compatibility Rule
+
+이번 슬라이스는 `strictly additive`로 구현한다.
+
+유지해야 하는 기존 계약:
+
+- `ComicPageAssemblyBatchResponse` / `ComicPageExportResponse`의 기존 field
+- 기존 artifact path field
+  - `export_manifest_path`
+  - `dialogue_json_path`
+  - `panel_asset_manifest_path`
+  - `page_assembly_manifest_path`
+  - `teaser_handoff_manifest_path`
+  - `manuscript_profile_manifest_path`
+  - `handoff_readme_path`
+  - `production_checklist_path`
+- 기존 ZIP 안의 legacy manifest artifact path와 filename
+
+이번 슬라이스에서 추가되는 것:
+
+- root `manifest.json`
+- `handoff_validation.json`
+- `pages/<page>/...` subtree
+- `panels/<panel>/...` subtree
+- 신규 layered package field가 필요하면 `추가`만 허용
+
+즉 v1.5에서는:
+
+- 기존 field rename/remove 금지
+- 기존 artifact filename/path change 금지
+- 새 package contract는 additive-only
+
+새 layered package가 canonical entrypoint가 되더라도, 기존 response field와 legacy manifest artifact는 병행 유지한다.
+
 ## Problem Statement
 
 현재 export는 운영 proof로는 충분하지만, 사람 편집 공정으로 넘기기에는 아직 느슨하다.
 
 ### 1. Package는 존재하지만 레이어 계약이 없다
 
-현재 ZIP에는 preview와 manifest가 들어가지만, 편집자가 바로 이해할 수 있는 `page layer / frame layer / balloon layer / text draft layer` 분리가 없다.
+현재 ZIP에는 preview와 manifest가 들어가지만, 편집자가 바로 이해할 수 있는 `art layer / frame layer / balloon layer / text draft layer` 분리가 없다.
 
 ### 2. Page truth가 부족하다
 
@@ -183,7 +218,7 @@ episode_<episode_id>_handoff.zip
     production_checklist.json
 ```
 
-현재 존재하는 manifest artifact는 완전히 없애지 않는다. 다만 최종 ZIP과 API 응답의 canonical entrypoint는 위 구조로 재정렬한다.
+현재 존재하는 manifest artifact는 완전히 없애지 않는다. v1.5에서는 위 구조를 새로 추가하고, 기존 manifest artifact는 그대로 병행 유지한다.
 
 ### Root `manifest.json`
 
@@ -206,6 +241,27 @@ episode_<episode_id>_handoff.zip
 - `source_lineage`
 - `warnings[]`
 
+top-level shape는 아래처럼 고정한다.
+
+```json
+{
+  "package_version": "1.5",
+  "episode_id": "ep_123",
+  "work_id": "work_1",
+  "series_id": "series_1",
+  "content_mode": "all_ages",
+  "layout_template_id": "jp_2x2_v1",
+  "manuscript_profile": {},
+  "page_count": 2,
+  "panel_count": 8,
+  "pages": [],
+  "panels": [],
+  "warnings": [],
+  "source_lineage": {},
+  "exported_at": "2026-04-14T00:00:00+00:00"
+}
+```
+
 ### `pages/<page>/page_manifest.json`
 
 page 단위 canonical summary다.
@@ -223,6 +279,56 @@ page 단위 canonical summary다.
 - `layer_files`
 - `status`
 
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "page_id": "page_001",
+  "page_no": 1,
+  "status": "complete",
+  "canvas_size": {"width": 0, "height": 0},
+  "reading_direction": "right_to_left",
+  "trim_box": {},
+  "bleed_box": {},
+  "safe_box": {},
+  "panel_order": [],
+  "layer_files": {
+    "frame_layer": "pages/page_001/frame_layer.json",
+    "balloon_layer": "pages/page_001/balloon_layer.json",
+    "text_draft_layer": "pages/page_001/text_draft_layer.json"
+  }
+}
+```
+
+`page_manifest.json`은 page summary이며, layer file 자체는 각각 `items[]`를 가진 독립 파일이다.
+
+`status` enum은 아래만 허용한다.
+
+- `complete`
+- `warning`
+- `blocked`
+
+### Art Layer
+
+이번 설계에서 visual source layer의 공식 명칭은 `art layer`다.
+
+`art layer`는 새 JSON file이 아니라 아래 asset 조합으로 정의한다.
+
+- `pages/<page>/page_preview.png`
+- `panels/<panel>/selected_render.png`
+- `panels/<panel>/panel_manifest.json`
+
+즉 art layer는 “선택된 panel render와 page preview가 실제로 존재하는 상태”를 뜻한다.
+
+readiness 기준:
+
+- page별 preview 존재
+- panel별 selected render 존재
+- panel manifest가 selected render lineage를 가리킴
+
+`page layer`라는 용어는 쓰지 않는다. page는 layer가 아니라 package 단위다.
+
 ### `frame_layer.json`
 
 이 파일이 `컷/페이지 구조 정확도`의 정답이다.
@@ -237,6 +343,27 @@ page 단위 canonical summary다.
 - `frame_shape_hint`
 - `source_render_asset_id`
 - `source_generation_id`
+
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "page_id": "page_001",
+  "page_no": 1,
+  "layer": "frame",
+  "status": "complete",
+  "items": []
+}
+```
+
+`items[]`의 각 entry가 위 필수 field를 가진다. page당 frame item cardinality는 `1..N`이다.
+
+layer `status` enum은 아래만 허용한다.
+
+- `complete`
+- `warning`
+- `blocked`
 
 ### `balloon_layer.json`
 
@@ -253,6 +380,21 @@ page 단위 canonical summary다.
 - `z_index`
 - `safe_area_violation`
 
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "page_id": "page_001",
+  "page_no": 1,
+  "layer": "balloon",
+  "status": "complete",
+  "items": []
+}
+```
+
+`items[]`의 각 entry가 위 필수 field를 가진다. page당 balloon item cardinality는 `0..N`이다.
+
 ### `text_draft_layer.json`
 
 편집 가능한 문안 초안이다.
@@ -266,6 +408,21 @@ page 단위 canonical summary다.
 - `locale`
 - `rewrite_status`
 - `style_hint`
+
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "page_id": "page_001",
+  "page_no": 1,
+  "layer": "text_draft",
+  "status": "complete",
+  "items": []
+}
+```
+
+`items[]`의 각 entry가 위 필수 field를 가진다. page당 text draft item cardinality는 `0..N`이다.
 
 ### `panels/<panel>/panel_manifest.json`
 
@@ -281,6 +438,22 @@ panel 원본 lineage용이다.
 - `selected_render_generation_id`
 - `selected_render_path`
 - `crop_notes`
+
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "panel_id": "panel_001",
+  "page_no": 1,
+  "scene_no": 1,
+  "panel_no": 1,
+  "selected_render_asset_id": "asset_1",
+  "selected_render_generation_id": "gen_1",
+  "selected_render_path": "panels/panel_001/selected_render.png",
+  "crop_notes": null
+}
+```
 
 ## Layer Semantics
 
@@ -323,6 +496,7 @@ export 직전 검수와 package summary 중심.
 
 여기서는 아래를 보여준다.
 
+- art layer readiness
 - frame layer readiness
 - balloon/text draft readiness
 - validation summary
@@ -380,7 +554,7 @@ export 직전 검수와 package summary 중심.
 - SFX anchor가 safe area를 침범
 - draft text 길이가 anchor에 비해 과도함
 - panel crop가 너무 타이트해서 말풍선 여유가 부족함
-- 한 page가 portrait-heavy로 과도하게 쏠림
+- 한 page의 anchor 밀도가 manuscript safe area 대비 과도함
 
 ## Export Gate
 
@@ -388,6 +562,7 @@ export 직전 검수와 package summary 중심.
 
 - selected render completeness = complete
 - page assembly exists
+- art layer readiness = complete
 - frame layer readiness = complete
 - balloon layer readiness = complete
 - text draft readiness = complete
@@ -410,6 +585,18 @@ machine-friendly validation summary.
 - `soft_warnings[]`
 - `page_summaries[]`
 - `generated_at`
+
+top-level shape:
+
+```json
+{
+  "episode_id": "ep_123",
+  "hard_blocks": [],
+  "soft_warnings": [],
+  "page_summaries": [],
+  "generated_at": "2026-04-14T00:00:00+00:00"
+}
+```
 
 ### `handoff_readme.md`
 
