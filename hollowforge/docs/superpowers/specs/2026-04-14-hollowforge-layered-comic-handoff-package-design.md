@@ -598,6 +598,21 @@ top-level shape:
 }
 ```
 
+`page_summaries[]` entry shape:
+
+```json
+{
+  "page_id": "page_001",
+  "page_no": 1,
+  "art_layer_status": "complete",
+  "frame_layer_status": "complete",
+  "balloon_layer_status": "warning",
+  "text_draft_layer_status": "complete",
+  "hard_block_count": 0,
+  "soft_warning_count": 1
+}
+```
+
 ### `handoff_readme.md`
 
 editor-friendly export summary.
@@ -610,6 +625,16 @@ editor-friendly export summary.
 - hard block 없음 확인
 - 남은 soft warning
 - 편집자가 먼저 손볼 page / anchor 목록
+
+`latest export summary`는 frontend에서 아래 필드를 기준으로 보여준다.
+
+- `export_zip_path`
+- `manifest_path`
+- `handoff_validation_path`
+- `page_count`
+- `hard_block_count`
+- `soft_warning_count`
+- `exported_at`
 
 ## Error Handling
 
@@ -660,7 +685,7 @@ editor-friendly export summary.
 
 - layered artifact files 존재
 - handoff validation artifact 존재
-- export ZIP 안에 page layer files 포함
+- export ZIP 안에 `pages/...` subtree와 `art/frame/balloon/text_draft` 관련 file 포함
 
 ## Rollout Shape
 
