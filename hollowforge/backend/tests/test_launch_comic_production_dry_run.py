@@ -342,6 +342,118 @@ def test_main_rejects_hard_blocks_in_handoff_validation(
         raise AssertionError("Expected hard block rejection")
 
 
+def test_main_rejects_export_zip_missing_layer_for_later_page(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    module = _load_module()
+    base_url = "http://127.0.0.1:8000"
+    responses = _build_responses(base_url)
+    two_page_export = {
+        **responses[("POST", f"{base_url}/api/v1/comic/episodes/comic-ep-prod-1/pages/export")],
+        "pages": [
+            {
+                "id": "page-1",
+                "page_no": 1,
+                "preview_path": "comics/previews/comic-ep-prod-1_page_01.png",
+                "export_state": "exported",
+            },
+            {
+                "id": "page-2",
+                "page_no": 2,
+                "preview_path": "comics/previews/comic-ep-prod-1_page_02.png",
+                "export_state": "exported",
+            },
+        ],
+    }
+    responses[("POST", f"{base_url}/api/v1/comic/episodes/comic-ep-prod-1/pages/export")] = (
+        two_page_export
+    )
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        key = (method, url.split("?", 1)[0])
+        if key not in responses:
+            raise AssertionError(f"Unexpected request: {key!r} payload={payload!r}")
+        return responses[key]
+
+    monkeypatch.setattr(module, "_request_json", fake_request_json)
+    monkeypatch.setattr(module.settings, "DATA_DIR", tmp_path / "data")
+
+    teaser_manifest_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "manifests"
+        / "comic-ep-prod-1_jp_2x2_v1_teaser_handoff.json"
+    )
+    teaser_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    teaser_manifest_path.write_text(
+        json.dumps(
+            {
+                "episode_id": "comic-ep-prod-1",
+                "selected_panel_assets": [
+                    {
+                        "panel_id": "panel-1",
+                        "asset_id": "asset-1",
+                        "storage_path": "comics/previews/comic-ep-prod-1_panel-1.png",
+                    },
+                    {
+                        "panel_id": "panel-2",
+                        "asset_id": "asset-2",
+                        "storage_path": "comics/previews/comic-ep-prod-1_panel-2.png",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    export_zip_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "exports"
+        / "comic-ep-prod-1_jp_2x2_v1_handoff.zip"
+    )
+    export_zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(export_zip_path, mode="w") as archive:
+        archive.writestr("manifest.json", b"{}")
+        archive.writestr("handoff_validation.json", b"{}")
+        archive.writestr("pages/page_001/frame_layer.json", b"{}")
+        archive.writestr("pages/page_001/balloon_layer.json", b"{}")
+        archive.writestr("pages/page_001/text_draft_layer.json", b"{}")
+        archive.writestr("pages/page_002/frame_layer.json", b"{}")
+        archive.writestr("pages/page_002/text_draft_layer.json", b"{}")
+
+    layered_dir = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "exports"
+        / "comic-ep-prod-1_jp_2x2_v1_layered"
+    )
+    layered_dir.mkdir(parents=True, exist_ok=True)
+    (layered_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    (layered_dir / "handoff_validation.json").write_text('{"hard_blocks":[]}', encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_production_dry_run.py",
+            "--base-url",
+            base_url,
+            "--episode-id",
+            "comic-ep-prod-1",
+        ],
+    )
+
+    try:
+        module.main()
+    except RuntimeError as exc:
+        assert "page_002/balloon_layer.json" in str(exc)
+    else:
+        raise AssertionError("Expected missing layered page artifact rejection")
+
+
 def test_main_refuses_smoke_placeholder_assets(
     monkeypatch,
     tmp_path,

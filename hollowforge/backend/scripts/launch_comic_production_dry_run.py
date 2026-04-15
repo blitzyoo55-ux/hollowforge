@@ -135,34 +135,41 @@ def _extract_selected_panel_assets(assembly_detail: dict[str, Any]) -> list[dict
     return assets
 
 
-def _validate_export_zip(export_zip_path: str) -> None:
+def _expected_layered_zip_members(export_detail: dict[str, Any]) -> list[str]:
+    pages = _require_list(export_detail.get("pages") or [], label="comic export pages")
+    expected_members = ["manifest.json", "handoff_validation.json"]
+    for page in pages:
+        page_no = int(page.get("page_no") or 0)
+        if page_no <= 0:
+            raise RuntimeError("Comic export page is missing a valid page_no")
+        page_dir = f"pages/page_{page_no:03d}"
+        expected_members.extend(
+            [
+                f"{page_dir}/frame_layer.json",
+                f"{page_dir}/balloon_layer.json",
+                f"{page_dir}/text_draft_layer.json",
+            ]
+        )
+    return expected_members
+
+
+def _validate_export_zip(export_zip_path: str, export_detail: dict[str, Any]) -> None:
     zip_path = settings.DATA_DIR / export_zip_path
     if not zip_path.is_file():
         raise RuntimeError(f"Comic export ZIP not found: {zip_path}")
 
     with zipfile.ZipFile(zip_path) as archive:
-        names = archive.namelist()
+        names = set(archive.namelist())
         for name in names:
             if PLACEHOLDER_ASSET_MARKER in name:
                 raise RuntimeError(
                     f"Refusing placeholder comic asset path in export ZIP: {name}"
                 )
-        required_names = {
-            "manifest.json": lambda name: name == "manifest.json",
-            "handoff_validation.json": lambda name: name == "handoff_validation.json",
-            "pages/.../frame_layer.json": lambda name: (
-                name.startswith("pages/") and name.endswith("/frame_layer.json")
-            ),
-            "pages/.../balloon_layer.json": lambda name: (
-                name.startswith("pages/") and name.endswith("/balloon_layer.json")
-            ),
-            "pages/.../text_draft_layer.json": lambda name: (
-                name.startswith("pages/") and name.endswith("/text_draft_layer.json")
-            ),
-        }
-        for label, predicate in required_names.items():
-            if not any(predicate(name) for name in names):
-                raise RuntimeError(f"Comic export ZIP is missing required layered artifact: {label}")
+        for expected_member in _expected_layered_zip_members(export_detail):
+            if expected_member not in names:
+                raise RuntimeError(
+                    f"Comic export ZIP is missing required layered artifact: {expected_member}"
+                )
 
 
 def _extract_layered_handoff_summary(export_detail: dict[str, Any]) -> dict[str, Any]:
@@ -318,7 +325,7 @@ def main() -> int:
     panel_ids = _extract_panel_ids(episode_detail)
     selected_panel_assets = _extract_selected_panel_assets(assembly_detail)
     layered_handoff_summary = _extract_layered_handoff_summary(export_detail)
-    _validate_export_zip(str(export_detail.get("export_zip_path") or ""))
+    _validate_export_zip(str(export_detail.get("export_zip_path") or ""), export_detail)
 
     report_path = _write_report(
         episode_id=args.episode_id,

@@ -53,7 +53,7 @@ def _run_production_dry_run(
         raise RuntimeError("Comic export detail is missing export_zip_path")
 
     layered_handoff_summary = comic_dry_run._extract_layered_handoff_summary(export_detail)
-    comic_dry_run._validate_export_zip(export_zip_path)
+    comic_dry_run._validate_export_zip(export_zip_path, export_detail)
     report_path = comic_dry_run._write_report(
         episode_id=episode_id,
         layout_template_id=layout_template_id,
