@@ -1810,8 +1810,18 @@ def test_post_comic_episode_page_assembly_route_returns_pages_and_manifest(
     assert body["layout_template_id"] == "jp_2x2_v1"
     assert len(body["pages"]) == 2
     assert body["export_manifest_path"].endswith(".json")
+    assert body["layered_manifest_path"].endswith("/manifest.json")
+    assert body["handoff_validation_path"].endswith("/handoff_validation.json")
     assert body["teaser_handoff_manifest_path"].endswith(".json")
+    assert body["page_summaries"][0]["frame_layer_status"] == "complete"
+    assert body["page_summaries"][0]["balloon_layer_status"] == "warning"
+    assert body["page_summaries"][0]["text_draft_layer_status"] == "warning"
+    assert body["handoff_validation"]["page_summaries"][0]["frame_layer_status"] == "complete"
+    assert body["handoff_validation"]["soft_warnings"][0]["code"] == "layer_warning"
+    assert body["latest_export_summary"] is None
     assert (settings.DATA_DIR / body["export_manifest_path"]).is_file()
+    assert (settings.DATA_DIR / body["layered_manifest_path"]).is_file()
+    assert (settings.DATA_DIR / body["handoff_validation_path"]).is_file()
     assert (settings.DATA_DIR / body["pages"][0]["preview_path"]).is_file()
 
 
@@ -1829,9 +1839,17 @@ def test_post_comic_episode_page_export_route_returns_zip_and_artifacts(
     body = response.json()
     assert body["export_zip_path"].endswith(".zip")
     assert body["page_assembly_manifest_path"].endswith(".json")
+    assert body["layered_manifest_path"].endswith("/manifest.json")
+    assert body["handoff_validation_path"].endswith("/handoff_validation.json")
     assert body["dialogue_json_path"].endswith(".json")
     assert body["panel_asset_manifest_path"].endswith(".json")
     assert body["teaser_handoff_manifest_path"].endswith(".json")
+    assert body["latest_export_summary"]["page_count"] == len(body["pages"])
+    assert body["latest_export_summary"]["layered_manifest_path"] == body["layered_manifest_path"]
+    assert (
+        body["latest_export_summary"]["soft_warning_count"]
+        == len(body["handoff_validation"]["soft_warnings"])
+    )
     assert all(page["export_state"] == "exported" for page in body["pages"])
     assert (settings.DATA_DIR / body["export_zip_path"]).is_file()
 

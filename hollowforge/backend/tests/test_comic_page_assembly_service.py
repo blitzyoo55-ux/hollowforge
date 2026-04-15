@@ -179,10 +179,20 @@ async def test_assemble_episode_pages_creates_preview_files_and_manifest(
     assert len(response.pages) == 2
     assert response.pages[0].page_no == 1
     assert response.export_manifest_path.endswith(".json")
+    assert response.layered_manifest_path.endswith("/manifest.json")
+    assert response.handoff_validation_path.endswith("/handoff_validation.json")
     assert response.teaser_handoff_manifest_path.endswith(".json")
+    assert response.page_summaries[0].frame_layer_status == "complete"
+    assert response.page_summaries[0].balloon_layer_status == "warning"
+    assert response.page_summaries[0].text_draft_layer_status == "warning"
+    assert response.handoff_validation.page_summaries[0].frame_layer_status == "complete"
+    assert response.handoff_validation.soft_warnings[0].code == "layer_warning"
+    assert response.latest_export_summary is None
 
     export_manifest_path = settings.DATA_DIR / response.export_manifest_path
     assert export_manifest_path.is_file()
+    assert (settings.DATA_DIR / response.layered_manifest_path).is_file()
+    assert (settings.DATA_DIR / response.handoff_validation_path).is_file()
     assert (settings.DATA_DIR / response.teaser_handoff_manifest_path).is_file()
     assert (settings.DATA_DIR / response.pages[0].preview_path).is_file()
     assert (settings.DATA_DIR / response.pages[1].preview_path).is_file()
@@ -296,6 +306,14 @@ async def test_export_episode_pages_persists_exported_state(
 
     assert all(page.export_state == "exported" for page in response.pages)
     assert response.export_zip_path.endswith(".zip")
+    assert response.layered_manifest_path.endswith("/manifest.json")
+    assert response.handoff_validation_path.endswith("/handoff_validation.json")
+    assert response.latest_export_summary is not None
+    assert response.latest_export_summary.page_count == len(response.pages)
+    assert response.latest_export_summary.layered_manifest_path == response.layered_manifest_path
+    assert response.latest_export_summary.soft_warning_count == len(
+        response.handoff_validation.soft_warnings
+    )
     assert response.teaser_handoff_manifest_path.endswith(".json")
 
     with sqlite3.connect(temp_db) as conn:
@@ -317,6 +335,8 @@ async def test_export_episode_pages_persists_exported_state(
 
     assert "images/comic_panel_page_assembly_test_1.png" in names
     assert response.teaser_handoff_manifest_path in names
+    assert response.layered_manifest_path in names
+    assert response.handoff_validation_path in names
 
 
 @pytest.mark.asyncio

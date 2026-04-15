@@ -1251,12 +1251,53 @@ def list_comic_manuscript_profiles() -> list[ComicManuscriptProfileResponse]:
     ]
 
 
+class ComicHandoffPageSummaryResponse(BaseModel):
+    page_id: str = Field(min_length=1, max_length=120)
+    page_no: int = Field(ge=1, le=999)
+    art_layer_status: Literal["complete", "warning", "blocked"]
+    frame_layer_status: Literal["complete", "warning", "blocked"]
+    balloon_layer_status: Literal["complete", "warning", "blocked"]
+    text_draft_layer_status: Literal["complete", "warning", "blocked"]
+    hard_block_count: int = Field(default=0, ge=0)
+    soft_warning_count: int = Field(default=0, ge=0)
+
+
+class ComicHandoffValidationIssueResponse(BaseModel):
+    code: str = Field(min_length=1, max_length=120)
+    page_id: str | None = Field(default=None, max_length=120)
+    page_no: int | None = Field(default=None, ge=1, le=999)
+    layer: str | None = Field(default=None, max_length=120)
+
+
+class ComicHandoffValidationResponse(BaseModel):
+    episode_id: str = Field(min_length=1, max_length=120)
+    hard_blocks: list[ComicHandoffValidationIssueResponse] = Field(default_factory=list)
+    soft_warnings: list[ComicHandoffValidationIssueResponse] = Field(default_factory=list)
+    page_summaries: list[ComicHandoffPageSummaryResponse] = Field(default_factory=list)
+    generated_at: str
+
+
+class ComicHandoffExportSummaryResponse(BaseModel):
+    export_zip_path: str = Field(min_length=1, max_length=500)
+    layered_manifest_path: str = Field(min_length=1, max_length=500)
+    handoff_validation_path: str = Field(min_length=1, max_length=500)
+    page_count: int = Field(default=0, ge=0)
+    hard_block_count: int = Field(default=0, ge=0)
+    soft_warning_count: int = Field(default=0, ge=0)
+    exported_at: str
+
+
 class ComicPageAssemblyBatchResponse(BaseModel):
     episode_id: str = Field(min_length=1, max_length=120)
     layout_template_id: ComicPageLayoutTemplateId
     manuscript_profile: Dict[str, Any] = Field(default_factory=dict)
     pages: List[ComicPageAssemblyResponse] = Field(default_factory=list)
     export_manifest_path: str = Field(min_length=1, max_length=500)
+    layered_manifest_path: str = Field(min_length=1, max_length=500)
+    handoff_validation_path: str = Field(min_length=1, max_length=500)
+    handoff_validation: ComicHandoffValidationResponse
+    page_summaries: list[ComicHandoffPageSummaryResponse] = Field(default_factory=list)
+    latest_export_summary: ComicHandoffExportSummaryResponse | None = None
     dialogue_json_path: str = Field(min_length=1, max_length=500)
     panel_asset_manifest_path: str = Field(min_length=1, max_length=500)
     page_assembly_manifest_path: str = Field(min_length=1, max_length=500)

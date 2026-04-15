@@ -15,6 +15,10 @@ from app.config import settings
 from app.db import get_db
 from app.models import (
     ComicManuscriptProfileId,
+    ComicHandoffExportSummaryResponse,
+    ComicHandoffPageSummaryResponse,
+    ComicHandoffValidationIssueResponse,
+    ComicHandoffValidationResponse,
     ComicPageAssemblyBatchResponse,
     ComicPageAssemblyResponse,
     ComicPageExportResponse,
@@ -589,6 +593,217 @@ def _write_production_checklist(
     return _write_json_manifest(path, payload)
 
 
+def _count_layer_statuses(
+    page_summary: ComicHandoffPageSummaryResponse,
+) -> tuple[int, int]:
+    hard_block_count = sum(
+        1
+        for status in (
+            page_summary.art_layer_status,
+            page_summary.frame_layer_status,
+            page_summary.balloon_layer_status,
+            page_summary.text_draft_layer_status,
+        )
+        if status == "blocked"
+    )
+    soft_warning_count = sum(
+        1
+        for status in (
+            page_summary.art_layer_status,
+            page_summary.frame_layer_status,
+            page_summary.balloon_layer_status,
+            page_summary.text_draft_layer_status,
+        )
+        if status == "warning"
+    )
+    return hard_block_count, soft_warning_count
+
+
+def _build_handoff_page_summary(
+    *,
+    page_no: int,
+    preview_path: str,
+    ordered_panel_ids: list[str],
+) -> ComicHandoffPageSummaryResponse:
+    art_layer_status = (
+        "complete"
+        if (settings.DATA_DIR / preview_path).is_file()
+        else "blocked"
+    )
+    frame_layer_status = "complete" if ordered_panel_ids else "blocked"
+    balloon_layer_status = "warning" if ordered_panel_ids else "blocked"
+    text_draft_layer_status = "warning" if ordered_panel_ids else "blocked"
+
+    summary = ComicHandoffPageSummaryResponse(
+        page_id=f"page_{page_no:03d}",
+        page_no=page_no,
+        art_layer_status=art_layer_status,
+        frame_layer_status=frame_layer_status,
+        balloon_layer_status=balloon_layer_status,
+        text_draft_layer_status=text_draft_layer_status,
+        hard_block_count=0,
+        soft_warning_count=0,
+    )
+    hard_block_count, soft_warning_count = _count_layer_statuses(summary)
+    return summary.model_copy(
+        update={
+            "hard_block_count": hard_block_count,
+            "soft_warning_count": soft_warning_count,
+        }
+    )
+
+
+def _write_layered_package(
+    *,
+    episode_id: str,
+    layout_template_id: str,
+    manuscript_profile_id: ComicManuscriptProfileId,
+    page_rows: list[dict[str, Any]],
+    page_groups: list[list[dict[str, Any]]],
+    selected_assets_by_panel: dict[str, dict[str, Any]],
+) -> tuple[
+    str,
+    str,
+    list[ComicHandoffPageSummaryResponse],
+    ComicHandoffValidationResponse,
+]:
+    package_root = (
+        settings.COMICS_MANIFESTS_DIR
+        / f"{episode_id}_{layout_template_id}_layered_handoff"
+    )
+    package_root.mkdir(parents=True, exist_ok=True)
+
+    layered_manifest_file = package_root / "manifest.json"
+    handoff_validation_file = package_root / "handoff_validation.json"
+    layered_manifest_path = _relative_data_path(layered_manifest_file)
+    handoff_validation_path = _relative_data_path(handoff_validation_file)
+
+    page_summaries: list[ComicHandoffPageSummaryResponse] = []
+    hard_blocks: list[ComicHandoffValidationIssueResponse] = []
+    soft_warnings: list[ComicHandoffValidationIssueResponse] = []
+
+    for page_row, page_panels in zip(page_rows, page_groups):
+        page_no = int(page_row["page_no"])
+        page_id = f"page_{page_no:03d}"
+        ordered_panel_ids = [panel["id"] for panel in page_panels]
+        summary = _build_handoff_page_summary(
+            page_no=page_no,
+            preview_path=str(page_row["preview_path"]),
+            ordered_panel_ids=ordered_panel_ids,
+        )
+        page_summaries.append(summary)
+
+        page_dir = package_root / "pages" / page_id
+        page_manifest_payload = {
+            "episode_id": episode_id,
+            "layout_template_id": layout_template_id,
+            "manuscript_profile_id": manuscript_profile_id,
+            "page_id": page_id,
+            "page_no": page_no,
+            "preview_path": page_row["preview_path"],
+            "page_summary": summary.model_dump(),
+            "panel_ids": ordered_panel_ids,
+            "selected_asset_paths": [
+                selected_assets_by_panel[panel_id]["storage_path"]
+                for panel_id in ordered_panel_ids
+            ],
+        }
+        _write_json_manifest(page_dir / "page_manifest.json", page_manifest_payload)
+        _write_json_manifest(
+            page_dir / "frame_layer.json",
+            {
+                "page_id": page_id,
+                "page_no": page_no,
+                "status": summary.frame_layer_status,
+                "panel_ids": ordered_panel_ids,
+            },
+        )
+        _write_json_manifest(
+            page_dir / "balloon_layer.json",
+            {
+                "page_id": page_id,
+                "page_no": page_no,
+                "status": summary.balloon_layer_status,
+                "panel_ids": ordered_panel_ids,
+            },
+        )
+        _write_json_manifest(
+            page_dir / "text_draft_layer.json",
+            {
+                "page_id": page_id,
+                "page_no": page_no,
+                "status": summary.text_draft_layer_status,
+                "panel_ids": ordered_panel_ids,
+            },
+        )
+
+        for panel in page_panels:
+            panel_id = str(panel["id"])
+            panel_dir = package_root / "panels" / f"panel_{panel_id}"
+            selected_asset = selected_assets_by_panel[panel_id]
+            _write_json_manifest(
+                panel_dir / "panel_manifest.json",
+                {
+                    "episode_id": episode_id,
+                    "layout_template_id": layout_template_id,
+                    "page_id": page_id,
+                    "page_no": page_no,
+                    "panel_id": panel_id,
+                    "panel_no": panel["panel_no"],
+                    "generation_id": selected_asset.get("generation_id"),
+                    "asset_id": selected_asset.get("id"),
+                    "storage_path": selected_asset.get("storage_path"),
+                },
+            )
+
+        for layer_name, status in (
+            ("art_layer_status", summary.art_layer_status),
+            ("frame_layer_status", summary.frame_layer_status),
+            ("balloon_layer_status", summary.balloon_layer_status),
+            ("text_draft_layer_status", summary.text_draft_layer_status),
+        ):
+            if status == "blocked":
+                hard_blocks.append(
+                    ComicHandoffValidationIssueResponse(
+                        code="layer_blocked",
+                        page_id=page_id,
+                        page_no=page_no,
+                        layer=layer_name,
+                    )
+                )
+            elif status == "warning":
+                soft_warnings.append(
+                    ComicHandoffValidationIssueResponse(
+                        code="layer_warning",
+                        page_id=page_id,
+                        page_no=page_no,
+                        layer=layer_name,
+                    )
+                )
+
+    validation = ComicHandoffValidationResponse(
+        episode_id=episode_id,
+        hard_blocks=hard_blocks,
+        soft_warnings=soft_warnings,
+        page_summaries=page_summaries,
+        generated_at=_now_iso(),
+    )
+    _write_json_manifest(
+        layered_manifest_file,
+        {
+            "episode_id": episode_id,
+            "layout_template_id": layout_template_id,
+            "manuscript_profile_id": manuscript_profile_id,
+            "page_count": len(page_summaries),
+            "page_summaries": [summary.model_dump() for summary in page_summaries],
+            "handoff_validation_path": handoff_validation_path,
+            "generated_at": validation.generated_at,
+        },
+    )
+    _write_json_manifest(handoff_validation_file, validation.model_dump())
+    return layered_manifest_path, handoff_validation_path, page_summaries, validation
+
+
 async def assemble_episode_pages(
     *,
     episode_id: str,
@@ -798,6 +1013,20 @@ async def assemble_episode_pages(
         page_count=len(page_rows),
     )
 
+    (
+        layered_manifest_path,
+        handoff_validation_path,
+        page_summaries,
+        handoff_validation,
+    ) = _write_layered_package(
+        episode_id=episode_id,
+        layout_template_id=layout_template_id,
+        manuscript_profile_id=manuscript_profile_id,
+        page_rows=page_rows,
+        page_groups=page_groups,
+        selected_assets_by_panel=selected_assets_by_panel,
+    )
+
     pages = [
         ComicPageAssemblyResponse.model_validate(row)
         for row in page_rows
@@ -808,6 +1037,11 @@ async def assemble_episode_pages(
         manuscript_profile=manuscript_profile,
         pages=pages,
         export_manifest_path=page_assembly_manifest_path,
+        layered_manifest_path=layered_manifest_path,
+        handoff_validation_path=handoff_validation_path,
+        handoff_validation=handoff_validation,
+        page_summaries=page_summaries,
+        latest_export_summary=None,
         dialogue_json_path=dialogue_json_path,
         panel_asset_manifest_path=panel_asset_manifest_path,
         page_assembly_manifest_path=page_assembly_manifest_path,
@@ -849,13 +1083,29 @@ def _zip_manifest_artifacts(
         page_response.manuscript_profile_manifest_path,
         page_response.handoff_readme_path,
         page_response.production_checklist_path,
+        page_response.layered_manifest_path,
+        page_response.handoff_validation_path,
     ]
+
+    layered_package_root = (settings.DATA_DIR / page_response.layered_manifest_path).parent
+    archived_paths: set[str] = set()
 
     with zipfile.ZipFile(export_zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         for relative_path in artifact_paths:
             file_path = settings.DATA_DIR / relative_path
             if file_path.is_file():
                 archive.write(file_path, arcname=relative_path)
+                archived_paths.add(relative_path)
+
+        if layered_package_root.is_dir():
+            for file_path in sorted(
+                path for path in layered_package_root.rglob("*") if path.is_file()
+            ):
+                relative_path = _relative_data_path(file_path)
+                if relative_path in archived_paths:
+                    continue
+                archive.write(file_path, arcname=relative_path)
+                archived_paths.add(relative_path)
 
         for page in page_response.pages:
             preview_path = settings.DATA_DIR / (page.preview_path or "")
@@ -885,6 +1135,8 @@ async def export_episode_pages(
         layout_template_id=layout_template_id,
         manuscript_profile_id=manuscript_profile_id,
     )
+    hard_block_count = len(page_response.handoff_validation.hard_blocks)
+    soft_warning_count = len(page_response.handoff_validation.soft_warnings)
     export_zip_path = settings.COMICS_EXPORTS_DIR / f"{episode_id}_{layout_template_id}_handoff.zip"
     _zip_manifest_artifacts(
         export_zip_path=export_zip_path,
@@ -905,7 +1157,17 @@ async def export_episode_pages(
         )
         await db.commit()
     exported_batch = page_response.model_copy(update={"pages": exported_pages})
-    return ComicPageExportResponse(
-        **exported_batch.model_dump(),
+    latest_export_summary = ComicHandoffExportSummaryResponse(
         export_zip_path=_relative_data_path(export_zip_path),
+        layered_manifest_path=page_response.layered_manifest_path,
+        handoff_validation_path=page_response.handoff_validation_path,
+        page_count=len(exported_pages),
+        hard_block_count=hard_block_count,
+        soft_warning_count=soft_warning_count,
+        exported_at=_now_iso(),
+    )
+    return ComicPageExportResponse(
+        **exported_batch.model_dump(exclude={"latest_export_summary"}),
+        export_zip_path=_relative_data_path(export_zip_path),
+        latest_export_summary=latest_export_summary,
     )
