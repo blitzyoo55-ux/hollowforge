@@ -66,6 +66,9 @@ def _build_responses(base_url: str) -> dict[tuple[str, str], object]:
             "manuscript_profile_manifest_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_manuscript_profile.json",
             "handoff_readme_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_handoff_readme.md",
             "production_checklist_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_production_checklist.json",
+            "layered_manifest_path": "comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/manifest.json",
+            "handoff_validation_path": "comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/handoff_validation.json",
+            "hard_block_count": 0,
         },
         (
             "POST",
@@ -91,6 +94,9 @@ def _build_responses(base_url: str) -> dict[tuple[str, str], object]:
             "handoff_readme_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_handoff_readme.md",
             "production_checklist_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_production_checklist.json",
             "export_zip_path": "comics/exports/comic-ep-prod-1_jp_2x2_v1_handoff.zip",
+            "layered_manifest_path": "comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/manifest.json",
+            "handoff_validation_path": "comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/handoff_validation.json",
+            "hard_block_count": 0,
         },
         ("GET", f"{base_url}/api/v1/comic/episodes/comic-ep-prod-1/detail"): {
             "episode": {
@@ -169,8 +175,26 @@ def test_main_prints_success_markers_and_writes_report(
     )
     export_zip_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(export_zip_path, mode="w") as archive:
+        archive.writestr("manifest.json", b"{}")
+        archive.writestr("handoff_validation.json", b"{}")
+        archive.writestr("pages/page_001/frame_layer.json", b"{}")
+        archive.writestr("pages/page_001/balloon_layer.json", b"{}")
+        archive.writestr("pages/page_001/text_draft_layer.json", b"{}")
         archive.writestr("comics/previews/comic-ep-prod-1_panel-1.png", b"panel-1")
         archive.writestr("comics/previews/comic-ep-prod-1_panel-2.png", b"panel-2")
+
+    layered_manifest_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "exports"
+        / "comic-ep-prod-1_jp_2x2_v1_layered"
+        / "manifest.json"
+    )
+    layered_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    layered_manifest_path.write_text('{"episode_id":"comic-ep-prod-1"}', encoding="utf-8")
+
+    handoff_validation_path = layered_manifest_path.with_name("handoff_validation.json")
+    handoff_validation_path.write_text('{"hard_blocks":[]}', encoding="utf-8")
 
     monkeypatch.setattr(
         sys,
@@ -197,6 +221,15 @@ def test_main_prints_success_markers_and_writes_report(
     assert "selected_panel_asset_count: 2" in captured.out
     assert "page_count: 1" in captured.out
     assert "manuscript_profile_id: jp_manga_rightbound_v1" in captured.out
+    assert (
+        "layered_manifest_path: comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/manifest.json"
+        in captured.out
+    )
+    assert (
+        "handoff_validation_path: comics/exports/comic-ep-prod-1_jp_2x2_v1_layered/handoff_validation.json"
+        in captured.out
+    )
+    assert "hard_block_count: 0" in captured.out
     assert "report_path: comics/reports/" in captured.out
 
     report_path = (
@@ -209,9 +242,104 @@ def test_main_prints_success_markers_and_writes_report(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["episode_id"] == "comic-ep-prod-1"
     assert report["export_zip_path"].endswith(".zip")
+    assert report["layered_manifest_path"].endswith("/manifest.json")
+    assert report["handoff_validation_path"].endswith("/handoff_validation.json")
+    assert report["hard_block_count"] == 0
     assert report["teaser_handoff_manifest"]["selected_panel_assets"][0]["storage_path"].startswith(
         "comics/previews/"
     )
+
+
+def test_main_rejects_hard_blocks_in_handoff_validation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    module = _load_module()
+    base_url = "http://127.0.0.1:8000"
+    responses = _build_responses(base_url)
+    responses[("POST", f"{base_url}/api/v1/comic/episodes/comic-ep-prod-1/pages/export")] = {
+        **responses[("POST", f"{base_url}/api/v1/comic/episodes/comic-ep-prod-1/pages/export")],
+        "hard_block_count": 2,
+    }
+
+    def fake_request_json(method: str, url: str, payload=None):  # type: ignore[no-untyped-def]
+        key = (method, url.split("?", 1)[0])
+        if key not in responses:
+            raise AssertionError(f"Unexpected request: {key!r} payload={payload!r}")
+        return responses[key]
+
+    monkeypatch.setattr(module, "_request_json", fake_request_json)
+    monkeypatch.setattr(module.settings, "DATA_DIR", tmp_path / "data")
+
+    teaser_manifest_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "manifests"
+        / "comic-ep-prod-1_jp_2x2_v1_teaser_handoff.json"
+    )
+    teaser_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    teaser_manifest_path.write_text(
+        json.dumps(
+            {
+                "episode_id": "comic-ep-prod-1",
+                "selected_panel_assets": [
+                    {
+                        "panel_id": "panel-1",
+                        "asset_id": "asset-1",
+                        "storage_path": "comics/previews/comic-ep-prod-1_panel-1.png",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    export_zip_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "exports"
+        / "comic-ep-prod-1_jp_2x2_v1_handoff.zip"
+    )
+    export_zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(export_zip_path, mode="w") as archive:
+        archive.writestr("manifest.json", b"{}")
+        archive.writestr("handoff_validation.json", b"{}")
+        archive.writestr("pages/page_001/frame_layer.json", b"{}")
+        archive.writestr("pages/page_001/balloon_layer.json", b"{}")
+        archive.writestr("pages/page_001/text_draft_layer.json", b"{}")
+
+    layered_dir = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "exports"
+        / "comic-ep-prod-1_jp_2x2_v1_layered"
+    )
+    layered_dir.mkdir(parents=True, exist_ok=True)
+    (layered_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    (layered_dir / "handoff_validation.json").write_text(
+        '{"hard_blocks":[{"code":"missing_text"}]}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "launch_comic_production_dry_run.py",
+            "--base-url",
+            base_url,
+            "--episode-id",
+            "comic-ep-prod-1",
+        ],
+    )
+
+    try:
+        module.main()
+    except RuntimeError as exc:
+        assert "hard_block_count" in str(exc)
+    else:
+        raise AssertionError("Expected hard block rejection")
 
 
 def test_main_refuses_smoke_placeholder_assets(

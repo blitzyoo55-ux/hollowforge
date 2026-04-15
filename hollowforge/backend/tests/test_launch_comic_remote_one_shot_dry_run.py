@@ -155,6 +155,10 @@ def test_main_prints_success_markers_for_remote_one_shot_dry_run(
         "_run_production_dry_run",
         lambda **_: {
             "dry_run_success": True,
+            "layered_package_verified": True,
+            "layered_manifest_path": "comics/exports/comic-remote-oneshot-1_layered/manifest.json",
+            "handoff_validation_path": "comics/exports/comic-remote-oneshot-1_layered/handoff_validation.json",
+            "hard_block_count": 0,
             "report_path": "comics/reports/comic-remote-oneshot-1_dry_run.json",
             "page_count": 1,
             "selected_panel_asset_count": 4,
@@ -183,6 +187,16 @@ def test_main_prints_success_markers_for_remote_one_shot_dry_run(
     assert "assemble_success: true" in captured.out
     assert "export_success: true" in captured.out
     assert "dry_run_success: true" in captured.out
+    assert "layered_package_verified: true" in captured.out
+    assert (
+        "layered_manifest_path: comics/exports/comic-remote-oneshot-1_layered/manifest.json"
+        in captured.out
+    )
+    assert (
+        "handoff_validation_path: comics/exports/comic-remote-oneshot-1_layered/handoff_validation.json"
+        in captured.out
+    )
+    assert "hard_block_count: 0" in captured.out
     assert "overall_success: true" in captured.out
     assert queued_panels == ["panel-1", "panel-2", "panel-3", "panel-4"]
 

@@ -141,11 +141,63 @@ def _validate_export_zip(export_zip_path: str) -> None:
         raise RuntimeError(f"Comic export ZIP not found: {zip_path}")
 
     with zipfile.ZipFile(zip_path) as archive:
-        for name in archive.namelist():
+        names = archive.namelist()
+        for name in names:
             if PLACEHOLDER_ASSET_MARKER in name:
                 raise RuntimeError(
                     f"Refusing placeholder comic asset path in export ZIP: {name}"
                 )
+        required_names = {
+            "manifest.json": lambda name: name == "manifest.json",
+            "handoff_validation.json": lambda name: name == "handoff_validation.json",
+            "pages/.../frame_layer.json": lambda name: (
+                name.startswith("pages/") and name.endswith("/frame_layer.json")
+            ),
+            "pages/.../balloon_layer.json": lambda name: (
+                name.startswith("pages/") and name.endswith("/balloon_layer.json")
+            ),
+            "pages/.../text_draft_layer.json": lambda name: (
+                name.startswith("pages/") and name.endswith("/text_draft_layer.json")
+            ),
+        }
+        for label, predicate in required_names.items():
+            if not any(predicate(name) for name in names):
+                raise RuntimeError(f"Comic export ZIP is missing required layered artifact: {label}")
+
+
+def _extract_layered_handoff_summary(export_detail: dict[str, Any]) -> dict[str, Any]:
+    layered_manifest_path = str(export_detail.get("layered_manifest_path") or "").strip()
+    if not layered_manifest_path:
+        raise RuntimeError("Comic export detail is missing layered_manifest_path")
+
+    handoff_validation_path = str(export_detail.get("handoff_validation_path") or "").strip()
+    if not handoff_validation_path:
+        raise RuntimeError("Comic export detail is missing handoff_validation_path")
+
+    manifest_file = settings.DATA_DIR / layered_manifest_path
+    if not manifest_file.is_file():
+        raise RuntimeError(f"Comic layered manifest not found: {manifest_file}")
+
+    validation_file = settings.DATA_DIR / handoff_validation_path
+    if not validation_file.is_file():
+        raise RuntimeError(f"Comic handoff validation not found: {validation_file}")
+
+    hard_block_count = int(export_detail.get("hard_block_count") or 0)
+    if hard_block_count > 0:
+        raise RuntimeError(f"Comic handoff validation failed: hard_block_count={hard_block_count}")
+
+    validation_payload = json.loads(validation_file.read_text(encoding="utf-8"))
+    hard_blocks = validation_payload.get("hard_blocks") if isinstance(validation_payload, dict) else None
+    if isinstance(hard_blocks, list) and len(hard_blocks) > hard_block_count:
+        hard_block_count = len(hard_blocks)
+    if hard_block_count > 0:
+        raise RuntimeError(f"Comic handoff validation failed: hard_block_count={hard_block_count}")
+
+    return {
+        "layered_manifest_path": layered_manifest_path,
+        "handoff_validation_path": handoff_validation_path,
+        "hard_block_count": hard_block_count,
+    }
 
 
 def _write_report(
@@ -157,6 +209,7 @@ def _write_report(
     assembly_detail: dict[str, Any],
     export_detail: dict[str, Any],
     selected_panel_assets: list[dict[str, Any]],
+    layered_handoff_summary: dict[str, Any],
 ) -> Path:
     _reports_dir().mkdir(parents=True, exist_ok=True)
     report_path = _reports_dir() / (
@@ -170,6 +223,9 @@ def _write_report(
         "selected_panel_asset_count": len(selected_panel_assets),
         "page_count": len(export_detail.get("pages") or []),
         "export_zip_path": export_detail.get("export_zip_path"),
+        "layered_manifest_path": layered_handoff_summary["layered_manifest_path"],
+        "handoff_validation_path": layered_handoff_summary["handoff_validation_path"],
+        "hard_block_count": layered_handoff_summary["hard_block_count"],
         "teaser_handoff_manifest_path": export_detail.get("teaser_handoff_manifest_path"),
         "episode_detail": episode_detail,
         "assembly_detail": assembly_detail,
@@ -261,6 +317,7 @@ def main() -> int:
     )
     panel_ids = _extract_panel_ids(episode_detail)
     selected_panel_assets = _extract_selected_panel_assets(assembly_detail)
+    layered_handoff_summary = _extract_layered_handoff_summary(export_detail)
     _validate_export_zip(str(export_detail.get("export_zip_path") or ""))
 
     report_path = _write_report(
@@ -271,6 +328,7 @@ def main() -> int:
         assembly_detail=assembly_detail,
         export_detail=export_detail,
         selected_panel_assets=selected_panel_assets,
+        layered_handoff_summary=layered_handoff_summary,
     )
 
     _print_marker("dry_run_success", True)
@@ -279,6 +337,9 @@ def main() -> int:
     _print_marker("selected_panel_asset_count", len(selected_panel_assets))
     _print_marker("page_count", len(export_detail.get("pages") or []))
     _print_marker("manuscript_profile_id", args.manuscript_profile_id)
+    _print_marker("layered_manifest_path", layered_handoff_summary["layered_manifest_path"])
+    _print_marker("handoff_validation_path", layered_handoff_summary["handoff_validation_path"])
+    _print_marker("hard_block_count", layered_handoff_summary["hard_block_count"])
     _print_marker("report_path", _relative_data_path(report_path))
     return 0
 

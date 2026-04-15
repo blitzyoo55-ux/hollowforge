@@ -52,6 +52,7 @@ def _run_production_dry_run(
     if not export_zip_path:
         raise RuntimeError("Comic export detail is missing export_zip_path")
 
+    layered_handoff_summary = comic_dry_run._extract_layered_handoff_summary(export_detail)
     comic_dry_run._validate_export_zip(export_zip_path)
     report_path = comic_dry_run._write_report(
         episode_id=episode_id,
@@ -61,13 +62,18 @@ def _run_production_dry_run(
         assembly_detail=assembly_detail,
         export_detail=export_detail,
         selected_panel_assets=selected_panel_assets,
+        layered_handoff_summary=layered_handoff_summary,
     )
     return {
         "dry_run_success": True,
+        "layered_package_verified": True,
         "panel_count": len(comic_dry_run._extract_panel_ids(episode_detail)),
         "selected_panel_asset_count": len(selected_panel_assets),
         "page_count": len(export_detail.get("pages") or []),
         "export_zip_path": export_zip_path,
+        "layered_manifest_path": layered_handoff_summary["layered_manifest_path"],
+        "handoff_validation_path": layered_handoff_summary["handoff_validation_path"],
+        "hard_block_count": layered_handoff_summary["hard_block_count"],
         "report_path": comic_dry_run._relative_data_path(report_path),
     }
 
@@ -99,8 +105,10 @@ def main() -> int:
         "export_success": False,
         "dry_run_success": False,
         "overall_success": False,
+        "layered_package_verified": False,
         "selected_panel_asset_count": 0,
         "materialized_asset_count": 0,
+        "hard_block_count": 0,
     }
     current_step = "bootstrap"
 
@@ -266,10 +274,18 @@ def main() -> int:
             manuscript_profile_id=args.manuscript_profile_id,
         )
         summary["dry_run_success"] = bool(dry_run_summary.get("dry_run_success"))
+        summary["layered_package_verified"] = bool(
+            dry_run_summary.get("layered_package_verified")
+        )
         summary["page_count"] = int(dry_run_summary.get("page_count") or summary["page_count"])
         summary["selected_panel_asset_count"] = int(
             dry_run_summary.get("selected_panel_asset_count")
             or summary["selected_panel_asset_count"]
+        )
+        summary["layered_manifest_path"] = dry_run_summary.get("layered_manifest_path")
+        summary["handoff_validation_path"] = dry_run_summary.get("handoff_validation_path")
+        summary["hard_block_count"] = int(
+            dry_run_summary.get("hard_block_count") or summary["hard_block_count"]
         )
         summary["dry_run_report_path"] = dry_run_summary.get("report_path")
         summary["export_zip_path"] = dry_run_summary.get("export_zip_path") or summary.get(
