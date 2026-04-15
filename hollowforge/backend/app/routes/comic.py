@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.services.comic_dialogue_service import generate_panel_dialogues
 from app.services.comic_page_assembly_service import (
+    ComicHandoffReadinessError,
     assemble_episode_pages,
     export_episode_pages,
 )
@@ -390,5 +391,10 @@ async def export_comic_episode_pages_endpoint(
             layout_template_id=layout_template_id,
             manuscript_profile_id=manuscript_profile_id,
         )
+    except ComicHandoffReadinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise _http_error_from_value_error(exc) from exc

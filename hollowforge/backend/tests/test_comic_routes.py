@@ -14,6 +14,7 @@ from app.db import get_db, init_db
 from app.main import create_app
 from app.models import ComicEpisodeCreate, StoryPlannerCastInput, StoryPlannerPlanRequest
 from app.services.comic_repository import create_comic_episode
+from app.services.comic_page_assembly_service import ComicHandoffReadinessError
 from app.services.generation_service import GenerationService
 from app.services import comic_render_service
 from app.services.story_planner_service import plan_story_episode
@@ -1814,10 +1815,10 @@ def test_post_comic_episode_page_assembly_route_returns_pages_and_manifest(
     assert body["handoff_validation_path"].endswith("/handoff_validation.json")
     assert body["teaser_handoff_manifest_path"].endswith(".json")
     assert body["page_summaries"][0]["frame_layer_status"] == "complete"
-    assert body["page_summaries"][0]["balloon_layer_status"] == "warning"
-    assert body["page_summaries"][0]["text_draft_layer_status"] == "warning"
+    assert body["page_summaries"][0]["balloon_layer_status"] == "complete"
+    assert body["page_summaries"][0]["text_draft_layer_status"] == "complete"
     assert body["handoff_validation"]["page_summaries"][0]["frame_layer_status"] == "complete"
-    assert body["handoff_validation"]["soft_warnings"][0]["code"] == "layer_warning"
+    assert body["handoff_validation"]["soft_warnings"] == []
     assert body["latest_export_summary"] is None
     assert (settings.DATA_DIR / body["export_manifest_path"]).is_file()
     assert (settings.DATA_DIR / body["layered_manifest_path"]).is_file()
@@ -1872,6 +1873,26 @@ def test_export_route_accepts_manuscript_profile_id(temp_db) -> None:
     assert body["manuscript_profile_manifest_path"].endswith("_manuscript_profile.json")
     assert body["handoff_readme_path"].endswith("_handoff_readme.md")
     assert body["production_checklist_path"].endswith("_production_checklist.json")
+
+
+def test_post_comic_episode_page_export_route_returns_409_for_hard_blocks(
+    temp_db,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode_id = _insert_episode_with_page_panels_fixture(temp_db, panel_count=1)
+    client = _build_client()
+
+    async def _raise_hard_block(**_: object) -> None:
+        raise ComicHandoffReadinessError("comic episode export blocked by hard blocks")
+
+    monkeypatch.setattr("app.routes.comic.export_episode_pages", _raise_hard_block)
+
+    response = client.post(
+        f"/api/v1/comic/episodes/{episode_id}/pages/export"
+    )
+
+    assert response.status_code == 409
+    assert "hard blocks" in response.json()["detail"]
 
 
 def test_post_comic_episode_page_assembly_route_rejects_missing_selected_assets(

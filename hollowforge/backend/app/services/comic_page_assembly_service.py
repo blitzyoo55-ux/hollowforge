@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -27,6 +28,10 @@ from app.models import (
 from app.services.comic_repository import get_comic_episode_detail
 
 
+class ComicHandoffReadinessError(ValueError):
+    """Raised when a comic export cannot proceed because the handoff is blocked."""
+
+
 _PAGE_LAYOUT_TEMPLATES: dict[str, dict[str, Any]] = {
     "jp_2x2_v1": {
         "panels_per_page": 4,
@@ -43,6 +48,7 @@ _PAGE_LAYOUT_TEMPLATES: dict[str, dict[str, Any]] = {
         "gap": 40,
     },
 }
+_LAYERED_PACKAGE_VERSION = "1.5"
 
 _PANEL_ASSET_SELECT_COLUMNS = """
     a.id,
@@ -518,6 +524,25 @@ def _write_markdown_artifact(path: Path, content: str) -> str:
     return _relative_data_path(path)
 
 
+def _write_canonical_artifact_copy(source: Path, destination: Path) -> str:
+    if not source.is_file():
+        raise ValueError(f"Missing canonical package source file: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return _relative_data_path(destination)
+
+
+def _clear_directory(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _package_relative_path(path: Path, package_root: Path) -> str:
+    return path.resolve().relative_to(package_root.resolve()).as_posix()
+
+
 def _write_handoff_readme(
     path: Path,
     *,
@@ -622,18 +647,11 @@ def _count_layer_statuses(
 def _build_handoff_page_summary(
     *,
     page_no: int,
-    preview_path: str,
-    ordered_panel_ids: list[str],
+    art_layer_status: str,
+    frame_layer_status: str,
+    balloon_layer_status: str,
+    text_draft_layer_status: str,
 ) -> ComicHandoffPageSummaryResponse:
-    art_layer_status = (
-        "complete"
-        if (settings.DATA_DIR / preview_path).is_file()
-        else "blocked"
-    )
-    frame_layer_status = "complete" if ordered_panel_ids else "blocked"
-    balloon_layer_status = "warning" if ordered_panel_ids else "blocked"
-    text_draft_layer_status = "warning" if ordered_panel_ids else "blocked"
-
     summary = ComicHandoffPageSummaryResponse(
         page_id=f"page_{page_no:03d}",
         page_no=page_no,
@@ -653,14 +671,270 @@ def _build_handoff_page_summary(
     )
 
 
+def _size_payload(width: int, height: int) -> dict[str, int]:
+    return {"width": width, "height": height}
+
+
+def _rect_payload(x: int, y: int, width: int, height: int) -> dict[str, int]:
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def _page_status(
+    *,
+    art_layer_status: str,
+    frame_layer_status: str,
+    balloon_layer_status: str,
+    text_draft_layer_status: str,
+) -> str:
+    statuses = (
+        art_layer_status,
+        frame_layer_status,
+        balloon_layer_status,
+        text_draft_layer_status,
+    )
+    if "blocked" in statuses:
+        return "blocked"
+    if "warning" in statuses:
+        return "warning"
+    return "complete"
+
+
+def _layer_status_from_issues(
+    *,
+    layer: str,
+    hard_blocks: list[ComicHandoffValidationIssueResponse],
+    soft_warnings: list[ComicHandoffValidationIssueResponse],
+) -> str:
+    if any(issue.layer == layer for issue in hard_blocks):
+        return "blocked"
+    if any(issue.layer == layer for issue in soft_warnings):
+        return "warning"
+    return "complete"
+
+
+def _build_page_geometry(
+    *,
+    layout_template_id: str,
+    panel_count: int,
+) -> dict[str, Any]:
+    template = _resolve_layout_template(layout_template_id)
+    width, height = template["size"]
+    margin = template["margin"]
+    gap = template["gap"]
+    columns, rows = template["grid"]
+    panel_width = int((width - margin * 2 - gap * (columns - 1)) / columns)
+    panel_height = int((height - margin * 2 - gap * (rows - 1)) / rows)
+
+    frame_rects: list[dict[str, int]] = []
+    for index in range(panel_count):
+        row = index // columns
+        col = index % columns
+        if row >= rows:
+            break
+        frame_rects.append(
+            _rect_payload(
+                margin + col * (panel_width + gap),
+                margin + row * (panel_height + gap),
+                panel_width,
+                panel_height,
+            )
+        )
+
+    return {
+        "canvas_size": _size_payload(width, height),
+        "trim_box": _rect_payload(0, 0, width, height),
+        "bleed_box": _rect_payload(0, 0, width, height),
+        "safe_box": _rect_payload(width=width - (margin * 2), height=height - (margin * 2), x=margin, y=margin),
+        "frame_rects": frame_rects,
+    }
+
+
+def _sort_page_panels(page_panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        page_panels,
+        key=lambda panel: (
+            int(panel["reading_order"]) if isinstance(panel.get("reading_order"), int) else 10_000,
+            int(panel["panel_no"]),
+            str(panel["id"]),
+        ),
+    )
+
+
+def _build_crop_notes(selected_asset: dict[str, Any]) -> dict[str, Any] | None:
+    crop_metadata = selected_asset.get("crop_metadata") or {}
+    bubble_safe_zones = selected_asset.get("bubble_safe_zones") or []
+    if not crop_metadata and not bubble_safe_zones:
+        return None
+    return {
+        "crop_metadata": crop_metadata,
+        "bubble_safe_zones": bubble_safe_zones,
+    }
+
+
+def _build_page_validation(
+    *,
+    layout_template_id: str,
+    preview_path: str,
+    page_panels: list[dict[str, Any]],
+    selected_assets_by_panel: dict[str, dict[str, Any]],
+    dialogues_by_panel: dict[str, list[dict[str, Any]]],
+) -> tuple[
+    dict[str, str],
+    list[ComicHandoffValidationIssueResponse],
+    list[ComicHandoffValidationIssueResponse],
+]:
+    hard_blocks: list[ComicHandoffValidationIssueResponse] = []
+    soft_warnings: list[ComicHandoffValidationIssueResponse] = []
+
+    preview_file = _resolve_data_path(preview_path)
+    if not preview_file.is_file():
+        hard_blocks.append(
+            ComicHandoffValidationIssueResponse(
+                code="missing_page_preview",
+                layer="art",
+            )
+        )
+
+    if not page_panels:
+        hard_blocks.append(
+            ComicHandoffValidationIssueResponse(
+                code="page_geometry_missing",
+                layer="frame",
+            )
+        )
+        return {
+            "art_layer_status": _layer_status_from_issues(
+                layer="art",
+                hard_blocks=hard_blocks,
+                soft_warnings=soft_warnings,
+            ),
+            "frame_layer_status": _layer_status_from_issues(
+                layer="frame",
+                hard_blocks=hard_blocks,
+                soft_warnings=soft_warnings,
+            ),
+            "balloon_layer_status": "complete",
+            "text_draft_layer_status": "complete",
+        }, hard_blocks, soft_warnings
+
+    geometry = _build_page_geometry(
+        layout_template_id=layout_template_id,
+        panel_count=len(page_panels),
+    )
+
+    if len(geometry["frame_rects"]) != len(page_panels):
+        hard_blocks.append(
+            ComicHandoffValidationIssueResponse(
+                code="page_geometry_missing",
+                layer="frame",
+            )
+        )
+
+    seen_reading_orders: set[int] = set()
+    reading_order_invalid = False
+    for panel in page_panels:
+        panel_id = str(panel["id"])
+        selected_asset = selected_assets_by_panel.get(panel_id)
+        if selected_asset is None:
+            hard_blocks.append(
+                ComicHandoffValidationIssueResponse(
+                    code="missing_selected_render",
+                    layer="art",
+                )
+            )
+            continue
+
+        selected_render_path = selected_asset.get("storage_path")
+        if not isinstance(selected_render_path, str) or not selected_render_path.strip():
+            hard_blocks.append(
+                ComicHandoffValidationIssueResponse(
+                    code="missing_selected_render",
+                    layer="art",
+                )
+            )
+        elif not _resolve_data_path(selected_render_path).is_file():
+            hard_blocks.append(
+                ComicHandoffValidationIssueResponse(
+                    code="missing_selected_render",
+                    layer="art",
+                )
+            )
+
+        reading_order = panel.get("reading_order")
+        if (
+            not isinstance(reading_order, int)
+            or reading_order < 1
+            or reading_order in seen_reading_orders
+        ):
+            reading_order_invalid = True
+            continue
+        seen_reading_orders.add(reading_order)
+
+    if reading_order_invalid:
+        hard_blocks.append(
+            ComicHandoffValidationIssueResponse(
+                code="reading_order_invalid",
+                layer="frame",
+            )
+        )
+
+    if any(dialogues_by_panel.get(str(panel["id"]), []) for panel in page_panels):
+        hard_blocks.extend(
+            [
+                ComicHandoffValidationIssueResponse(
+                    code="missing_anchor_mapping",
+                    layer="balloon",
+                ),
+                ComicHandoffValidationIssueResponse(
+                    code="missing_anchor_mapping",
+                    layer="text_draft",
+                ),
+            ]
+        )
+
+    return {
+        "art_layer_status": _layer_status_from_issues(
+            layer="art",
+            hard_blocks=hard_blocks,
+            soft_warnings=soft_warnings,
+        ),
+        "frame_layer_status": _layer_status_from_issues(
+            layer="frame",
+            hard_blocks=hard_blocks,
+            soft_warnings=soft_warnings,
+        ),
+        "balloon_layer_status": _layer_status_from_issues(
+            layer="balloon",
+            hard_blocks=hard_blocks,
+            soft_warnings=soft_warnings,
+        ),
+        "text_draft_layer_status": _layer_status_from_issues(
+            layer="text_draft",
+            hard_blocks=hard_blocks,
+            soft_warnings=soft_warnings,
+        ),
+    }, hard_blocks, soft_warnings
+
+
+def _issue_with_page_context(
+    issue: ComicHandoffValidationIssueResponse,
+    *,
+    page_id: str,
+    page_no: int,
+) -> ComicHandoffValidationIssueResponse:
+    return issue.model_copy(update={"page_id": page_id, "page_no": page_no})
+
+
 def _write_layered_package(
     *,
     episode_id: str,
     layout_template_id: str,
     manuscript_profile_id: ComicManuscriptProfileId,
+    episode_detail: Any,
     page_rows: list[dict[str, Any]],
     page_groups: list[list[dict[str, Any]]],
     selected_assets_by_panel: dict[str, dict[str, Any]],
+    dialogues_by_panel: dict[str, list[dict[str, Any]]],
 ) -> tuple[
     str,
     str,
@@ -671,115 +945,268 @@ def _write_layered_package(
         settings.COMICS_MANIFESTS_DIR
         / f"{episode_id}_{layout_template_id}_layered_handoff"
     )
+    _clear_directory(package_root)
     package_root.mkdir(parents=True, exist_ok=True)
 
     layered_manifest_file = package_root / "manifest.json"
     handoff_validation_file = package_root / "handoff_validation.json"
     layered_manifest_path = _relative_data_path(layered_manifest_file)
     handoff_validation_path = _relative_data_path(handoff_validation_file)
+    canonical_manuscript_profile_file = package_root / "manuscript_profile.json"
+    canonical_handoff_readme_file = package_root / "handoff_readme.md"
+    canonical_reports_dir = package_root / "reports"
+    canonical_production_checklist_file = canonical_reports_dir / "production_checklist.json"
+    manuscript_profile = _resolve_manuscript_profile(manuscript_profile_id)
 
     page_summaries: list[ComicHandoffPageSummaryResponse] = []
     hard_blocks: list[ComicHandoffValidationIssueResponse] = []
     soft_warnings: list[ComicHandoffValidationIssueResponse] = []
+    package_pages: list[dict[str, Any]] = []
+    package_panels: list[dict[str, Any]] = []
 
     for page_row, page_panels in zip(page_rows, page_groups):
         page_no = int(page_row["page_no"])
         page_id = f"page_{page_no:03d}"
-        ordered_panel_ids = [panel["id"] for panel in page_panels]
+        ordered_panels = _sort_page_panels(page_panels)
+        ordered_panel_ids = [str(panel["id"]) for panel in ordered_panels]
+        page_dir = package_root / "pages" / page_id
+        canonical_preview_path = page_dir / "page_preview.png"
+        _write_canonical_artifact_copy(
+            _resolve_data_path(str(page_row["preview_path"])),
+            canonical_preview_path,
+        )
+
+        geometry = _build_page_geometry(
+            layout_template_id=layout_template_id,
+            panel_count=len(ordered_panels),
+        )
+        page_layer_statuses, page_hard_blocks, page_soft_warnings = _build_page_validation(
+            layout_template_id=layout_template_id,
+            preview_path=str(page_row["preview_path"]),
+            page_panels=ordered_panels,
+            selected_assets_by_panel=selected_assets_by_panel,
+            dialogues_by_panel=dialogues_by_panel,
+        )
+        hard_blocks.extend(
+            _issue_with_page_context(issue, page_id=page_id, page_no=page_no)
+            for issue in page_hard_blocks
+        )
+        soft_warnings.extend(
+            _issue_with_page_context(issue, page_id=page_id, page_no=page_no)
+            for issue in page_soft_warnings
+        )
+
         summary = _build_handoff_page_summary(
             page_no=page_no,
-            preview_path=str(page_row["preview_path"]),
-            ordered_panel_ids=ordered_panel_ids,
+            art_layer_status=page_layer_statuses["art_layer_status"],
+            frame_layer_status=page_layer_statuses["frame_layer_status"],
+            balloon_layer_status=page_layer_statuses["balloon_layer_status"],
+            text_draft_layer_status=page_layer_statuses["text_draft_layer_status"],
         )
         page_summaries.append(summary)
+        page_status = _page_status(
+            art_layer_status=summary.art_layer_status,
+            frame_layer_status=summary.frame_layer_status,
+            balloon_layer_status=summary.balloon_layer_status,
+            text_draft_layer_status=summary.text_draft_layer_status,
+        )
 
-        page_dir = package_root / "pages" / page_id
+        page_preview_rel = _package_relative_path(canonical_preview_path, package_root)
+        page_manifest_rel = f"pages/{page_id}/page_manifest.json"
+        frame_layer_rel = f"pages/{page_id}/frame_layer.json"
+        balloon_layer_rel = f"pages/{page_id}/balloon_layer.json"
+        text_draft_layer_rel = f"pages/{page_id}/text_draft_layer.json"
+
+        frame_items: list[dict[str, Any]] = []
+        balloon_items: list[dict[str, Any]] = []
+        text_draft_items: list[dict[str, Any]] = []
+
+        for index, panel in enumerate(ordered_panels):
+            panel_id = str(panel["id"])
+            selected_asset = selected_assets_by_panel[panel_id]
+            panel_dialogues = dialogues_by_panel.get(panel_id, [])
+            frame_items.append(
+                {
+                    "panel_id": panel_id,
+                    "scene_no": panel.get("scene_no"),
+                    "panel_no": panel["panel_no"],
+                    "reading_order": panel.get("reading_order"),
+                    "frame_rect": geometry["frame_rects"][index]
+                    if index < len(geometry["frame_rects"])
+                    else None,
+                    "frame_shape_hint": "rect",
+                    "source_render_asset_id": selected_asset.get("id"),
+                    "source_generation_id": selected_asset.get("generation_id"),
+                }
+            )
+            if panel_dialogues:
+                balloon_items.append(
+                    {
+                        "panel_id": panel_id,
+                        "scene_no": panel.get("scene_no"),
+                        "panel_no": panel["panel_no"],
+                        "reading_order": panel.get("reading_order"),
+                        "dialogues": [
+                            {
+                                "id": dialogue.get("id"),
+                                "type": dialogue.get("type"),
+                                "speaker_character_id": dialogue.get("speaker_character_id"),
+                                "text": dialogue.get("text"),
+                                "tone": dialogue.get("tone"),
+                                "priority": dialogue.get("priority"),
+                                "balloon_style_hint": dialogue.get("balloon_style_hint"),
+                                "placement_hint": dialogue.get("placement_hint"),
+                            }
+                            for dialogue in panel_dialogues
+                        ],
+                    }
+                )
+                text_draft_items.append(
+                    {
+                        "panel_id": panel_id,
+                        "scene_no": panel.get("scene_no"),
+                        "panel_no": panel["panel_no"],
+                        "reading_order": panel.get("reading_order"),
+                        "dialogues": [
+                            {
+                                "id": dialogue.get("id"),
+                                "type": dialogue.get("type"),
+                                "text": dialogue.get("text"),
+                                "speaker_character_id": dialogue.get("speaker_character_id"),
+                            }
+                            for dialogue in panel_dialogues
+                        ],
+                    }
+                )
+
         page_manifest_payload = {
             "episode_id": episode_id,
             "layout_template_id": layout_template_id,
             "manuscript_profile_id": manuscript_profile_id,
             "page_id": page_id,
             "page_no": page_no,
-            "preview_path": page_row["preview_path"],
-            "page_summary": summary.model_dump(),
-            "panel_ids": ordered_panel_ids,
-            "selected_asset_paths": [
-                selected_assets_by_panel[panel_id]["storage_path"]
-                for panel_id in ordered_panel_ids
-            ],
+            "preview_path": page_preview_rel,
+            "canvas_size": geometry["canvas_size"],
+            "reading_direction": manuscript_profile["binding_direction"],
+            "trim_box": geometry["trim_box"],
+            "bleed_box": geometry["bleed_box"],
+            "safe_box": geometry["safe_box"],
+            "panel_order": ordered_panel_ids,
+            "layer_files": {
+                "frame_layer": frame_layer_rel,
+                "balloon_layer": balloon_layer_rel,
+                "text_draft_layer": text_draft_layer_rel,
+            },
+            "status": page_status,
         }
         _write_json_manifest(page_dir / "page_manifest.json", page_manifest_payload)
         _write_json_manifest(
             page_dir / "frame_layer.json",
             {
+                "episode_id": episode_id,
                 "page_id": page_id,
                 "page_no": page_no,
+                "layer": "frame",
                 "status": summary.frame_layer_status,
-                "panel_ids": ordered_panel_ids,
+                "items": frame_items,
             },
         )
         _write_json_manifest(
             page_dir / "balloon_layer.json",
             {
+                "episode_id": episode_id,
                 "page_id": page_id,
                 "page_no": page_no,
+                "layer": "balloon",
                 "status": summary.balloon_layer_status,
-                "panel_ids": ordered_panel_ids,
+                "items": balloon_items,
             },
         )
         _write_json_manifest(
             page_dir / "text_draft_layer.json",
             {
+                "episode_id": episode_id,
                 "page_id": page_id,
                 "page_no": page_no,
+                "layer": "text_draft",
                 "status": summary.text_draft_layer_status,
-                "panel_ids": ordered_panel_ids,
+                "items": text_draft_items,
             },
         )
 
-        for panel in page_panels:
+        package_pages.append(
+            {
+                "page_id": page_id,
+                "page_no": page_no,
+                "status": page_status,
+                "page_manifest_path": page_manifest_rel,
+                "page_preview_path": page_preview_rel,
+                "layer_files": {
+                    "frame_layer": frame_layer_rel,
+                    "balloon_layer": balloon_layer_rel,
+                    "text_draft_layer": text_draft_layer_rel,
+                },
+            }
+        )
+
+        for panel in ordered_panels:
             panel_id = str(panel["id"])
             panel_dir = package_root / "panels" / f"panel_{panel_id}"
             selected_asset = selected_assets_by_panel[panel_id]
-            _write_json_manifest(
-                panel_dir / "panel_manifest.json",
-                {
+            canonical_selected_render_path = panel_dir / "selected_render.png"
+            _write_canonical_artifact_copy(
+                _resolve_data_path(str(selected_asset["storage_path"])),
+                canonical_selected_render_path,
+            )
+            selected_render_path = _package_relative_path(
+                canonical_selected_render_path,
+                package_root,
+            )
+            panel_manifest_rel = f"panels/panel_{panel_id}/panel_manifest.json"
+            crop_notes = _build_crop_notes(selected_asset) or {
+                "crop_metadata": {},
+                "bubble_safe_zones": [],
+            }
+            panel_manifest = {
+                "episode_id": episode_id,
+                "layout_template_id": layout_template_id,
+                "page_id": page_id,
+                "page_no": page_no,
+                "scene_no": panel.get("scene_no"),
+                "panel_id": panel_id,
+                "panel_no": panel["panel_no"],
+                "selected_render_asset_id": selected_asset.get("id"),
+                "selected_render_generation_id": selected_asset.get("generation_id"),
+                "selected_render_path": selected_render_path,
+                "crop_notes": crop_notes,
+                "lineage": {
                     "episode_id": episode_id,
-                    "layout_template_id": layout_template_id,
                     "page_id": page_id,
                     "page_no": page_no,
                     "panel_id": panel_id,
                     "panel_no": panel["panel_no"],
-                    "generation_id": selected_asset.get("generation_id"),
-                    "asset_id": selected_asset.get("id"),
-                    "storage_path": selected_asset.get("storage_path"),
+                    "page_manifest_path": page_manifest_rel,
+                    "page_preview_path": page_preview_rel,
+                    "panel_manifest_path": panel_manifest_rel,
+                    "root_manifest_path": "manifest.json",
                 },
+            }
+            _write_json_manifest(panel_dir / "panel_manifest.json", panel_manifest)
+            package_panels.append(
+                {
+                    "panel_id": panel_id,
+                    "page_id": page_id,
+                    "page_no": page_no,
+                    "scene_no": panel.get("scene_no"),
+                    "panel_no": panel["panel_no"],
+                    "panel_manifest_path": panel_manifest_rel,
+                    "selected_render_asset_id": selected_asset.get("id"),
+                    "selected_render_generation_id": selected_asset.get("generation_id"),
+                    "selected_render_path": selected_render_path,
+                    "crop_notes": crop_notes,
+                    "lineage": panel_manifest["lineage"],
+                }
             )
-
-        for layer_name, status in (
-            ("art_layer_status", summary.art_layer_status),
-            ("frame_layer_status", summary.frame_layer_status),
-            ("balloon_layer_status", summary.balloon_layer_status),
-            ("text_draft_layer_status", summary.text_draft_layer_status),
-        ):
-            if status == "blocked":
-                hard_blocks.append(
-                    ComicHandoffValidationIssueResponse(
-                        code="layer_blocked",
-                        page_id=page_id,
-                        page_no=page_no,
-                        layer=layer_name,
-                    )
-                )
-            elif status == "warning":
-                soft_warnings.append(
-                    ComicHandoffValidationIssueResponse(
-                        code="layer_warning",
-                        page_id=page_id,
-                        page_no=page_no,
-                        layer=layer_name,
-                    )
-                )
 
     validation = ComicHandoffValidationResponse(
         episode_id=episode_id,
@@ -789,15 +1216,87 @@ def _write_layered_package(
         generated_at=_now_iso(),
     )
     _write_json_manifest(
-        layered_manifest_file,
+        canonical_manuscript_profile_file,
         {
             "episode_id": episode_id,
             "layout_template_id": layout_template_id,
             "manuscript_profile_id": manuscript_profile_id,
-            "page_count": len(page_summaries),
-            "page_summaries": [summary.model_dump() for summary in page_summaries],
-            "handoff_validation_path": handoff_validation_path,
+            "episode_title": episode_detail.episode.title,
+            "character_id": episode_detail.episode.character_id,
+            "character_version_id": episode_detail.episode.character_version_id,
+            "manuscript_profile": manuscript_profile,
             "generated_at": validation.generated_at,
+        },
+    )
+    _write_handoff_readme(
+        canonical_handoff_readme_file,
+        episode_detail=episode_detail,
+        layout_template_id=layout_template_id,
+        manuscript_profile=manuscript_profile,
+        page_count=len(page_summaries),
+    )
+    _write_production_checklist(
+        canonical_production_checklist_file,
+        episode_id=episode_id,
+        layout_template_id=layout_template_id,
+        manuscript_profile=manuscript_profile,
+        page_count=len(page_rows),
+    )
+    _write_json_manifest(
+        layered_manifest_file,
+        {
+            "package_version": _LAYERED_PACKAGE_VERSION,
+            "episode_id": episode_id,
+            "layout_template_id": layout_template_id,
+            "manuscript_profile_id": manuscript_profile_id,
+            "episode_title": episode_detail.episode.title,
+            "character_id": episode_detail.episode.character_id,
+            "character_version_id": episode_detail.episode.character_version_id,
+            "work_id": episode_detail.episode.work_id,
+            "series_id": episode_detail.episode.series_id,
+            "production_episode_id": episode_detail.episode.production_episode_id,
+            "content_mode": episode_detail.episode.content_mode,
+            "target_output": episode_detail.episode.target_output,
+            "render_lane": episode_detail.episode.render_lane,
+            "series_style_id": episode_detail.episode.series_style_id,
+            "character_series_binding_id": episode_detail.episode.character_series_binding_id,
+            "package_root": ".",
+            "manuscript_profile": manuscript_profile,
+            "page_count": len(page_summaries),
+            "panel_count": len(package_panels),
+            "pages": package_pages,
+            "panels": package_panels,
+            "warnings": [warning.model_dump() for warning in soft_warnings],
+            "source_lineage": {
+                "page_previews": [
+                    {
+                        "page_id": page["page_id"],
+                        "page_no": page["page_no"],
+                        "path": page["page_preview_path"],
+                    }
+                    for page in package_pages
+                ],
+                "panel_manifests": [
+                    {
+                        "panel_id": panel["panel_id"],
+                        "page_id": panel["page_id"],
+                        "page_no": panel["page_no"],
+                        "path": panel["panel_manifest_path"],
+                    }
+                    for panel in package_panels
+                ],
+            },
+            "page_summaries": [summary.model_dump() for summary in page_summaries],
+            "handoff_validation_path": "handoff_validation.json",
+            "canonical_package_root": ".",
+            "canonical_files": {
+                "manifest": "manifest.json",
+                "handoff_validation": "handoff_validation.json",
+                "manuscript_profile": "manuscript_profile.json",
+                "handoff_readme": "handoff_readme.md",
+                "production_checklist": "reports/production_checklist.json",
+            },
+            "exported_at": validation.generated_at,
         },
     )
     _write_json_manifest(handoff_validation_file, validation.model_dump())
@@ -819,7 +1318,9 @@ async def assemble_episode_pages(
     panels: list[dict[str, Any]] = []
     for scene_detail in episode_detail.scenes:
         for panel in scene_detail.panels:
-            panels.append(panel.model_dump())
+            panel_payload = panel.model_dump()
+            panel_payload["scene_no"] = scene_detail.scene.scene_no
+            panels.append(panel_payload)
 
     if not panels:
         raise ValueError(f"Comic episode {episode_id} has no panels to assemble")
@@ -1022,9 +1523,11 @@ async def assemble_episode_pages(
         episode_id=episode_id,
         layout_template_id=layout_template_id,
         manuscript_profile_id=manuscript_profile_id,
+        episode_detail=episode_detail,
         page_rows=page_rows,
         page_groups=page_groups,
         selected_assets_by_panel=selected_assets_by_panel,
+        dialogues_by_panel=dialogues_by_panel,
     )
 
     pages = [
@@ -1101,7 +1604,7 @@ def _zip_manifest_artifacts(
             for file_path in sorted(
                 path for path in layered_package_root.rglob("*") if path.is_file()
             ):
-                relative_path = _relative_data_path(file_path)
+                relative_path = file_path.relative_to(layered_package_root).as_posix()
                 if relative_path in archived_paths:
                     continue
                 archive.write(file_path, arcname=relative_path)
@@ -1137,6 +1640,10 @@ async def export_episode_pages(
     )
     hard_block_count = len(page_response.handoff_validation.hard_blocks)
     soft_warning_count = len(page_response.handoff_validation.soft_warnings)
+    if hard_block_count:
+        raise ComicHandoffReadinessError(
+            f"comic episode {episode_id} export blocked by {hard_block_count} hard blocks"
+        )
     export_zip_path = settings.COMICS_EXPORTS_DIR / f"{episode_id}_{layout_template_id}_handoff.zip"
     _zip_manifest_artifacts(
         export_zip_path=export_zip_path,
