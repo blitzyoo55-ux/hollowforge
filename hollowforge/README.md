@@ -16,6 +16,9 @@ Production image generation and orchestration console for Lab451.
 - comic frontend route: `/comic` with `/comic-studio` kept as a compatibility alias
   - `/comic` now also exposes selected-render teaser ops for `Current Teaser Shot`
     plus recent variants, stale reconcile, and one-click rerun
+  - `/comic` now splits comic finishing prep into `Pages` and `Handoff`
+    surfaces so operators can assemble previews first, then review layered
+    handoff readiness before export
   - comic panel roles now resolve different render profiles; `establish` now
     uses a scene-first prompt recipe that biases toward room readability before
     portrait glamour, while `insert` continues to suppress glamour bias
@@ -35,8 +38,8 @@ Production image generation and orchestration console for Lab451.
 - `/production` is the primary operator entry for creating or resuming
   production context before opening track surfaces.
 - `/comic` should be read as `Comic Handoff`, not as the final manga editor.
-  HollowForge packages review assets, dialogue drafts, page assembly, and
-  export inputs before CLIP STUDIO EX finishing.
+  HollowForge packages review assets, dialogue drafts, page assembly, layered
+  handoff validation, and export inputs before CLIP STUDIO EX finishing.
 - `/sequences` should be read as `Animation Track`, not as the final animation
   editor. HollowForge plans blueprints, launches preview runs, and packages
   review outputs before external editorial finishing.
@@ -159,7 +162,7 @@ cd backend
 - backend detail route: `GET /api/v1/comic/episodes/{episode_id}`
 - frontend production route: `/production`
 - frontend comic handoff route: `/comic` with manuscript profile selection plus
-  selected-render teaser ops
+  selected-render teaser ops and split `Pages` / `Handoff` review surfaces
 - frontend animation track route: `/sequences`
 - bounded Camila V2 comic pilot:
   `backend/scripts/launch_camila_v2_comic_pilot.py`
@@ -204,6 +207,26 @@ unzip -l ../data/comics/exports/<episode_id>_jp_2x2_v1_handoff.zip | rg 'smoke_a
 jq '.teaser_handoff_manifest.selected_panel_assets[].storage_path' \
   ../data/comics/reports/<episode_id>_jp_2x2_v1_jp_manga_rightbound_v1_dry_run.json
 ```
+
+The layered comic handoff contract is now additive to the legacy manifests and
+ZIP payload:
+
+- root package files:
+  `manifest.json`, `handoff_validation.json`, `handoff_readme.md`,
+  `manuscript_profile.json`, `reports/production_checklist.json`
+- page subtree:
+  `pages/page_###/page_preview.png`, `page_manifest.json`, `frame_layer.json`,
+  `balloon_layer.json`, `text_draft_layer.json`
+- panel subtree:
+  `panels/panel_<panel_id>/selected_render.png`,
+  `panels/panel_<panel_id>/panel_manifest.json`
+
+The current dry-run success rule for comic handoff is:
+
+- `layered_manifest_path` exists
+- `handoff_validation_path` exists
+- `hard_block_count == 0`
+- ZIP contains the layered root files plus at least one page layer subtree
 
 Use `check_comic_remote_render_preflight.py` before the remote still lane, then
 use `launch_comic_remote_render_smoke.py` to confirm callback-driven

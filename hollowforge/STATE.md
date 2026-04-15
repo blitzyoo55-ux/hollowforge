@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-13
+Last updated: 2026-04-15
 
 ## Snapshot
 
@@ -15,6 +15,9 @@ Last updated: 2026-04-13
 - `/production` now owns shared-core creation plus episode-aware resume for
   work, series, and episode orchestration state.
 - `/comic` should now be read as Comic Handoff, not the final manga editor.
+- `/comic` now splits the comic handoff path into `Pages` and `Handoff`
+  surfaces so operators assemble previews first, then review layered export
+  readiness before ZIP export.
 - `/sequences` should now be read as Animation Track, not the final animation
   editor.
 - `/comic` and `/sequences` now accept query-based production context passed
@@ -28,6 +31,13 @@ Last updated: 2026-04-13
   and one teaser derivative path from that same source material.
 - `/comic` now carries manuscript profile selection, backed by
   `GET /api/v1/comic/manuscript-profiles`.
+- layered comic handoff packaging is now live in the backend and remains
+  additive to the legacy manifest and ZIP outputs.
+- the canonical handoff package now writes `manifest.json`,
+  `handoff_validation.json`, page layer files, and panel manifests alongside
+  the legacy artifact family.
+- the comic production dry-run and remote one-shot dry-run helpers now verify
+  layered package artifacts and fail when `hard_block_count > 0`.
 - `/comic` now also exposes selected-render teaser ops for `Current Teaser
   Shot` plus recent variants, stale reconcile, and one-click rerun against the
   canonical teaser preset.
@@ -93,8 +103,8 @@ Last updated: 2026-04-13
    `production_episode_id` is paired with an explicit `mode`, follow that
    downstream handoff. Without both values, stay in manual operator mode.
 4. Use `docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md` for the current
-   operator path across import, remote render, selected render, handoff export,
-   teaser rerun, and stale recovery.
+   operator path across import, remote render, selected render, `Pages`,
+   `Handoff Review`, handoff export, teaser rerun, and stale recovery.
 5. If a change touches frontend runtime behavior, run the relevant `frontend/`
    checks and do not treat the work as deploy-complete before `npm run build`.
 6. If a change touches animation execution, preserve the existing
@@ -106,10 +116,12 @@ Last updated: 2026-04-13
    one script.
 8. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
    compatibility route for existing bookmarks, and manuscript profile selection
-   is now part of the `/comic` workspace. Selected-render teaser ops also live
-   there, so operators can inspect the current teaser shot and recent variants
-   without dropping to shell-only stale reconcile or rerun steps for the
-   bounded teaser flow.
+   is now part of the `/comic` workspace. The page handoff path is split into
+   `Pages` and `Handoff`, where `Handoff` owns layer readiness, export
+   checklist review, and export gating on `hard_block_count == 0`. Selected-
+   render teaser ops also live there, so operators can inspect the current
+   teaser shot and recent variants without dropping to shell-only stale
+   reconcile or rerun steps for the bounded teaser flow.
 9. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
    http://127.0.0.1:8000` when you need a bounded end-to-end comic backend
    check against a running local API.
@@ -139,7 +151,9 @@ Last updated: 2026-04-13
    local backend URL boundary.
 14. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
    when you need the production handoff validation path with a selected layout
-   template and manuscript profile.
+   template and manuscript profile. Success now requires a real
+   `layered_manifest_path`, a real `handoff_validation_path`, zero hard blocks,
+   and layered ZIP contents for every exported page.
 15. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
    --base-url http://127.0.0.1:8000 --episode-id
    2d696b08-4899-4a3b-b499-adc37dbaa9f5 --panel-index 0 --preset-id
@@ -175,7 +189,8 @@ Last updated: 2026-04-13
 - keep `/production` as the source-of-truth surface for episode linkage and
   content-mode normalization
 - keep the production dry-run and handoff export path explicit, including the
-  manuscript profile selection and ZIP/report verification steps
+  manuscript profile selection, `Pages -> Handoff -> Export` review sequence,
+  and ZIP/report verification steps
 - continue the shift from random image generation toward character, episode,
   and shot-oriented production
 - keep Character Canon V2 layered separately from legacy favorite still
@@ -237,7 +252,7 @@ Last updated: 2026-04-13
 - publish automation exists in the data model and UI pathing, but real operator
   usage is still incomplete
 - handoff export correctness now depends on the selected manuscript profile as
-  well as the page assembly and ZIP verification steps
+  well as the page assembly, handoff review state, and ZIP verification steps
 - animation quality beyond preview grade will likely require stronger remote GPU
   execution rather than more local tuning
 - remote still render correctness now depends on callback reachability and worker
@@ -249,11 +264,11 @@ Last updated: 2026-04-13
 
 <!-- project-hub:status:start -->
 - current phase: active
-- latest session: Character Canon V2 + Series Style Canon Camila pilot helpers
-- latest summary: Landed the Camila-only `character_canon_v2` lane, added
-  bounded comic and teaser pilot helpers with explicit selected-render markers,
-  and verified live teaser rerun output at
-  `data/outputs/15d0003c-99c5-48b3-991f-eff9a95e8f24.mp4`.
+- latest session: Layered comic handoff package plus `/comic` handoff review UI
+- latest summary: Landed additive layered comic handoff artifacts, upgraded the
+  bounded dry-run helpers to verify layered package validity, and split `/comic`
+  into `Pages` and `Handoff` surfaces with export checklist review and stale
+  handoff invalidation before ZIP export.
 
 ### Open Issues
 - none

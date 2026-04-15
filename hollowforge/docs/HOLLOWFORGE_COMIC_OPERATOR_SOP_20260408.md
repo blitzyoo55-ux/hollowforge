@@ -9,7 +9,8 @@ MVP:
 
 - import one approved story plan
 - produce or inspect selected panel renders
-- export a Japanese handoff package
+- review a layered Japanese handoff package
+- export a Japanese handoff ZIP only after handoff review clears
 - derive one teaser animation
 - recover stale teaser jobs with `fail then rerun`
 
@@ -94,20 +95,61 @@ Expected result:
 
 This is panel-scoped and should be repeated only where needed.
 
-### 4. Assemble and export the comic handoff
+### 4. Assemble pages
 
 Once every panel in the episode has a selected materialized render:
 
 1. confirm `Layout Template`
 2. confirm `Manuscript Profile`
 3. click `Assemble Pages`
-4. inspect page previews
-5. click `Export Handoff ZIP`
 
 Expected outputs:
 
-- preview pages
+- preview pages under the `Pages` surface
+- page assembly manifest family under `data/comics/manifests/`
+
+### 5. Handoff review
+
+After page assembly succeeds, switch to the `Handoff` surface.
+
+Review:
+
+1. per-page art / frame / balloon / text draft readiness
+2. hard block count and soft warning count
+3. layered artifact paths
+4. export checklist
+
+Expected layered artifacts:
+
+- root `manifest.json`
+- root `handoff_validation.json`
+- `pages/page_###/page_manifest.json`
+- `pages/page_###/frame_layer.json`
+- `pages/page_###/balloon_layer.json`
+- `pages/page_###/text_draft_layer.json`
+- `panels/panel_<panel_id>/panel_manifest.json`
+
+Export rule:
+
+- if `hard_block_count > 0`, do not export
+- warning-only state is exportable
+- if selected renders, layout template, or manuscript profile change, re-assemble
+  and re-review before export
+
+### 6. Export the comic handoff
+
+Only after `Handoff Review` shows zero hard blocks:
+
+1. confirm `Layered manifest` path is present
+2. confirm `Validation artifact` path is present
+3. confirm export checklist is fully `Ready`
+4. click `Export Handoff ZIP`
+
+Expected outputs:
+
 - handoff ZIP
+- layered manifest
+- handoff validation artifact
 - production report
 
 Canonical export-family artifacts live under:
@@ -115,7 +157,7 @@ Canonical export-family artifacts live under:
 - `data/comics/exports/`
 - `data/comics/reports/`
 
-### 5. Derive one teaser animation
+### 7. Derive one teaser animation
 
 Select the panel whose selected render should drive the teaser.
 
@@ -140,7 +182,7 @@ Expected result:
 - recent variants refresh under that current shot
 - the newest successful mp4 can be opened from the same panel
 
-### 6. Recover a stale teaser job
+### 8. Recover a stale teaser job
 
 If a teaser job remains non-terminal for too long:
 
@@ -200,6 +242,13 @@ The comic helper is intentionally bounded for live validation. It now defaults
 to one panel, one remote candidate, and a longer materialization poll so the
 pilot lane proves the V2 render contract before a broader one-shot run.
 
+Layered handoff dry-run success criteria:
+
+- `layered_manifest_path` exists
+- `handoff_validation_path` exists
+- `hard_block_count` is zero
+- export ZIP contains root layered files plus at least one page layer subtree
+
 Stale reconcile fallback:
 
 ```bash
@@ -222,6 +271,7 @@ For one bounded comic-plus-teaser pass, the operator should finish with:
 
 - one imported episode
 - selected materialized renders for every panel
+- one reviewed layered handoff package with zero hard blocks
 - one exported handoff ZIP
 - one production report
 - one successful teaser mp4
