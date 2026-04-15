@@ -42,6 +42,18 @@ function formatLayerLabel(label: string, status: ComicHandoffPageSummaryResponse
   return `${label} ${status}`
 }
 
+type ChecklistStatus = 'ready' | 'blocked'
+
+function checklistTone(status: ChecklistStatus): string {
+  return status === 'ready'
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+}
+
+function checklistLabel(status: ChecklistStatus): string {
+  return status === 'ready' ? 'Ready' : 'Blocked'
+}
+
 export default function ComicHandoffReviewPanel({
   episode,
   validation,
@@ -57,6 +69,36 @@ export default function ComicHandoffReviewPanel({
 }: ComicHandoffReviewPanelProps) {
   const hardBlockCount = validation?.hard_blocks.length ?? 0
   const softWarningCount = validation?.soft_warnings.length ?? 0
+  const layeredManifestChecklistStatus: ChecklistStatus = layeredManifestPath ? 'ready' : 'blocked'
+  const validationArtifactChecklistStatus: ChecklistStatus = handoffValidationPath ? 'ready' : 'blocked'
+  const hardBlocksChecklistStatus: ChecklistStatus = hardBlockCount === 0 ? 'ready' : 'blocked'
+  const pageSummaryChecklistStatus: ChecklistStatus = pageSummaries.length > 0 ? 'ready' : 'blocked'
+  const checklistItems = [
+    {
+      label: 'Layered manifest present',
+      status: layeredManifestChecklistStatus,
+      detail: layeredManifestPath ?? 'Run page assembly to generate the layered manifest.',
+    },
+    {
+      label: 'Validation artifact present',
+      status: validationArtifactChecklistStatus,
+      detail: handoffValidationPath ?? 'Run page assembly to generate the validation artifact.',
+    },
+    {
+      label: 'Hard blocks clear',
+      status: hardBlocksChecklistStatus,
+      detail: hardBlockCount === 0
+        ? 'No hard blocks detected in handoff validation.'
+        : `${hardBlockCount} hard block${hardBlockCount === 1 ? '' : 's'} must be resolved before export.`,
+    },
+    {
+      label: 'Page summaries ready for review/export',
+      status: pageSummaryChecklistStatus,
+      detail: pageSummaries.length > 0
+        ? `${pageSummaries.length} page summary${pageSummaries.length === 1 ? '' : 'ies'} available for operator review.`
+        : 'Assemble pages to generate reviewable page summaries.',
+    },
+  ]
 
   return (
     <section
@@ -120,6 +162,26 @@ export default function ComicHandoffReviewPanel({
                   <span className="text-gray-100">Validation artifact:</span> {handoffValidationPath}
                 </p>
               )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Export Checklist</p>
+            <div className="mt-3 space-y-3">
+              {checklistItems.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex flex-col gap-2 rounded-xl border border-gray-800 bg-gray-900/70 p-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-100">{item.label}</p>
+                    <p className="mt-1 text-xs text-gray-400">{item.detail}</p>
+                  </div>
+                  <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${checklistTone(item.status)}`}>
+                    {checklistLabel(item.status)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
