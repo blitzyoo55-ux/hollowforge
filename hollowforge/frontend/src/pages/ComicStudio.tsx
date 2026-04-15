@@ -24,6 +24,8 @@ import {
   type StoryPlannerPlanResponse,
   type ComicEpisodeDetailResponse,
   type ComicCharacterVersionResponse,
+  type ComicHandoffExportSummaryResponse,
+  type ComicPageAssemblyBatchResponse,
   type ComicManuscriptProfileId,
   type ComicPageExportResponse,
   type ComicPageLayoutTemplateId,
@@ -35,6 +37,7 @@ import {
 } from '../api/client'
 import ComicDialogueEditor from '../components/comic/ComicDialogueEditor'
 import ComicEpisodeDraftPanel from '../components/comic/ComicEpisodeDraftPanel'
+import ComicHandoffReviewPanel from '../components/comic/ComicHandoffReviewPanel'
 import ComicPageAssemblyPanel from '../components/comic/ComicPageAssemblyPanel'
 import ComicPanelBoard, { type ComicPanelRenderStatusSummary } from '../components/comic/ComicPanelBoard'
 import ComicTeaserOpsPanel from '../components/comic/ComicTeaserOpsPanel'
@@ -513,7 +516,9 @@ export default function ComicStudio() {
   const [panelDialogues, setPanelDialogues] = useState<Record<string, ComicPanelDialogueResponse[]>>({})
   const [layoutTemplateId, setLayoutTemplateId] = useState<ComicPageLayoutTemplateId>('jp_2x2_v1')
   const [manuscriptProfileId, setManuscriptProfileId] = useState<ComicManuscriptProfileId>('jp_manga_rightbound_v1')
-  const [exportResult, setExportResult] = useState<ComicPageExportResponse | null>(null)
+  const [handoffResult, setHandoffResult] = useState<ComicPageAssemblyBatchResponse | ComicPageExportResponse | null>(null)
+  const [latestSuccessfulExportSummary, setLatestSuccessfulExportSummary] = useState<ComicHandoffExportSummaryResponse | null>(null)
+  const [activeHandoffSurface, setActiveHandoffSurface] = useState<'pages' | 'handoff'>('pages')
   const [latestAnimationReconciliation, setLatestAnimationReconciliation] = useState<AnimationReconciliationResponse | null>(null)
   const [latestLaunchedTeaserLaunch, setLatestLaunchedTeaserLaunch] = useState<{
     generationId: string
@@ -674,7 +679,9 @@ export default function ComicStudio() {
     setPanelAssets({})
     setPanelQueueResponses({})
     setPanelDialogues({})
-    setExportResult(null)
+    setHandoffResult(null)
+    setLatestSuccessfulExportSummary(null)
+    setActiveHandoffSurface('pages')
   }
 
   const clearLoadedEpisodeState = () => {
@@ -686,7 +693,9 @@ export default function ComicStudio() {
     setPanelAssets({})
     setPanelQueueResponses({})
     setPanelDialogues({})
-    setExportResult(null)
+    setHandoffResult(null)
+    setLatestSuccessfulExportSummary(null)
+    setActiveHandoffSurface('pages')
   }
 
   const importMutation = useMutation({
@@ -734,7 +743,9 @@ export default function ComicStudio() {
       setPanelAssets({})
       setPanelQueueResponses({})
       setPanelDialogues({})
-      setExportResult(null)
+      setHandoffResult(null)
+      setLatestSuccessfulExportSummary(null)
+      setActiveHandoffSurface('pages')
       notify.success('Comic episode imported')
     },
     onError: (error) => {
@@ -895,7 +906,9 @@ export default function ComicStudio() {
             }
           : current,
       )
-      setExportResult(null)
+      setHandoffResult(response)
+      setLatestSuccessfulExportSummary(null)
+      setActiveHandoffSurface('handoff')
       notify.success('Comic pages assembled')
     },
     onError: (error) => {
@@ -914,7 +927,9 @@ export default function ComicStudio() {
             }
           : current,
       )
-      setExportResult(response)
+      setHandoffResult(response)
+      setLatestSuccessfulExportSummary(response.latest_export_summary)
+      setActiveHandoffSurface('handoff')
       notify.success('Comic handoff ZIP exported')
     },
     onError: (error) => {
@@ -1003,7 +1018,14 @@ export default function ComicStudio() {
     && allPanels.every((panel) => panelHasMaterializedSelectedAsset(panel.id))
   const canGenerateDialogues = Boolean(selectedPanel && selectedPanelHasMaterializedSelectedAsset)
   const canAssemblePages = Boolean(currentEpisode && allPanelsHaveMaterializedSelectedAssets)
-  const canExportPages = Boolean(currentEpisode && currentEpisode.pages.length > 0 && allPanelsHaveMaterializedSelectedAssets)
+  const handoffHardBlockCount = handoffResult?.handoff_validation.hard_blocks.length ?? 0
+  const canExportPages = Boolean(
+    currentEpisode
+    && currentEpisode.pages.length > 0
+    && allPanelsHaveMaterializedSelectedAssets
+    && handoffResult
+    && handoffHardBlockCount === 0,
+  )
   const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionContext)
   const createFromProductionLinkedRows = isCreateFromProduction ? (linkedEpisodesQuery.data ?? []) : []
   const hasLinkedEpisodesForCreateFromProduction = createFromProductionLinkedRows.length > 0
@@ -1055,6 +1077,15 @@ export default function ComicStudio() {
       : currentEpisode.pages.length === 0
         ? 'Run page assembly before exporting the handoff ZIP. Layout template = page composition. Manuscript profile = print/handoff intent.'
         : null
+  const handoffReadinessMessage = !currentEpisode
+    ? null
+    : currentEpisode.pages.length === 0
+      ? 'Run page assembly before handoff review and export.'
+      : handoffHardBlockCount > 0
+        ? 'Hard blocks must be resolved before export.'
+        : (handoffResult?.handoff_validation.soft_warnings.length ?? 0) > 0
+          ? 'Review warnings, then export when ready.'
+          : 'Layered handoff package is ready for export.'
   const teaserReadinessMessage = !selectedPanel
     ? null
     : !selectedPanelHasSelectedAsset
@@ -1325,19 +1356,67 @@ export default function ComicStudio() {
           onGenerate={(panelId) => dialogueMutation.mutate(panelId)}
         />
         <div className="space-y-6">
+          <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Workflow</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-100">Assemble -&gt; Handoff Review -&gt; Export</h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveHandoffSurface('pages')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition',
+                    activeHandoffSurface === 'pages'
+                      ? 'border-sky-500/40 bg-sky-500/10 text-sky-200'
+                      : 'border-gray-700 bg-gray-950/70 text-gray-300 hover:border-sky-500/30 hover:text-sky-100',
+                  ].join(' ')}
+                >
+                  Pages
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveHandoffSurface('handoff')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition',
+                    activeHandoffSurface === 'handoff'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                      : 'border-gray-700 bg-gray-950/70 text-gray-300 hover:border-emerald-500/30 hover:text-emerald-100',
+                  ].join(' ')}
+                >
+                  Handoff
+                </button>
+              </div>
+            </div>
+          </section>
+
           <ComicPageAssemblyPanel
             episode={currentEpisode}
             layoutTemplateId={layoutTemplateId}
             manuscriptProfileId={manuscriptProfileId}
-            exportResult={exportResult}
             canAssemble={canAssemblePages}
-            canExport={canExportPages}
             readinessMessage={pageAssemblyReadinessMessage}
             isAssembling={assembleMutation.isPending}
-            isExporting={exportMutation.isPending}
+            layeredManifestPath={handoffResult?.layered_manifest_path ?? null}
+            handoffValidationPath={handoffResult?.handoff_validation_path ?? null}
+            isActive={activeHandoffSurface === 'pages'}
             onLayoutTemplateChange={setLayoutTemplateId}
             onManuscriptProfileChange={setManuscriptProfileId}
             onAssemble={(episodeId) => assembleMutation.mutate(episodeId)}
+          />
+
+          <ComicHandoffReviewPanel
+            episode={currentEpisode}
+            validation={handoffResult?.handoff_validation ?? null}
+            pageSummaries={handoffResult?.page_summaries ?? []}
+            layeredManifestPath={handoffResult?.layered_manifest_path ?? null}
+            handoffValidationPath={handoffResult?.handoff_validation_path ?? null}
+            latestExportSummary={latestSuccessfulExportSummary}
+            canExport={canExportPages}
+            readinessMessage={handoffReadinessMessage}
+            isExporting={exportMutation.isPending}
+            isActive={activeHandoffSurface === 'handoff'}
             onExport={(episodeId) => exportMutation.mutate(episodeId)}
           />
 

@@ -1185,6 +1185,44 @@ export interface ComicManuscriptProfileResponse {
   naming_pattern: string
 }
 
+export type ComicHandoffLayerStatus = 'complete' | 'warning' | 'blocked'
+
+export interface ComicHandoffIssueResponse {
+  code?: string
+  message?: string
+  page_id?: string | null
+  [key: string]: unknown
+}
+
+export interface ComicHandoffPageSummaryResponse {
+  page_id: string
+  page_no: number
+  art_layer_status: ComicHandoffLayerStatus
+  frame_layer_status: ComicHandoffLayerStatus
+  balloon_layer_status: ComicHandoffLayerStatus
+  text_draft_layer_status: ComicHandoffLayerStatus
+  hard_block_count: number
+  soft_warning_count: number
+}
+
+export interface ComicHandoffValidationResponse {
+  episode_id: string
+  hard_blocks: ComicHandoffIssueResponse[]
+  soft_warnings: ComicHandoffIssueResponse[]
+  page_summaries: ComicHandoffPageSummaryResponse[]
+  generated_at: string
+}
+
+export interface ComicHandoffExportSummaryResponse {
+  export_zip_path: string
+  layered_manifest_path: string
+  handoff_validation_path: string
+  page_count: number
+  hard_block_count: number
+  soft_warning_count: number
+  exported_at: string
+}
+
 export interface ComicPageAssemblyBatchResponse {
   episode_id: string
   layout_template_id: ComicPageLayoutTemplateId
@@ -1198,6 +1236,11 @@ export interface ComicPageAssemblyBatchResponse {
   handoff_readme_path: string
   production_checklist_path: string
   teaser_handoff_manifest_path: string
+  layered_manifest_path: string
+  handoff_validation_path: string
+  handoff_validation: ComicHandoffValidationResponse
+  page_summaries: ComicHandoffPageSummaryResponse[]
+  latest_export_summary: ComicHandoffExportSummaryResponse | null
 }
 
 export interface ComicPageExportResponse extends ComicPageAssemblyBatchResponse {

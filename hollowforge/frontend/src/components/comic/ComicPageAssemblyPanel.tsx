@@ -2,7 +2,6 @@ import EmptyState from '../EmptyState'
 import type {
   ComicEpisodeDetailResponse,
   ComicManuscriptProfileId,
-  ComicPageExportResponse,
   ComicPageLayoutTemplateId,
 } from '../../api/client'
 
@@ -10,16 +9,15 @@ interface ComicPageAssemblyPanelProps {
   episode: ComicEpisodeDetailResponse | null
   layoutTemplateId: ComicPageLayoutTemplateId
   manuscriptProfileId: ComicManuscriptProfileId
-  exportResult: ComicPageExportResponse | null
   canAssemble: boolean
-  canExport: boolean
   readinessMessage: string | null
   isAssembling: boolean
-  isExporting: boolean
+  layeredManifestPath: string | null
+  handoffValidationPath: string | null
+  isActive: boolean
   onLayoutTemplateChange: (layoutTemplateId: ComicPageLayoutTemplateId) => void
   onManuscriptProfileChange: (manuscriptProfileId: ComicManuscriptProfileId) => void
   onAssemble: (episodeId: string) => void
-  onExport: (episodeId: string) => void
 }
 
 const MANUSCRIPT_PROFILE_OPTIONS: Array<{
@@ -36,27 +34,31 @@ export default function ComicPageAssemblyPanel({
   episode,
   layoutTemplateId,
   manuscriptProfileId,
-  exportResult,
   canAssemble,
-  canExport,
   readinessMessage,
   isAssembling,
-  isExporting,
+  layeredManifestPath,
+  handoffValidationPath,
+  isActive,
   onLayoutTemplateChange,
   onManuscriptProfileChange,
   onAssemble,
-  onExport,
 }: ComicPageAssemblyPanelProps) {
   return (
-    <section className="space-y-5 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
+    <section
+      className={[
+        'space-y-5 rounded-2xl border bg-gray-900/70 p-5 transition',
+        isActive ? 'border-sky-500/40 shadow-[0_0_0_1px_rgba(14,165,233,0.18)]' : 'border-gray-800',
+      ].join(' ')}
+    >
       <div className="space-y-2">
         <span className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-sky-300">
-          Page Assembly
+          Pages
         </span>
         <div>
           <h2 className="text-lg font-semibold text-gray-100">Japanese Page Layout Handoff</h2>
           <p className="mt-1 text-sm text-gray-400">
-            Assemble page previews, inspect per-page order, and export the ZIP handoff package without leaving the current episode context.
+            Assemble page previews, inspect per-page order, and hand off layered metadata to review before export.
           </p>
         </div>
       </div>
@@ -111,18 +113,28 @@ export default function ComicPageAssemblyPanel({
         >
           {isAssembling ? 'Assembling...' : 'Assemble Pages'}
         </button>
-        <button
-          type="button"
-          onClick={() => episode && onExport(episode.episode.id)}
-          disabled={!episode || !canExport || isExporting}
-          className="rounded-xl border border-gray-700 bg-gray-950/80 px-4 py-2.5 text-sm font-medium text-gray-200 transition hover:border-sky-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isExporting ? 'Exporting...' : 'Export Handoff ZIP'}
-        </button>
       </div>
 
       {readinessMessage && (
         <p className="text-xs text-sky-200/80">{readinessMessage}</p>
+      )}
+
+      {(layeredManifestPath || handoffValidationPath) && (
+        <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-sm text-gray-200">
+          <p className="text-xs uppercase tracking-wide text-sky-200">Layered Outputs Ready For Review</p>
+          <div className="mt-2 space-y-1">
+            {layeredManifestPath && (
+              <p className="break-all">
+                <span className="text-sky-100">Layered manifest:</span> {layeredManifestPath}
+              </p>
+            )}
+            {handoffValidationPath && (
+              <p className="break-all">
+                <span className="text-sky-100">Validation artifact:</span> {handoffValidationPath}
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {!episode ? (
@@ -153,29 +165,6 @@ export default function ComicPageAssemblyPanel({
           title="No assembled pages yet"
           description="Run page assembly to generate preview PNGs and manifest files for the current episode."
         />
-      )}
-
-      {exportResult && (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-          <p className="text-xs uppercase tracking-wide text-emerald-200">Latest Export</p>
-          <div className="mt-2 space-y-1 text-sm text-gray-100">
-            <p className="break-all">
-              <span className="text-emerald-100">Export ZIP:</span> {exportResult.export_zip_path}
-            </p>
-            <p>
-              <span className="text-emerald-100">Manuscript Profile:</span> {exportResult.manuscript_profile.id}
-            </p>
-            <p className="break-all">
-              <span className="text-emerald-100">Handoff Readme:</span> {exportResult.handoff_readme_path}
-            </p>
-            <p className="break-all">
-              <span className="text-emerald-100">Production Checklist:</span> {exportResult.production_checklist_path}
-            </p>
-          </div>
-          <p className="mt-2 text-xs text-emerald-100">
-            {exportResult.pages.length} pages · manifest {exportResult.manuscript_profile_manifest_path}
-          </p>
-        </div>
       )}
     </section>
   )

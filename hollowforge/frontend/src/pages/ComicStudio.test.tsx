@@ -23,6 +23,8 @@ import {
 import * as apiClient from '../api/client'
 import type {
   AnimationCurrentShotResponse,
+  ComicPageAssemblyBatchResponse,
+  ComicPageExportResponse,
   ComicRenderJobResponse,
   StoryPlannerPlanResponse,
   ComicCharacterVersionResponse,
@@ -441,6 +443,30 @@ function fillApprovedPlanJson() {
   })
 }
 
+async function importEpisodeAndPrepareSelectedRender() {
+  await waitFor(() => {
+    expect(screen.getByLabelText(/^Character$/i)).toHaveValue('char-1')
+    expect(screen.getByLabelText(/Character Version/i)).toHaveValue('charver-1')
+  })
+
+  fillApprovedPlanJson()
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Import Story Plan/i })).toBeEnabled()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+  expect(await screen.findByRole('heading', { name: /Episode lineage/i })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Queue Local Preview/i }))
+  await waitFor(() => expect(queueComicPanelRenders).toHaveBeenCalled())
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Queue Local Preview/i })).toBeEnabled()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Mark Selected/i }))
+  await waitFor(() => expect(selectComicPanelRenderAsset).toHaveBeenCalled())
+}
+
 function buildProductionEpisode(
   overrides: Partial<ProductionEpisodeDetailResponse> = {},
 ): ProductionEpisodeDetailResponse {
@@ -460,6 +486,120 @@ function buildProductionEpisode(
     animation_track_count: 0,
     created_at: '2026-04-11T10:00:00Z',
     updated_at: '2026-04-11T10:00:00Z',
+    ...overrides,
+  }
+}
+
+function buildHandoffValidation(overrides?: {
+  hard_blocks?: Array<{ code: string; message: string; page_id?: string }>
+  soft_warnings?: Array<{ code: string; message: string; page_id?: string }>
+}) {
+  return {
+    episode_id: 'ep-1',
+    hard_blocks: overrides?.hard_blocks ?? [],
+    soft_warnings: overrides?.soft_warnings ?? [],
+    page_summaries: [
+      {
+        page_id: 'page-1',
+        page_no: 1,
+        art_layer_status: 'complete' as const,
+        frame_layer_status: 'complete' as const,
+        balloon_layer_status: 'complete' as const,
+        text_draft_layer_status: 'complete' as const,
+        hard_block_count: overrides?.hard_blocks?.length ?? 0,
+        soft_warning_count: overrides?.soft_warnings?.length ?? 0,
+      },
+    ],
+    generated_at: '2026-04-04T00:10:00+00:00',
+  }
+}
+
+function buildAssembleResponse(
+  overrides: Partial<ComicPageAssemblyBatchResponse> = {},
+): ComicPageAssemblyBatchResponse {
+  const handoffValidation = buildHandoffValidation()
+
+  return {
+    episode_id: 'ep-1',
+    layout_template_id: 'jp_2x2_v1',
+    manuscript_profile: {
+      id: 'jp_manga_rightbound_v1',
+      label: 'Japanese Manga Right-Bound v1',
+      binding_direction: 'right_to_left',
+      finishing_tool: 'clip_studio_ex',
+      print_intent: 'japanese_manga',
+      trim_reference: 'B5 monochrome manga manuscript preset',
+      bleed_reference: 'CLIP STUDIO EX Japanese comic print bleed preset',
+      safe_area_reference: 'CLIP STUDIO EX default inner safe area guide',
+      naming_pattern: 'page_{page_no:03d}.tif',
+    },
+    pages: [
+      {
+        id: 'page-1',
+        episode_id: 'ep-1',
+        page_no: 1,
+        layout_template_id: 'jp_2x2_v1',
+        ordered_panel_ids: ['panel-1'],
+        export_state: 'preview_ready',
+        preview_path: 'comics/previews/page_01.png',
+        master_path: null,
+        export_manifest: { page_no: 1 },
+        created_at: '2026-04-04T00:00:00+00:00',
+        updated_at: '2026-04-04T00:00:00+00:00',
+      },
+    ],
+    export_manifest_path: 'comics/manifests/pages.json',
+    dialogue_json_path: 'comics/manifests/dialogues.json',
+    panel_asset_manifest_path: 'comics/manifests/panel_assets.json',
+    page_assembly_manifest_path: 'comics/manifests/pages.json',
+    manuscript_profile_manifest_path: 'comics/manifests/manuscript_profile.json',
+    handoff_readme_path: 'comics/handoff/readme.md',
+    production_checklist_path: 'comics/handoff/production_checklist.md',
+    teaser_handoff_manifest_path: 'comics/manifests/teaser_handoff.json',
+    layered_manifest_path: 'comics/handoff/layered/manifest.json',
+    handoff_validation_path: 'comics/handoff/layered/handoff_validation.json',
+    handoff_validation: handoffValidation,
+    page_summaries: handoffValidation.page_summaries,
+    latest_export_summary: null,
+    ...overrides,
+  }
+}
+
+function buildExportResponse(
+  overrides: Partial<ComicPageExportResponse> = {},
+): ComicPageExportResponse {
+  const handoffValidation = buildHandoffValidation()
+
+  return {
+    ...buildAssembleResponse({
+      pages: [
+        {
+          id: 'page-1',
+          episode_id: 'ep-1',
+          page_no: 1,
+          layout_template_id: 'jp_2x2_v1',
+          ordered_panel_ids: ['panel-1'],
+          export_state: 'exported',
+          preview_path: 'comics/previews/page_01.png',
+          master_path: null,
+          export_manifest: { page_no: 1 },
+          created_at: '2026-04-04T00:00:00+00:00',
+          updated_at: '2026-04-04T00:00:00+00:00',
+        },
+      ],
+      handoff_validation: handoffValidation,
+      page_summaries: handoffValidation.page_summaries,
+    }),
+    export_zip_path: 'comics/exports/handoff.zip',
+    latest_export_summary: {
+      export_zip_path: 'comics/exports/handoff.zip',
+      layered_manifest_path: 'comics/handoff/layered/manifest.json',
+      handoff_validation_path: 'comics/handoff/layered/handoff_validation.json',
+      page_count: 1,
+      hard_block_count: 0,
+      soft_warning_count: 0,
+      exported_at: '2026-04-04T00:12:00+00:00',
+    },
     ...overrides,
   }
 }
@@ -567,83 +707,8 @@ beforeEach(() => {
     overwrite_existing: false,
     prompt_provider_profile_id: 'adult_local_llm',
   })
-  vi.mocked(assembleComicEpisodePages).mockResolvedValue({
-    episode_id: 'ep-1',
-    layout_template_id: 'jp_2x2_v1',
-    manuscript_profile: {
-      id: 'jp_manga_rightbound_v1',
-      label: 'Japanese Manga Right-Bound v1',
-      binding_direction: 'right_to_left',
-      finishing_tool: 'clip_studio_ex',
-      print_intent: 'japanese_manga',
-      trim_reference: 'B5 monochrome manga manuscript preset',
-      bleed_reference: 'CLIP STUDIO EX Japanese comic print bleed preset',
-      safe_area_reference: 'CLIP STUDIO EX default inner safe area guide',
-      naming_pattern: 'page_{page_no:03d}.tif',
-    },
-    pages: [
-      {
-        id: 'page-1',
-        episode_id: 'ep-1',
-        page_no: 1,
-        layout_template_id: 'jp_2x2_v1',
-        ordered_panel_ids: ['panel-1'],
-        export_state: 'preview_ready',
-        preview_path: 'comics/previews/page_01.png',
-        master_path: null,
-        export_manifest: { page_no: 1 },
-        created_at: '2026-04-04T00:00:00+00:00',
-        updated_at: '2026-04-04T00:00:00+00:00',
-      },
-    ],
-    export_manifest_path: 'comics/manifests/pages.json',
-    dialogue_json_path: 'comics/manifests/dialogues.json',
-    panel_asset_manifest_path: 'comics/manifests/panel_assets.json',
-    page_assembly_manifest_path: 'comics/manifests/pages.json',
-    manuscript_profile_manifest_path: 'comics/manifests/manuscript_profile.json',
-    handoff_readme_path: 'comics/handoff/readme.md',
-    production_checklist_path: 'comics/handoff/production_checklist.md',
-    teaser_handoff_manifest_path: 'comics/manifests/teaser_handoff.json',
-  })
-  vi.mocked(exportComicEpisodePages).mockResolvedValue({
-    episode_id: 'ep-1',
-    layout_template_id: 'jp_2x2_v1',
-    manuscript_profile: {
-      id: 'jp_manga_rightbound_v1',
-      label: 'Japanese Manga Right-Bound v1',
-      binding_direction: 'right_to_left',
-      finishing_tool: 'clip_studio_ex',
-      print_intent: 'japanese_manga',
-      trim_reference: 'B5 monochrome manga manuscript preset',
-      bleed_reference: 'CLIP STUDIO EX Japanese comic print bleed preset',
-      safe_area_reference: 'CLIP STUDIO EX default inner safe area guide',
-      naming_pattern: 'page_{page_no:03d}.tif',
-    },
-    pages: [
-      {
-        id: 'page-1',
-        episode_id: 'ep-1',
-        page_no: 1,
-        layout_template_id: 'jp_2x2_v1',
-        ordered_panel_ids: ['panel-1'],
-        export_state: 'exported',
-        preview_path: 'comics/previews/page_01.png',
-        master_path: null,
-        export_manifest: { page_no: 1 },
-        created_at: '2026-04-04T00:00:00+00:00',
-        updated_at: '2026-04-04T00:00:00+00:00',
-      },
-    ],
-    export_manifest_path: 'comics/manifests/pages.json',
-    dialogue_json_path: 'comics/manifests/dialogues.json',
-    panel_asset_manifest_path: 'comics/manifests/panel_assets.json',
-    page_assembly_manifest_path: 'comics/manifests/pages.json',
-    manuscript_profile_manifest_path: 'comics/manifests/manuscript_profile.json',
-    handoff_readme_path: 'comics/handoff/readme.md',
-    production_checklist_path: 'comics/handoff/production_checklist.md',
-    teaser_handoff_manifest_path: 'comics/manifests/teaser_handoff.json',
-    export_zip_path: 'comics/exports/handoff.zip',
-  })
+  vi.mocked(assembleComicEpisodePages).mockResolvedValue(buildAssembleResponse())
+  vi.mocked(exportComicEpisodePages).mockResolvedValue(buildExportResponse())
 })
 
 afterEach(() => {
@@ -1352,9 +1417,8 @@ test('imports a story plan and walks through render, selection, dialogue, and pa
   })
 
   expect(await screen.findByText(/comics\/exports\/handoff\.zip/i)).toBeInTheDocument()
-  expect(screen.getByText(/jp_manga_rightbound_v1/i)).toBeInTheDocument()
-  expect(screen.getByText(/comics\/handoff\/readme\.md/i)).toBeInTheDocument()
-  expect(screen.getByText(/comics\/handoff\/production_checklist\.md/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/comics\/handoff\/layered\/handoff_validation\.json/i).length).toBeGreaterThan(0)
 })
 
 test('queues remote production separately and surfaces selected-panel remote render status', async () => {
@@ -1396,6 +1460,98 @@ test('queues remote production separately and surfaces selected-panel remote ren
     'href',
     'https://worker.test/jobs/worker-job-456',
   )
+})
+
+test('shows layered page readiness after assembly in Pages and Handoff workflow', async () => {
+  renderWithProviders(<ComicStudio />)
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+
+  await waitFor(() => {
+    expect(assembleComicEpisodePages).toHaveBeenCalledWith('ep-1', 'jp_2x2_v1', 'jp_manga_rightbound_v1')
+  })
+
+  expect(screen.getAllByText(/Assemble -> Handoff Review -> Export/i).length).toBeGreaterThan(0)
+  expect(screen.getByRole('heading', { name: /Japanese Page Layout Handoff/i })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /^Handoff Review$/i })).toBeInTheDocument()
+  expect(screen.getByText(/Frame layer complete/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/Layered manifest/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
+})
+
+test('blocks export in Handoff when validation has hard blocks', async () => {
+  vi.mocked(assembleComicEpisodePages).mockResolvedValue(buildAssembleResponse({
+    handoff_validation: buildHandoffValidation({
+      hard_blocks: [{ code: 'missing-balloon', message: 'Balloon layer missing', page_id: 'page-1' }],
+    }),
+    page_summaries: [
+      {
+        page_id: 'page-1',
+        page_no: 1,
+        art_layer_status: 'complete',
+        frame_layer_status: 'complete',
+        balloon_layer_status: 'blocked',
+        text_draft_layer_status: 'complete',
+        hard_block_count: 1,
+        soft_warning_count: 0,
+      },
+    ],
+  }))
+
+  renderWithProviders(<ComicStudio />)
+
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => expect(assembleComicEpisodePages).toHaveBeenCalled())
+
+  const exportButton = screen.getByRole('button', { name: /Export Handoff ZIP/i })
+  expect(exportButton).toBeDisabled()
+  expect(screen.getAllByText(/1 hard block/i).length).toBeGreaterThan(0)
+  expect(exportComicEpisodePages).not.toHaveBeenCalled()
+})
+
+test('shows latest export summary with layered manifest and validation artifact paths', async () => {
+  renderWithProviders(<ComicStudio />)
+
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => expect(assembleComicEpisodePages).toHaveBeenCalled())
+  fireEvent.click(screen.getByRole('button', { name: /Export Handoff ZIP/i }))
+
+  await waitFor(() => {
+    expect(exportComicEpisodePages).toHaveBeenCalledWith('ep-1', 'jp_2x2_v1', 'jp_manga_rightbound_v1')
+  })
+
+  expect(await screen.findByText(/comics\/exports\/handoff\.zip/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/comics\/handoff\/layered\/handoff_validation\.json/i).length).toBeGreaterThan(0)
+})
+
+test('keeps previous successful export summary visible after a failed export', async () => {
+  vi.mocked(exportComicEpisodePages)
+    .mockResolvedValueOnce(buildExportResponse())
+    .mockRejectedValueOnce(new Error('hard blocks prevent export'))
+
+  renderWithProviders(<ComicStudio />)
+
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => expect(assembleComicEpisodePages).toHaveBeenCalled())
+
+  const exportButton = screen.getByRole('button', { name: /Export Handoff ZIP/i })
+  fireEvent.click(exportButton)
+  expect(await screen.findByText(/comics\/exports\/handoff\.zip/i)).toBeInTheDocument()
+
+  fireEvent.click(exportButton)
+
+  await waitFor(() => {
+    expect(exportComicEpisodePages).toHaveBeenCalledTimes(2)
+  })
+  expect(screen.getByText(/comics\/exports\/handoff\.zip/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/comics\/handoff\/layered\/handoff_validation\.json/i).length).toBeGreaterThan(0)
 })
 
 test('queueing remote production preserves an existing selected local asset', async () => {
