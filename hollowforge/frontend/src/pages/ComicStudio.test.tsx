@@ -229,6 +229,23 @@ function buildQueueResponse(panelId: string, assetId = 'asset-1') {
   }
 }
 
+function buildMultiAssetQueueResponse(panelId: string) {
+  const panel = buildEpisodeDetail().scenes[0].panels[0]
+  return {
+    panel,
+    execution_mode: 'local_preview' as const,
+    requested_count: 3,
+    queued_generation_count: 3,
+    materialized_asset_count: 2,
+    pending_render_job_count: 0,
+    remote_job_count: 0,
+    render_assets: [
+      buildRenderAsset(panelId, 'asset-1'),
+      buildRenderAsset(panelId, 'asset-2'),
+    ],
+  }
+}
+
 function buildRemoteQueueResponse(panelId: string) {
   const panel = buildEpisodeDetail(1, { [panelId]: { remote: 3, pending: 3 } }).scenes[0].panels.find((entry) => entry.id === panelId)
     ?? buildEpisodeDetail().scenes[0].panels[0]
@@ -463,7 +480,7 @@ async function importEpisodeAndPrepareSelectedRender() {
     expect(screen.getByRole('button', { name: /Queue Local Preview/i })).toBeEnabled()
   })
 
-  fireEvent.click(screen.getByRole('button', { name: /Mark Selected/i }))
+  fireEvent.click(screen.getAllByRole('button', { name: /Mark Selected/i })[0])
   await waitFor(() => expect(selectComicPanelRenderAsset).toHaveBeenCalled())
 }
 
@@ -1559,6 +1576,83 @@ test('keeps previous successful export summary visible after a failed export', a
   expect(screen.getByText(/comics\/exports\/handoff\.zip/i)).toBeInTheDocument()
   expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
   expect(screen.getAllByText(/comics\/handoff\/layered\/handoff_validation\.json/i).length).toBeGreaterThan(0)
+})
+
+test('changing the selected render clears the current handoff review and disables export until re-assembled', async () => {
+  vi.mocked(queueComicPanelRenders).mockResolvedValue(buildMultiAssetQueueResponse('panel-1'))
+  vi.mocked(selectComicPanelRenderAsset)
+    .mockResolvedValueOnce({
+      ...buildRenderAsset('panel-1', 'asset-1'),
+      asset_role: 'selected',
+      is_selected: true,
+    })
+    .mockResolvedValueOnce({
+      ...buildRenderAsset('panel-1', 'asset-2'),
+      asset_role: 'selected',
+      is_selected: true,
+    })
+
+  renderWithProviders(<ComicStudio />)
+
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => expect(assembleComicEpisodePages).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeEnabled()
+  expect(screen.getAllByText(/comics\/handoff\/layered\/manifest\.json/i).length).toBeGreaterThan(0)
+
+  const selectButtons = screen.getAllByRole('button', { name: /Mark Selected/i })
+  fireEvent.click(selectButtons[0])
+
+  await waitFor(() => {
+    expect(selectComicPanelRenderAsset).toHaveBeenLastCalledWith('panel-1', 'asset-2')
+  })
+
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
+  expect(screen.queryByText(/Frame layer complete/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Layered handoff package is ready for export\./i)).not.toBeInTheDocument()
+  expect(
+    screen.getByText(/Upstream inputs changed\. Re-run page assembly before handoff review and export\./i),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/^Run page assembly before handoff review and export\.$/i)).toBeInTheDocument()
+  expect(screen.getByText(/^Export Checklist$/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/^Blocked$/i).length).toBeGreaterThan(0)
+})
+
+test('changing layout or manuscript clears the current handoff review and disables export until re-assembled', async () => {
+  renderWithProviders(<ComicStudio />)
+
+  await importEpisodeAndPrepareSelectedRender()
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => expect(assembleComicEpisodePages).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeEnabled()
+
+  fireEvent.change(screen.getByLabelText(/^Layout Template$/i), {
+    target: { value: 'jp_3row_v1' },
+  })
+
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
+  expect(
+    screen.getByText(/Upstream inputs changed\. Re-run page assembly before handoff review and export\./i),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/^Export Checklist$/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/^Blocked$/i).length).toBeGreaterThan(0)
+
+  fireEvent.click(screen.getByRole('button', { name: /Assemble Pages/i }))
+  await waitFor(() => {
+    expect(assembleComicEpisodePages).toHaveBeenLastCalledWith('ep-1', 'jp_3row_v1', 'jp_manga_rightbound_v1')
+  })
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeEnabled()
+
+  fireEvent.change(screen.getByLabelText(/^Manuscript Profile$/i), {
+    target: { value: 'jp_manga_rightbound_v1' },
+  })
+
+  expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
+  expect(
+    screen.getByText(/Upstream inputs changed\. Re-run page assembly before handoff review and export\./i),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/^Export Checklist$/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/^Blocked$/i).length).toBeGreaterThan(0)
 })
 
 test('queueing remote production preserves an existing selected local asset', async () => {

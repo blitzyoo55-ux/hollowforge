@@ -684,6 +684,10 @@ export default function ComicStudio() {
     setActiveHandoffSurface('pages')
   }
 
+  const invalidateHandoffReview = () => {
+    setHandoffResult(null)
+  }
+
   const clearLoadedEpisodeState = () => {
     activeEpisodeIdRef.current = null
     activeEpisodePanelIdsRef.current = new Set()
@@ -873,6 +877,7 @@ export default function ComicStudio() {
           [variables.panelId]: nextAssets,
         }
       })
+      invalidateHandoffReview()
       notify.success('Selected panel asset updated')
     },
     onError: (error) => {
@@ -1018,6 +1023,7 @@ export default function ComicStudio() {
     && allPanels.every((panel) => panelHasMaterializedSelectedAsset(panel.id))
   const canGenerateDialogues = Boolean(selectedPanel && selectedPanelHasMaterializedSelectedAsset)
   const canAssemblePages = Boolean(currentEpisode && allPanelsHaveMaterializedSelectedAssets)
+  const requiresHandoffRefresh = Boolean(currentEpisode && currentEpisode.pages.length > 0 && !handoffResult)
   const handoffHardBlockCount = handoffResult?.handoff_validation.hard_blocks.length ?? 0
   const canExportPages = Boolean(
     currentEpisode
@@ -1074,12 +1080,14 @@ export default function ComicStudio() {
     ? null
     : !allPanelsHaveMaterializedSelectedAssets
       ? 'Select a winning render for every panel before assembling pages or exporting the handoff ZIP. Layout template = page composition. Manuscript profile = print/handoff intent.'
+      : requiresHandoffRefresh
+        ? 'Upstream inputs changed. Re-run page assembly before handoff review and export.'
       : currentEpisode.pages.length === 0
         ? 'Run page assembly before exporting the handoff ZIP. Layout template = page composition. Manuscript profile = print/handoff intent.'
         : null
   const handoffReadinessMessage = !currentEpisode
     ? null
-    : currentEpisode.pages.length === 0
+    : currentEpisode.pages.length === 0 || !handoffResult
       ? 'Run page assembly before handoff review and export.'
       : handoffHardBlockCount > 0
         ? 'Hard blocks must be resolved before export.'
@@ -1401,8 +1409,14 @@ export default function ComicStudio() {
             layeredManifestPath={handoffResult?.layered_manifest_path ?? null}
             handoffValidationPath={handoffResult?.handoff_validation_path ?? null}
             isActive={activeHandoffSurface === 'pages'}
-            onLayoutTemplateChange={setLayoutTemplateId}
-            onManuscriptProfileChange={setManuscriptProfileId}
+            onLayoutTemplateChange={(nextLayoutTemplateId) => {
+              setLayoutTemplateId(nextLayoutTemplateId)
+              invalidateHandoffReview()
+            }}
+            onManuscriptProfileChange={(nextManuscriptProfileId) => {
+              setManuscriptProfileId(nextManuscriptProfileId)
+              invalidateHandoffReview()
+            }}
             onAssemble={(episodeId) => assembleMutation.mutate(episodeId)}
           />
 
