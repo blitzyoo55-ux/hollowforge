@@ -128,6 +128,10 @@ def test_main_prints_success_markers_for_one_panel_verification(
         "_run_production_dry_run",
         lambda **_: {
             "dry_run_success": True,
+            "layered_package_verified": True,
+            "layered_manifest_path": "comics/exports/comic-verify-1/manifest.json",
+            "handoff_validation_path": "comics/exports/comic-verify-1/handoff_validation.json",
+            "hard_block_count": 0,
             "report_path": "comics/reports/comic-verify-1_dry_run.json",
             "page_count": 1,
             "selected_panel_asset_count": 1,
@@ -154,6 +158,13 @@ def test_main_prints_success_markers_for_one_panel_verification(
     assert "assemble_success: true" in captured.out
     assert "export_success: true" in captured.out
     assert "dry_run_success: true" in captured.out
+    assert "layered_package_verified: true" in captured.out
+    assert "layered_manifest_path: comics/exports/comic-verify-1/manifest.json" in captured.out
+    assert (
+        "handoff_validation_path: comics/exports/comic-verify-1/handoff_validation.json"
+        in captured.out
+    )
+    assert "hard_block_count: 0" in captured.out
     assert "overall_success: true" in captured.out
 
 
@@ -179,3 +190,102 @@ def test_main_rejects_remote_backend_urls_for_local_verification(
     assert "episode_create_success: false" in captured.out
     assert "failed_step: bootstrap" in captured.out
     assert "one-panel verification only supports local backend URLs" in captured.out
+
+
+def test_run_production_dry_run_uses_layered_handoff_contract(
+    monkeypatch,
+) -> None:
+    module = _load_module()
+
+    episode_detail = {
+        "episode": {"id": "comic-verify-1"},
+        "scenes": [
+            {
+                "scene": {"id": "scene-1", "scene_no": 1},
+                "panels": [{"id": "panel-1", "panel_no": 1}],
+            }
+        ],
+    }
+    assembly_detail = {
+        "episode_id": "comic-verify-1",
+        "teaser_handoff_manifest_path": "comics/manifests/comic-verify-1_teaser.json",
+    }
+    export_detail = {
+        "episode_id": "comic-verify-1",
+        "export_zip_path": "comics/exports/comic-verify-1_handoff.zip",
+        "pages": [{"id": "page-1", "page_no": 1, "export_state": "exported"}],
+        "layered_manifest_path": "comics/exports/comic-verify-1/manifest.json",
+        "handoff_validation_path": "comics/exports/comic-verify-1/handoff_validation.json",
+        "hard_block_count": 0,
+    }
+    layered_handoff_summary = {
+        "layered_manifest_path": "comics/exports/comic-verify-1/manifest.json",
+        "handoff_validation_path": "comics/exports/comic-verify-1/handoff_validation.json",
+        "hard_block_count": 0,
+    }
+    selected_panel_assets = [{"id": "asset-1", "storage_path": "images/panel-1-a.png"}]
+    validate_export_zip_calls: list[tuple[str, dict[str, object]]] = []
+    write_report_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_ensure_exported_episode",
+        lambda **_: (episode_detail, assembly_detail, export_detail),
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_extract_selected_panel_assets",
+        lambda detail: selected_panel_assets if detail is assembly_detail else [],
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_extract_layered_handoff_summary",
+        lambda detail: layered_handoff_summary if detail is export_detail else {},
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_validate_export_zip",
+        lambda export_zip_path, detail: validate_export_zip_calls.append(
+            (export_zip_path, detail)
+        ),
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_write_report",
+        lambda **kwargs: write_report_calls.append(kwargs) or Path("/tmp/comic-verify-report.json"),
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_relative_data_path",
+        lambda path: "comics/reports/comic-verify-report.json",
+    )
+    monkeypatch.setattr(
+        module.comic_dry_run,
+        "_extract_panel_ids",
+        lambda detail: ["panel-1"] if detail is episode_detail else [],
+    )
+
+    result = module._run_production_dry_run(
+        base_url="http://127.0.0.1:8000",
+        episode_id="comic-verify-1",
+        layout_template_id="jp_2x2_v1",
+        manuscript_profile_id="jp_manga_rightbound_v1",
+    )
+
+    assert validate_export_zip_calls == [
+        ("comics/exports/comic-verify-1_handoff.zip", export_detail)
+    ]
+    assert len(write_report_calls) == 1
+    assert write_report_calls[0]["layered_handoff_summary"] == layered_handoff_summary
+    assert result == {
+        "dry_run_success": True,
+        "layered_package_verified": True,
+        "panel_count": 1,
+        "selected_panel_asset_count": 1,
+        "page_count": 1,
+        "export_zip_path": "comics/exports/comic-verify-1_handoff.zip",
+        "layered_manifest_path": "comics/exports/comic-verify-1/manifest.json",
+        "handoff_validation_path": "comics/exports/comic-verify-1/handoff_validation.json",
+        "hard_block_count": 0,
+        "report_path": "comics/reports/comic-verify-report.json",
+    }
