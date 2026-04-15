@@ -27,6 +27,8 @@
 
 - Modify: `backend/app/models.py`
   - add typed layered package metadata, validation summary, page summary, and additive response fields
+- Modify: `backend/app/services/comic_page_assembly_service.py`
+  - return the new additive response fields when constructing assembly/export responses
 - Modify: `backend/app/routes/comic.py`
   - keep existing routes, but ensure updated response models flow through assemble/export endpoints
 
@@ -71,6 +73,7 @@
 
 **Files:**
 - Modify: `backend/app/models.py`
+- Modify: `backend/app/services/comic_page_assembly_service.py`
 - Modify: `backend/app/routes/comic.py`
 - Modify: `backend/tests/test_comic_page_assembly_service.py`
 - Modify: `backend/tests/test_comic_routes.py`
@@ -130,6 +133,16 @@ class ComicHandoffValidationResponse(BaseModel):
     soft_warnings: list[dict[str, Any]]
     page_summaries: list[ComicHandoffPageSummaryResponse]
     generated_at: str
+
+
+class ComicHandoffExportSummaryResponse(BaseModel):
+    export_zip_path: str
+    layered_manifest_path: str
+    handoff_validation_path: str
+    page_count: int
+    hard_block_count: int
+    soft_warning_count: int
+    exported_at: str
 ```
 
 Additive response fields to expose on both assembly/export responses:
@@ -137,8 +150,21 @@ Additive response fields to expose on both assembly/export responses:
 ```python
 layered_manifest_path: str
 handoff_validation_path: str
+handoff_validation: ComicHandoffValidationResponse
 page_summaries: list[ComicHandoffPageSummaryResponse]
-latest_export_summary: dict[str, Any] | None = None
+latest_export_summary: ComicHandoffExportSummaryResponse | None = None
+```
+
+Service update required in this same slice:
+
+```python
+return ComicPageAssemblyBatchResponse(
+    ...,
+    layered_manifest_path=layered_manifest_path,
+    handoff_validation_path=handoff_validation_path,
+    handoff_validation=ComicHandoffValidationResponse.model_validate(validation_payload),
+    page_summaries=page_summaries,
+)
 ```
 
 - [ ] **Step 4: Re-run the backend contract tests**
@@ -156,6 +182,7 @@ Expected: PASS with additive response fields present and legacy fields unchanged
 
 ```bash
 git add backend/app/models.py \
+  backend/app/services/comic_page_assembly_service.py \
   backend/app/routes/comic.py \
   backend/tests/test_comic_page_assembly_service.py \
   backend/tests/test_comic_routes.py
@@ -166,6 +193,7 @@ git commit -m "feat(hollowforge): expose layered handoff response contract"
 
 **Files:**
 - Modify: `backend/app/services/comic_page_assembly_service.py`
+- Modify: `backend/app/routes/comic.py`
 - Modify: `backend/tests/test_comic_page_assembly_service.py`
 - Modify: `backend/tests/test_comic_routes.py`
 
@@ -191,6 +219,18 @@ async def test_assemble_episode_pages_keeps_legacy_manifest_outputs():
     assert result.page_assembly_manifest_path.endswith("_pages.json")
     assert result.dialogue_json_path.endswith("_dialogues.json")
     assert result.layered_manifest_path.endswith("/manifest.json")
+```
+
+```python
+async def test_export_episode_pages_rejects_hard_blocks():
+    with pytest.raises(ValueError, match="hard blocks"):
+        await export_episode_pages(episode_id=episode_id)
+```
+
+```python
+def test_export_route_returns_409_when_handoff_has_hard_blocks(client):
+    response = client.post(f"/api/v1/comic/episodes/{episode_id}/pages/export")
+    assert response.status_code == 409
 ```
 
 - [ ] **Step 2: Run the service tests to verify they fail**
@@ -229,6 +269,8 @@ Required behavior:
 - add `handoff_validation.json` at package root
 - treat existing page previews and selected render assets as the `art layer`
 - mark layer status with `complete | warning | blocked`
+- compute `hard_blocks` and `soft_warnings` before export packaging
+- if `hard_blocks` is non-empty, `export_episode_pages()` must fail before ZIP creation
 - do not add subjective heuristics beyond the spec’s explicit soft warnings
 
 - [ ] **Step 4: Update ZIP packaging**
@@ -251,10 +293,31 @@ artifact_paths = [
 
 Also include:
 
+- root `handoff_readme.md`
+- root `manuscript_profile.json`
+- `reports/production_checklist.json`
 - `pages/...` subtree files
+- `pages/page_###/page_preview.png`
 - `panels/...` subtree files
-- existing preview PNGs
-- existing selected render assets
+- `panels/panel_<panel_id>/selected_render.png`
+- existing legacy preview/render assets only as additive compatibility payloads
+
+Canonical package layout to enforce in tests:
+
+```text
+manifest.json
+handoff_readme.md
+handoff_validation.json
+manuscript_profile.json
+reports/production_checklist.json
+pages/page_001/page_preview.png
+pages/page_001/page_manifest.json
+pages/page_001/frame_layer.json
+pages/page_001/balloon_layer.json
+pages/page_001/text_draft_layer.json
+panels/panel_<panel_id>/selected_render.png
+panels/panel_<panel_id>/panel_manifest.json
+```
 
 - [ ] **Step 5: Re-run the service and route tests**
 
@@ -271,6 +334,7 @@ Expected: PASS with layered package files and additive legacy artifacts both pre
 
 ```bash
 git add backend/app/services/comic_page_assembly_service.py \
+  backend/app/routes/comic.py \
   backend/tests/test_comic_page_assembly_service.py \
   backend/tests/test_comic_routes.py
 git commit -m "feat(hollowforge): generate layered comic handoff package"
@@ -367,7 +431,9 @@ it('shows layered page readiness after assembly', async () => {
 })
 
 it('blocks export when handoff validation has hard blocks', async () => {
-  mockAssembleResponse({ page_summaries: [...], hard_block_count: 1 })
+  mockAssembleResponse({
+    handoff_validation: { hard_blocks: [{ code: 'missing_frame_layer' }], soft_warnings: [], page_summaries: [] },
+  })
   render(<ComicStudio />)
   expect(screen.getByRole('button', { name: /Export Handoff ZIP/i })).toBeDisabled()
 })
@@ -376,6 +442,13 @@ it('shows latest export summary with layered manifest and validation paths', asy
   mockExportResponse({ layered_manifest_path: 'comics/exports/.../manifest.json' })
   render(<ComicStudio />)
   expect(await screen.findByText(/handoff_validation/i)).toBeInTheDocument()
+})
+
+it('keeps the previous successful export summary visible after a failed export', async () => {
+  render(<ComicStudio />)
+  expect(await screen.findByText(/Export ZIP:/i)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Export Handoff ZIP/i }))
+  expect(screen.getByText(/Export ZIP:/i)).toBeInTheDocument()
 })
 ```
 
@@ -411,7 +484,7 @@ export interface ComicHandoffPageSummaryResponse {
 
 ```ts
 const [handoffSurface, setHandoffSurface] = useState<'pages' | 'handoff'>('pages')
-const hardBlockCount = exportOrAssemblySummary?.hard_blocks.length ?? 0
+const hardBlockCount = assembleResult?.handoff_validation.hard_blocks.length ?? 0
 const canExport = baseCanExport && hardBlockCount === 0
 ```
 
@@ -426,7 +499,7 @@ Required UI behavior:
   - latest export summary
   - export checklist
 - export button disabled when `hard_block_count > 0`
-- warning-only state still allows export
+- warning-only state still allows export when `hard_block_count === 0`
 
 - [ ] **Step 5: Re-run the frontend test and build**
 
