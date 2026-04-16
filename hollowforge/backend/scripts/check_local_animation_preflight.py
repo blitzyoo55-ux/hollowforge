@@ -222,6 +222,7 @@ def _check_asset(
             name=result_name,
             ok=True,
             detail=f"found {name} at {path}",
+            required=required,
         )
     return CheckResult(
         name=result_name,
@@ -339,7 +340,7 @@ def _check_optional_noobai_checkpoint() -> CheckResult:
     for name in OPTIONAL_NOOBAI_CHECKPOINT_MODELS:
         return _check_asset(
             name,
-            _checkpoint_only_paths(name),
+            _model_paths(name),
             result_name="noobai_checkpoint",
             required=False,
             missing_detail="missing optional NoobAI-XL checkpoint",
@@ -426,7 +427,7 @@ def run() -> int:
     print(f"root: {ROOT_DIR}")
     for check in checks:
         if check.ok:
-            label = "PASS"
+            label = "PASS" if check.required else "PASS(optional)"
         elif check.required:
             label = "FAIL"
         else:
