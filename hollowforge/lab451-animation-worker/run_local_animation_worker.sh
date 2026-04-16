@@ -26,6 +26,9 @@ fi
 : "${WORKER_COMFYUI_LTXV_CHECKPOINT_FALLBACK:=ltx-video-2b-v0.9.5.safetensors}"
 : "${WORKER_COMFYUI_LTXV_TEXT_ENCODER:=t5xxl_fp16.safetensors}"
 : "${WORKER_COMFYUI_IPADAPTER_MODEL:=ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors}"
+: "${WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL:=ip-adapter-plus-face_sdxl_vit-h.safetensors}"
+: "${WORKER_COMFYUI_IPADAPTER_FACEID_MODEL:=ip-adapter-faceid-plusv2_sdxl.bin}"
+: "${WORKER_COMFYUI_IPADAPTER_FACEID_LORA:=ip-adapter-faceid-plusv2_sdxl_lora.safetensors}"
 : "${WORKER_COMFYUI_CLIP_VISION_MODEL:=CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
 if [[ -z "${WORKER_FFMPEG_BIN:-}" ]]; then
@@ -43,6 +46,9 @@ export WORKER_COMFYUI_LTXV_CHECKPOINT
 export WORKER_COMFYUI_LTXV_CHECKPOINT_FALLBACK
 export WORKER_COMFYUI_LTXV_TEXT_ENCODER
 export WORKER_COMFYUI_IPADAPTER_MODEL
+export WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL
+export WORKER_COMFYUI_IPADAPTER_FACEID_MODEL
+export WORKER_COMFYUI_IPADAPTER_FACEID_LORA
 export WORKER_COMFYUI_CLIP_VISION_MODEL
 export WORKER_FFMPEG_BIN
 

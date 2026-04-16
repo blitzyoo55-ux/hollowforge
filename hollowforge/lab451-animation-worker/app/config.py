@@ -84,6 +84,18 @@ class Settings:
         "WORKER_COMFYUI_IPADAPTER_MODEL",
         "ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors",
     ).strip()
+    WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL",
+        "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+    ).strip()
+    WORKER_COMFYUI_IPADAPTER_FACEID_MODEL: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_FACEID_MODEL",
+        "ip-adapter-faceid-plusv2_sdxl.bin",
+    ).strip()
+    WORKER_COMFYUI_IPADAPTER_FACEID_LORA: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_FACEID_LORA",
+        "ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
+    ).strip()
     WORKER_COMFYUI_CLIP_VISION_MODEL: str = os.getenv(
         "WORKER_COMFYUI_CLIP_VISION_MODEL",
         "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",

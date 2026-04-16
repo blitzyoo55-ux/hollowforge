@@ -795,6 +795,60 @@ def test_reference_guided_still_payload_parses_nested_still_generation_and_refer
     )
 
 
+def test_reference_guided_still_payload_resolves_plus_face_adapter_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "WORKER_COMFYUI_IPADAPTER_MODEL",
+        "ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors",
+    )
+    monkeypatch.setattr(
+        settings,
+        "WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL",
+        "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+        raising=False,
+    )
+
+    request, _ = parse_sdxl_ipadapter_still_payload(
+        {
+            "backend_family": "sdxl_ipadapter_still",
+            "adapter_profile": "plus_face",
+            "reference_images": [
+                "camila_v2_establish_anchor_hero.png",
+            ],
+            "still_generation": {
+                "prompt": "panel prompt",
+                "checkpoint": "comic-checkpoint.safetensors",
+            },
+        },
+        default_prompt="fallback prompt",
+        default_checkpoint="fallback-checkpoint.safetensors",
+    )
+
+    assert request.adapter_profile == "plus_face"
+    assert request.ipadapter_file == "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+
+
+def test_reference_guided_still_payload_rejects_unknown_adapter_profile() -> None:
+    with pytest.raises(ValueError, match="Unsupported adapter profile"):
+        parse_sdxl_ipadapter_still_payload(
+            {
+                "backend_family": "sdxl_ipadapter_still",
+                "adapter_profile": "mystery_profile",
+                "reference_images": [
+                    "camila_v2_establish_anchor_hero.png",
+                ],
+                "still_generation": {
+                    "prompt": "panel prompt",
+                    "checkpoint": "comic-checkpoint.safetensors",
+                },
+            },
+            default_prompt="fallback prompt",
+            default_checkpoint="fallback-checkpoint.safetensors",
+        )
+
+
 def test_render_video_from_frames_uses_configured_ffmpeg_binary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

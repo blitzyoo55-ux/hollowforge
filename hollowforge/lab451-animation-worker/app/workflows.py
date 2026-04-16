@@ -47,6 +47,11 @@ SDXL_STILL_REQUIRED_NODES = (
     "VAEDecode",
     "SaveImage",
 )
+_SUPPORTED_STILL_ADAPTER_PROFILES = {
+    "general",
+    "plus_face",
+    "faceid_plus_v2",
+}
 
 
 def _normalize_spatial(value: Any, default: int) -> int:
@@ -161,6 +166,27 @@ def _parse_reference_images(value: Any) -> tuple[str, ...]:
     return normalized
 
 
+def _resolve_still_adapter_profile(payload: dict[str, Any]) -> str:
+    adapter_profile = str(payload.get("adapter_profile") or "general").strip().lower()
+    if adapter_profile not in _SUPPORTED_STILL_ADAPTER_PROFILES:
+        raise ValueError(
+            "Unsupported adapter profile for reference-guided still job: "
+            f"{adapter_profile}"
+        )
+    return adapter_profile
+
+
+def _resolve_ipadapter_file_for_profile(payload: dict[str, Any], adapter_profile: str) -> str:
+    explicit = str(payload.get("ipadapter_file") or "").strip()
+    if explicit:
+        return explicit
+    if adapter_profile == "plus_face":
+        return settings.WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL
+    if adapter_profile == "faceid_plus_v2":
+        return settings.WORKER_COMFYUI_IPADAPTER_FACEID_MODEL
+    return settings.WORKER_COMFYUI_IPADAPTER_MODEL
+
+
 @dataclass
 class LTXVRequest:
     prompt: str
@@ -245,6 +271,7 @@ class SDXLIPAdapterRequest:
     sampler_name: str
     scheduler: str
     checkpoint_name: str
+    adapter_profile: str
     ipadapter_file: str
     clip_vision_name: str
     ipadapter_weight: float
@@ -280,6 +307,7 @@ class SDXLIPAdapterRequest:
         checkpoint_name = str(payload.get("checkpoint_name") or default_checkpoint).strip()
         if not checkpoint_name:
             raise ValueError("Animation job requires a checkpoint_name or generation checkpoint")
+        adapter_profile = _resolve_still_adapter_profile(payload)
         return cls(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -292,9 +320,8 @@ class SDXLIPAdapterRequest:
             sampler_name=str(payload.get("sampler_name") or "dpmpp_2m").strip() or "dpmpp_2m",
             scheduler=str(payload.get("scheduler") or "karras").strip() or "karras",
             checkpoint_name=checkpoint_name,
-            ipadapter_file=str(
-                payload.get("ipadapter_file") or settings.WORKER_COMFYUI_IPADAPTER_MODEL
-            ).strip(),
+            adapter_profile=adapter_profile,
+            ipadapter_file=_resolve_ipadapter_file_for_profile(payload, adapter_profile),
             clip_vision_name=str(
                 payload.get("clip_vision_name") or settings.WORKER_COMFYUI_CLIP_VISION_MODEL
             ).strip(),

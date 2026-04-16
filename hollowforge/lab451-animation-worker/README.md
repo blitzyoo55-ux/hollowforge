@@ -85,10 +85,24 @@ Default storage root:
 - `WORKER_COMFYUI_LTXV_CHECKPOINT_FALLBACK=ltx-video-2b-v0.9.5.safetensors`
 - `WORKER_COMFYUI_LTXV_TEXT_ENCODER=t5xxl_fp16.safetensors`
 - `WORKER_COMFYUI_IPADAPTER_MODEL=ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors`
+- `WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL=ip-adapter-plus-face_sdxl_vit-h.safetensors`
+- `WORKER_COMFYUI_IPADAPTER_FACEID_MODEL=ip-adapter-faceid-plusv2_sdxl.bin`
+- `WORKER_COMFYUI_IPADAPTER_FACEID_LORA=ip-adapter-faceid-plusv2_sdxl_lora.safetensors`
 - `WORKER_COMFYUI_CLIP_VISION_MODEL=CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors`
 - `WORKER_COMFYUI_POLL_INTERVAL_SEC=2.0`
 - `WORKER_COMFYUI_TIMEOUT_SEC=1800`
 - `WORKER_FFMPEG_BIN=/opt/homebrew/bin/ffmpeg`
+
+Still adapter profile guidance:
+- `general`
+  - uses `WORKER_COMFYUI_IPADAPTER_MODEL`
+  - keep this as the broad composition guidance default
+- `plus_face`
+  - uses `WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL`
+  - use this as the preferred still-repair adapter once the face-specific asset is installed
+- `faceid_plus_v2`
+  - uses `WORKER_COMFYUI_IPADAPTER_FACEID_MODEL`
+  - keep this optional until the FaceID asset pair is installed and the repair lane is enabled
 
 ## Required local ComfyUI assets for phase 1
 - LTX-Video checkpoint
