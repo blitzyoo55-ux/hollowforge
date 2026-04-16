@@ -120,8 +120,20 @@ REQUIRED_TEXT_ENCODERS = [
 REQUIRED_IPADAPTER_MODELS = [
     "ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors",
 ]
+REQUIRED_PLUS_FACE_IPADAPTER_MODELS = [
+    "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+]
+OPTIONAL_FACEID_IPADAPTER_MODELS = [
+    "ip-adapter-faceid-plusv2_sdxl.bin",
+]
+OPTIONAL_FACEID_LORA_MODELS = [
+    "ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
+]
 REQUIRED_CLIP_VISION_MODELS = [
     "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
+]
+OPTIONAL_NOOBAI_CHECKPOINT_MODELS = [
+    "noobaiXLNAIXL_vPred10Version.safetensors",
 ]
 
 
@@ -130,6 +142,7 @@ class CheckResult:
     name: str
     ok: bool
     detail: str
+    required: bool = True
 
 
 def _fetch_json(url: str) -> dict[str, Any]:
@@ -183,6 +196,41 @@ def _clip_vision_paths(name: str) -> list[Path]:
     ]
 
 
+def _checkpoint_only_paths(name: str) -> list[Path]:
+    return [
+        COMFY_MODELS_DIR / "checkpoints" / name,
+    ]
+
+
+def _loras_paths(name: str) -> list[Path]:
+    return [
+        COMFY_MODELS_DIR / "loras" / name,
+    ]
+
+
+def _check_asset(
+    name: str,
+    paths: list[Path],
+    *,
+    result_name: str,
+    required: bool,
+    missing_detail: str,
+) -> CheckResult:
+    path = _file_exists(paths)
+    if path is not None:
+        return CheckResult(
+            name=result_name,
+            ok=True,
+            detail=f"found {name} at {path}",
+        )
+    return CheckResult(
+        name=result_name,
+        ok=False,
+        detail=f"{missing_detail}: {name}",
+        required=required,
+    )
+
+
 def _check_required_checkpoint() -> CheckResult:
     for name in REQUIRED_CHECKPOINTS:
         path = _file_exists(_model_paths(name))
@@ -234,6 +282,42 @@ def _check_required_ipadapter_model() -> CheckResult:
     )
 
 
+def _check_required_plus_face_ipadapter_model() -> CheckResult:
+    for name in REQUIRED_PLUS_FACE_IPADAPTER_MODELS:
+        return _check_asset(
+            name,
+            _ipadapter_paths(name),
+            result_name="ipadapter_plus_face_model",
+            required=True,
+            missing_detail="missing required plus-face ipadapter model",
+        )
+    raise RuntimeError("missing plus-face ipadapter model name")
+
+
+def _check_optional_faceid_ipadapter_model() -> CheckResult:
+    for name in OPTIONAL_FACEID_IPADAPTER_MODELS:
+        return _check_asset(
+            name,
+            _ipadapter_paths(name),
+            result_name="ipadapter_faceid_model",
+            required=False,
+            missing_detail="missing optional FaceID ipadapter asset",
+        )
+    raise RuntimeError("missing faceid ipadapter model name")
+
+
+def _check_optional_faceid_lora_model() -> CheckResult:
+    for name in OPTIONAL_FACEID_LORA_MODELS:
+        return _check_asset(
+            name,
+            _loras_paths(name),
+            result_name="ipadapter_faceid_lora",
+            required=False,
+            missing_detail="missing optional FaceID LoRA asset",
+        )
+    raise RuntimeError("missing faceid lora model name")
+
+
 def _check_required_clip_vision() -> CheckResult:
     for name in REQUIRED_CLIP_VISION_MODELS:
         path = _file_exists(_clip_vision_paths(name))
@@ -249,6 +333,18 @@ def _check_required_clip_vision() -> CheckResult:
         ok=False,
         detail=f"missing required clip vision model: {expected}",
     )
+
+
+def _check_optional_noobai_checkpoint() -> CheckResult:
+    for name in OPTIONAL_NOOBAI_CHECKPOINT_MODELS:
+        return _check_asset(
+            name,
+            _checkpoint_only_paths(name),
+            result_name="noobai_checkpoint",
+            required=False,
+            missing_detail="missing optional NoobAI-XL checkpoint",
+        )
+    raise RuntimeError("missing noobai checkpoint model name")
 
 
 def _check_backend_executor_config() -> CheckResult:
@@ -316,7 +412,11 @@ def run() -> int:
         _check_required_checkpoint(),
         _check_required_text_encoder(),
         _check_required_ipadapter_model(),
+        _check_required_plus_face_ipadapter_model(),
         _check_required_clip_vision(),
+        _check_optional_faceid_ipadapter_model(),
+        _check_optional_faceid_lora_model(),
+        _check_optional_noobai_checkpoint(),
     ]
     checks.extend(_check_comfy_node(name) for name in REQUIRED_NODES)
     checks.extend(_check_comfy_node(name) for name in REQUIRED_IPADAPTER_NODES)
@@ -325,8 +425,13 @@ def run() -> int:
     print("Local Animation Preflight")
     print(f"root: {ROOT_DIR}")
     for check in checks:
-        label = "PASS" if check.ok else "FAIL"
-        if not check.ok:
+        if check.ok:
+            label = "PASS"
+        elif check.required:
+            label = "FAIL"
+        else:
+            label = "WARN"
+        if check.required and not check.ok:
             any_failures = True
         print(f"[{label}] {check.name}: {check.detail}")
 
