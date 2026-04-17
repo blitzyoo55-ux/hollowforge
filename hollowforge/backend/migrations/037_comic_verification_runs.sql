@@ -15,3 +15,9 @@ CREATE TABLE IF NOT EXISTS comic_verification_runs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_comic_verification_runs_run_mode_finished_created_id
+ON comic_verification_runs (run_mode, finished_at DESC, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_comic_verification_runs_finished_created_id
+ON comic_verification_runs (finished_at DESC, created_at DESC, id DESC);

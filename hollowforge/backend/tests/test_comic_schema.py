@@ -171,6 +171,54 @@ async def test_comic_verification_run_schema_contract(temp_db) -> None:
 
 
 @pytest.mark.asyncio
+async def test_comic_verification_run_indexes_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        index_rows = {
+            row[1]: row[4]
+            for row in conn.execute(
+                """
+                PRAGMA index_list(comic_verification_runs)
+                """
+            ).fetchall()
+        }
+        run_mode_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_run_mode_finished_created_id",),
+        ).fetchone()[0]
+        recent_runs_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_finished_created_id",),
+        ).fetchone()[0]
+
+    assert {
+        "idx_comic_verification_runs_run_mode_finished_created_id",
+        "idx_comic_verification_runs_finished_created_id",
+    } <= set(index_rows)
+    assert index_rows["idx_comic_verification_runs_run_mode_finished_created_id"] == 0
+    assert index_rows["idx_comic_verification_runs_finished_created_id"] == 0
+    assert "run_mode, finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        run_mode_index_sql,
+    )
+    assert "finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        recent_runs_index_sql,
+    )
+
+
+@pytest.mark.asyncio
 async def test_non_episode_comic_table_contracts(temp_db) -> None:
     await init_db()
 
