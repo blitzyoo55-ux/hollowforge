@@ -7,6 +7,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.models import (
+    ComicVerificationRunCreate,
+    ComicVerificationRunResponse,
+    ComicVerificationSummaryResponse,
     ProductionEpisodeCreate,
     ProductionEpisodeDetailResponse,
     ProductionSeriesCreate,
@@ -22,6 +25,10 @@ from app.services.production_hub_repository import (
     list_series,
     list_works,
     list_production_episodes,
+)
+from app.services.production_comic_verification_repository import (
+    create_comic_verification_run,
+    get_comic_verification_summary,
 )
 
 router = APIRouter(prefix="/api/v1/production", tags=["production"])
@@ -97,3 +104,27 @@ async def get_production_episode_endpoint(
             detail="Production episode not found",
         )
     return detail
+
+
+@router.post(
+    "/comic-verification/runs",
+    response_model=ComicVerificationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_comic_verification_run_endpoint(
+    payload: ComicVerificationRunCreate,
+) -> ComicVerificationRunResponse:
+    try:
+        return await create_comic_verification_run(payload)
+    except ValueError as exc:
+        raise _http_error_from_value_error(exc) from exc
+
+
+@router.get(
+    "/comic-verification/summary",
+    response_model=ComicVerificationSummaryResponse,
+)
+async def get_comic_verification_summary_endpoint(
+    limit: int = Query(default=5, ge=0, le=100),
+) -> ComicVerificationSummaryResponse:
+    return await get_comic_verification_summary(limit=limit)
