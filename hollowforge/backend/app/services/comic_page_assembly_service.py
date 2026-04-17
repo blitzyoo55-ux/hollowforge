@@ -749,6 +749,95 @@ def _build_page_geometry(
     }
 
 
+_DIALOGUE_PLACEMENT_ANCHORS: dict[str, dict[str, float | str]] = {
+    "upper left": {"x": 0.06, "y": 0.05, "width": 0.36, "height": 0.2, "align": "left"},
+    "upper right": {"x": 0.58, "y": 0.05, "width": 0.36, "height": 0.2, "align": "right"},
+    "top edge": {"x": 0.18, "y": 0.04, "width": 0.64, "height": 0.16, "align": "center"},
+    "near action": {"x": 0.58, "y": 0.58, "width": 0.24, "height": 0.14, "align": "left"},
+    "near hand": {"x": 0.56, "y": 0.62, "width": 0.24, "height": 0.14, "align": "left"},
+    "lower left": {"x": 0.06, "y": 0.72, "width": 0.34, "height": 0.18, "align": "left"},
+    "lower right": {"x": 0.6, "y": 0.72, "width": 0.34, "height": 0.18, "align": "right"},
+}
+
+_DIALOGUE_TYPE_DEFAULT_PLACEMENTS = {
+    "speech": "upper left",
+    "caption": "top edge",
+    "sfx": "near action",
+}
+
+
+def _normalize_dialogue_placement_hint(dialogue: dict[str, Any]) -> str | None:
+    raw_hint = str(dialogue.get("placement_hint") or "").strip().lower()
+    if raw_hint in _DIALOGUE_PLACEMENT_ANCHORS:
+        return raw_hint
+    dialogue_type = str(dialogue.get("type") or "").strip().lower()
+    default_hint = _DIALOGUE_TYPE_DEFAULT_PLACEMENTS.get(dialogue_type)
+    if not raw_hint:
+        return default_hint
+    return raw_hint if raw_hint in _DIALOGUE_PLACEMENT_ANCHORS else None
+
+
+def _scale_rect_from_frame(
+    frame_rect: dict[str, int],
+    *,
+    x_ratio: float,
+    y_ratio: float,
+    width_ratio: float,
+    height_ratio: float,
+) -> dict[str, int]:
+    frame_x = int(frame_rect["x"])
+    frame_y = int(frame_rect["y"])
+    frame_width = int(frame_rect["width"])
+    frame_height = int(frame_rect["height"])
+    return _rect_payload(
+        x=frame_x + int(frame_width * x_ratio),
+        y=frame_y + int(frame_height * y_ratio),
+        width=max(48, int(frame_width * width_ratio)),
+        height=max(40, int(frame_height * height_ratio)),
+    )
+
+
+def _build_dialogue_anchor_mapping(
+    *,
+    dialogue: dict[str, Any],
+    frame_rect: dict[str, int] | None,
+    layer: str,
+) -> dict[str, Any] | None:
+    if frame_rect is None:
+        return None
+    normalized_hint = _normalize_dialogue_placement_hint(dialogue)
+    if normalized_hint is None:
+        return None
+    anchor_spec = _DIALOGUE_PLACEMENT_ANCHORS[normalized_hint]
+    anchor_rect = _scale_rect_from_frame(
+        frame_rect,
+        x_ratio=float(anchor_spec["x"]),
+        y_ratio=float(anchor_spec["y"]),
+        width_ratio=float(anchor_spec["width"]),
+        height_ratio=float(anchor_spec["height"]),
+    )
+    frame_center_x = int(frame_rect["x"]) + int(frame_rect["width"]) // 2
+    frame_center_y = int(frame_rect["y"]) + int(frame_rect["height"]) // 2
+    anchor_center_x = anchor_rect["x"] + anchor_rect["width"] // 2
+    anchor_center_y = anchor_rect["y"] + anchor_rect["height"] // 2
+    return {
+        "layer": layer,
+        "placement_hint": normalized_hint,
+        "alignment": anchor_spec["align"],
+        "frame_rect": frame_rect,
+        "anchor_rect": anchor_rect,
+        "text_rect": anchor_rect,
+        "tail_target": {
+            "x": frame_center_x,
+            "y": frame_center_y,
+        },
+        "anchor_center": {
+            "x": anchor_center_x,
+            "y": anchor_center_y,
+        },
+    }
+
+
 def _sort_page_panels(page_panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         page_panels,
@@ -878,7 +967,25 @@ def _build_page_validation(
             )
         )
 
-    if any(dialogues_by_panel.get(str(panel["id"]), []) for panel in page_panels):
+    dialogue_anchor_missing = False
+    for index, panel in enumerate(page_panels):
+        panel_id = str(panel["id"])
+        panel_dialogues = dialogues_by_panel.get(panel_id, [])
+        if not panel_dialogues:
+            continue
+        frame_rect = geometry["frame_rects"][index] if index < len(geometry["frame_rects"]) else None
+        for dialogue in panel_dialogues:
+            if _build_dialogue_anchor_mapping(
+                dialogue=dialogue,
+                frame_rect=frame_rect,
+                layer="balloon",
+            ) is None:
+                dialogue_anchor_missing = True
+                break
+        if dialogue_anchor_missing:
+            break
+
+    if dialogue_anchor_missing:
         hard_blocks.extend(
             [
                 ComicHandoffValidationIssueResponse(
@@ -1025,6 +1132,7 @@ def _write_layered_package(
             panel_id = str(panel["id"])
             selected_asset = selected_assets_by_panel[panel_id]
             panel_dialogues = dialogues_by_panel.get(panel_id, [])
+            frame_rect = geometry["frame_rects"][index] if index < len(geometry["frame_rects"]) else None
             frame_items.append(
                 {
                     "panel_id": panel_id,
@@ -1056,6 +1164,11 @@ def _write_layered_package(
                                 "priority": dialogue.get("priority"),
                                 "balloon_style_hint": dialogue.get("balloon_style_hint"),
                                 "placement_hint": dialogue.get("placement_hint"),
+                                "anchor_mapping": _build_dialogue_anchor_mapping(
+                                    dialogue=dialogue,
+                                    frame_rect=frame_rect,
+                                    layer="balloon",
+                                ),
                             }
                             for dialogue in panel_dialogues
                         ],
@@ -1073,6 +1186,11 @@ def _write_layered_package(
                                 "type": dialogue.get("type"),
                                 "text": dialogue.get("text"),
                                 "speaker_character_id": dialogue.get("speaker_character_id"),
+                                "anchor_mapping": _build_dialogue_anchor_mapping(
+                                    dialogue=dialogue,
+                                    frame_rect=frame_rect,
+                                    layer="text_draft",
+                                ),
                             }
                             for dialogue in panel_dialogues
                         ],

@@ -445,12 +445,73 @@ async def test_assemble_episode_pages_blocks_duplicate_reading_order_on_page(
 
 
 @pytest.mark.asyncio
-async def test_assemble_episode_pages_blocks_dialogue_layers_without_anchor_mapping(
+async def test_assemble_episode_pages_generates_dialogue_anchor_mappings_from_placement_hints(
     temp_db,
 ) -> None:
     episode_id = await _seed_episode_with_panels(temp_db, panel_count=1)
     _seed_selected_assets(temp_db, panel_count=1)
     _insert_dialogue_fixture(temp_db, "comic_panel_page_assembly_test_1")
+    _insert_dialogue_fixture(
+        temp_db,
+        "comic_panel_page_assembly_test_1",
+        dialogue_id="dialogue_caption_top_edge",
+        dialogue_type="caption",
+        priority=20,
+        placement_hint="top edge",
+    )
+    _insert_dialogue_fixture(
+        temp_db,
+        "comic_panel_page_assembly_test_1",
+        dialogue_id="dialogue_sfx_near_hand",
+        dialogue_type="sfx",
+        text="tap",
+        priority=30,
+        placement_hint="near hand",
+    )
+
+    response = await assemble_episode_pages(
+        episode_id=episode_id,
+        layout_template_id="jp_2x2_v1",
+    )
+
+    assert response.page_summaries[0].art_layer_status == "complete"
+    assert response.page_summaries[0].frame_layer_status == "complete"
+    assert response.page_summaries[0].balloon_layer_status == "complete"
+    assert response.page_summaries[0].text_draft_layer_status == "complete"
+    assert response.page_summaries[0].hard_block_count == 0
+    assert response.handoff_validation.hard_blocks == []
+
+    layered_package_root = (settings.DATA_DIR / response.layered_manifest_path).parent
+    balloon_layer = json.loads(
+        (layered_package_root / "pages" / "page_001" / "balloon_layer.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    text_draft_layer = json.loads(
+        (layered_package_root / "pages" / "page_001" / "text_draft_layer.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert balloon_layer["status"] == "complete"
+    assert text_draft_layer["status"] == "complete"
+    assert balloon_layer["items"][0]["dialogues"][0]["anchor_mapping"]["placement_hint"] == "upper left"
+    assert balloon_layer["items"][0]["dialogues"][1]["anchor_mapping"]["placement_hint"] == "top edge"
+    assert balloon_layer["items"][0]["dialogues"][2]["anchor_mapping"]["placement_hint"] == "near hand"
+    assert text_draft_layer["items"][0]["dialogues"][0]["anchor_mapping"]["layer"] == "text_draft"
+
+
+@pytest.mark.asyncio
+async def test_assemble_episode_pages_blocks_dialogue_layers_without_anchor_mapping(
+    temp_db,
+) -> None:
+    episode_id = await _seed_episode_with_panels(temp_db, panel_count=1)
+    _seed_selected_assets(temp_db, panel_count=1)
+    _insert_dialogue_fixture(
+        temp_db,
+        "comic_panel_page_assembly_test_1",
+        placement_hint="off-panel mystery zone",
+    )
 
     response = await assemble_episode_pages(
         episode_id=episode_id,
@@ -691,12 +752,32 @@ async def test_export_episode_pages_writes_manuscript_profile_artifacts(
 
 
 @pytest.mark.asyncio
-async def test_export_episode_pages_rejects_dialogue_rows_without_anchor_mapping(
+async def test_export_episode_pages_supports_dialogue_rows_with_anchor_mapping(
     temp_db,
 ) -> None:
     episode_id = await _seed_episode_with_panels(temp_db, panel_count=1)
     _seed_selected_assets(temp_db, panel_count=1)
     _insert_dialogue_fixture(temp_db, "comic_panel_page_assembly_test_1")
+    response = await export_episode_pages(
+        episode_id=episode_id,
+        layout_template_id="jp_2x2_v1",
+    )
+
+    assert response.export_zip_path.endswith(".zip")
+    assert response.handoff_validation.hard_blocks == []
+
+
+@pytest.mark.asyncio
+async def test_export_episode_pages_rejects_dialogue_rows_without_anchor_mapping(
+    temp_db,
+) -> None:
+    episode_id = await _seed_episode_with_panels(temp_db, panel_count=1)
+    _seed_selected_assets(temp_db, panel_count=1)
+    _insert_dialogue_fixture(
+        temp_db,
+        "comic_panel_page_assembly_test_1",
+        placement_hint="off-panel mystery zone",
+    )
 
     with pytest.raises(ComicHandoffReadinessError, match="hard blocks"):
         await export_episode_pages(
