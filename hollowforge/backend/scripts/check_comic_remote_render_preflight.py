@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -73,6 +75,45 @@ def _fetch_json(url: str, headers: dict[str, str] | None = None) -> dict[str, ob
     if not isinstance(data, dict):
         raise RuntimeError(f"Expected JSON object from {url}")
     return data
+
+
+def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=10) as response:
+        raw = response.read().decode("utf-8")
+    data = json.loads(raw or "{}")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected JSON object from {url}")
+    return data
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _build_stage_status(check: CheckResult, duration_sec: float) -> dict[str, Any]:
+    status_map = {
+        "PASS": "passed",
+        "FAIL": "failed",
+        "SKIP": "skipped",
+    }
+    stage_status: dict[str, Any] = {
+        "status": status_map[check.status],
+    }
+    if duration_sec >= 0:
+        stage_status["duration_sec"] = round(duration_sec, 3)
+    if check.status == "FAIL":
+        stage_status["error_summary"] = check.detail
+    return stage_status
 
 
 def _check_local_backend(base_url: str) -> CheckResult:
@@ -206,28 +247,80 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--worker-url", default=settings.ANIMATION_REMOTE_BASE_URL)
     args = parser.parse_args(argv)
 
-    checks = [
-        _check_local_backend(args.backend_url),
-        _check_remote_worker(args.worker_url),
-        _check_callback_base_url(worker_base_url=args.worker_url),
-    ]
+    run_started_monotonic = time.monotonic()
+    started_at = _utc_now_iso()
+    checks: list[CheckResult] = []
+    check_durations: dict[str, float] = {}
+
+    check_start = time.monotonic()
+    checks.append(_check_local_backend(args.backend_url))
+    check_durations[checks[-1].name] = time.monotonic() - check_start
+
+    check_start = time.monotonic()
+    checks.append(_check_remote_worker(args.worker_url))
+    check_durations[checks[-1].name] = time.monotonic() - check_start
+
+    check_start = time.monotonic()
+    checks.append(_check_callback_base_url(worker_base_url=args.worker_url))
+    check_durations[checks[-1].name] = time.monotonic() - check_start
 
     auth_required: bool | None = False
     worker_ready = checks[1].status == "PASS"
     if worker_ready:
+        check_start = time.monotonic()
         try:
             auth_required = _detect_worker_auth_required(args.worker_url)
         except RuntimeError as exc:
             checks.append(_fail("worker_api_token", str(exc)))
         else:
             checks.append(_check_worker_api_token(auth_required=auth_required))
+        finally:
+            check_durations[checks[-1].name] = time.monotonic() - check_start
     else:
+        check_start = time.monotonic()
         checks.append(_skip("worker_api_token", "worker health failed, skipping auth probe"))
+        check_durations[checks[-1].name] = time.monotonic() - check_start
 
     for check in checks:
         print(f"[{check.status}] {check.name}: {check.detail}")
 
-    return 0 if all(check.status != "FAIL" for check in checks) else 1
+    overall_success = all(check.status != "FAIL" for check in checks)
+    finished_at = _utc_now_iso()
+    total_duration_sec = round(time.monotonic() - run_started_monotonic, 3)
+    failure_check = next((check for check in checks if check.status == "FAIL"), None)
+    payload: dict[str, Any] = {
+        "run_mode": "preflight",
+        "status": "completed" if overall_success else "failed",
+        "overall_success": overall_success,
+        "failure_stage": None if failure_check is None else failure_check.name,
+        "error_summary": None if failure_check is None else failure_check.detail,
+        "base_url": args.backend_url,
+        "total_duration_sec": total_duration_sec,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "stage_status": {
+            check.name: _build_stage_status(check, check_durations.get(check.name, 0.0))
+            for check in checks
+        },
+    }
+
+    persistence_ok = False
+    try:
+        response = _post_json(
+            _join_url(args.backend_url, "/api/v1/production/comic-verification/runs"),
+            payload,
+        )
+    except Exception as exc:  # pragma: no cover - exercised in tests
+        print("comic_verification_run_persisted: false")
+        print(f"comic_verification_run_persist_error: {exc}")
+    else:
+        persistence_ok = True
+        print("comic_verification_run_persisted: true")
+        run_id = response.get("id")
+        if run_id:
+            print(f"comic_verification_run_id: {run_id}")
+
+    return 0 if overall_success and persistence_ok else 1
 
 
 def main() -> int:
