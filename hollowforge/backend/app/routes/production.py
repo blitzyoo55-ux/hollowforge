@@ -124,7 +124,5 @@ async def create_comic_verification_run_endpoint(
     "/comic-verification/summary",
     response_model=ComicVerificationSummaryResponse,
 )
-async def get_comic_verification_summary_endpoint(
-    limit: int = Query(default=5, ge=0, le=100),
-) -> ComicVerificationSummaryResponse:
-    return await get_comic_verification_summary(limit=limit)
+async def get_comic_verification_summary_endpoint() -> ComicVerificationSummaryResponse:
+    return await get_comic_verification_summary(limit=5)
