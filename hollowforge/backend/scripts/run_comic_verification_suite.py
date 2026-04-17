@@ -153,7 +153,11 @@ def main(argv: list[str] | None = None) -> int:
                     if not script_path.exists()
                     else f"stage {stage} exited with code {exit_code}"
                 )
-            stage_error_summaries[stage] = failure_detail or f"stage {stage} exited with code {exit_code}"
+            stage_error_summaries[stage] = (
+                f"stage {stage} script is missing"
+                if not script_path.exists()
+                else f"stage {stage} exited with code {exit_code}"
+            )
             if not continue_on_failure:
                 break
 
