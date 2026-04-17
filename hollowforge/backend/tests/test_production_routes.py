@@ -15,6 +15,44 @@ def _build_client() -> TestClient:
     return TestClient(app)
 
 
+def _post_comic_verification_run(
+    client: TestClient,
+    *,
+    run_mode: str,
+    status: str,
+    overall_success: bool,
+    finished_at: str,
+    started_at: str = "2026-04-17T00:00:00+00:00",
+    total_duration_sec: float = 1.0,
+    failure_stage: str | None = None,
+    error_summary: str | None = None,
+) -> dict:
+    payload = {
+        "run_mode": run_mode,
+        "status": status,
+        "overall_success": overall_success,
+        "base_url": "http://127.0.0.1:8000",
+        "total_duration_sec": total_duration_sec,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "stage_status": {
+            run_mode: {
+                "status": "passed" if overall_success else "failed",
+                "duration_sec": total_duration_sec,
+                "error_summary": error_summary,
+            }
+        },
+    }
+    if failure_stage is not None:
+        payload["failure_stage"] = failure_stage
+    if error_summary is not None:
+        payload["error_summary"] = error_summary
+
+    response = client.post("/api/v1/production/comic-verification/runs", json=payload)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def test_create_and_get_production_episode(temp_db) -> None:
     client = _build_client()
 
@@ -189,6 +227,87 @@ def test_production_episode_detail_reports_track_counts(temp_db) -> None:
     assert refreshed_payload["animation_track_count"] == 1
 
 
+def test_create_and_list_comic_verification_runs(temp_db) -> None:
+    client = _build_client()
+
+    created_preflight = _post_comic_verification_run(
+        client,
+        run_mode="preflight",
+        status="completed",
+        overall_success=True,
+        finished_at="2026-04-17T00:00:01+00:00",
+        total_duration_sec=1.2,
+    )
+    created_suite_1 = _post_comic_verification_run(
+        client,
+        run_mode="suite",
+        status="completed",
+        overall_success=True,
+        finished_at="2026-04-17T00:00:02+00:00",
+        total_duration_sec=1.3,
+    )
+    _post_comic_verification_run(
+        client,
+        run_mode="suite",
+        status="completed",
+        overall_success=True,
+        finished_at="2026-04-17T00:00:03+00:00",
+        total_duration_sec=1.4,
+    )
+    _post_comic_verification_run(
+        client,
+        run_mode="suite",
+        status="completed",
+        overall_success=True,
+        finished_at="2026-04-17T00:00:04+00:00",
+        total_duration_sec=1.5,
+    )
+    _post_comic_verification_run(
+        client,
+        run_mode="suite",
+        status="failed",
+        overall_success=False,
+        failure_stage="suite",
+        error_summary="stage 2 failed",
+        finished_at="2026-04-17T00:00:05+00:00",
+        total_duration_sec=1.6,
+    )
+    created_suite_latest = _post_comic_verification_run(
+        client,
+        run_mode="suite",
+        status="completed",
+        overall_success=True,
+        finished_at="2026-04-17T00:00:06+00:00",
+        total_duration_sec=1.7,
+    )
+
+    assert created_preflight["run_mode"] == "preflight"
+    assert created_suite_1["stage_status"]["suite"]["status"] == "passed"
+    assert created_suite_latest["status"] == "completed"
+
+    summary_response = client.get("/api/v1/production/comic-verification/summary")
+    assert summary_response.status_code == 200, summary_response.text
+    summary = summary_response.json()
+
+    assert summary["latest_preflight"]["run_mode"] == "preflight"
+    assert summary["latest_suite"]["run_mode"] == "suite"
+    assert summary["recent_runs"][0]["finished_at"] == "2026-04-17T00:00:06+00:00"
+    assert len(summary["recent_runs"]) == 5
+
+    limited_summary_response = client.get(
+        "/api/v1/production/comic-verification/summary",
+        params={"limit": 2},
+    )
+    assert limited_summary_response.status_code == 200, limited_summary_response.text
+    limited_summary = limited_summary_response.json()
+
+    assert len(limited_summary["recent_runs"]) == 2
+    assert [row["finished_at"] for row in limited_summary["recent_runs"]] == [
+        "2026-04-17T00:00:06+00:00",
+        "2026-04-17T00:00:05+00:00",
+    ]
+
+
 def test_production_routes_mount_in_lightweight_and_full_apps(temp_db) -> None:
     lightweight_app = create_app(lightweight=True)
 
@@ -196,4 +315,6 @@ def test_production_routes_mount_in_lightweight_and_full_apps(temp_db) -> None:
     main_source = Path("app/main.py").read_text(encoding="utf-8")
 
     assert "/api/v1/production/episodes" in lightweight_paths
+    assert "/api/v1/production/comic-verification/runs" in lightweight_paths
+    assert "/api/v1/production/comic-verification/summary" in lightweight_paths
     assert main_source.count("app.include_router(production.router)") == 2
