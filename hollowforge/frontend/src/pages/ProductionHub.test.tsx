@@ -216,16 +216,19 @@ test('renders verification history summary cards and recent runs', async () => {
       recent_runs: [
         buildVerificationRun({
           id: 'suite-1',
-          run_mode: 'suite',
+          run_mode: 'full_only',
           status: 'failed',
           overall_success: false,
           failure_stage: 'full',
           error_summary: 'stage full exited with code 1',
         }),
         buildVerificationRun({
-          id: 'preflight-1',
-          run_mode: 'preflight',
-          overall_success: true,
+          id: 'remote-1',
+          run_mode: 'remote_only',
+          status: 'failed',
+          overall_success: false,
+          failure_stage: 'remote',
+          error_summary: 'stage remote exited with code 2',
         }),
       ],
     }),
@@ -253,6 +256,7 @@ test('renders verification history summary cards and recent runs', async () => {
   expect(within(suiteCard as HTMLElement).getByText('Finished')).toBeInTheDocument()
   expect(within(suiteCard as HTMLElement).getByText('Duration')).toBeInTheDocument()
   expect(within(suiteCard as HTMLElement).getByText('Failure Stage')).toBeInTheDocument()
+  expect(within(suiteCard as HTMLElement).getByText('full')).toBeInTheDocument()
 
   expect(screen.getByRole('columnheader', { name: /Started/i })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: /Mode/i })).toBeInTheDocument()
@@ -260,6 +264,16 @@ test('renders verification history summary cards and recent runs', async () => {
   expect(screen.getByRole('columnheader', { name: /Failure Stage/i })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: /Duration/i })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: /Error Summary/i })).toBeInTheDocument()
+
+  const fullOnlyRow = screen.getByText('full only').closest('tr')
+  expect(fullOnlyRow).not.toBeNull()
+  expect(within(fullOnlyRow as HTMLElement).getByText('full')).toBeInTheDocument()
+  expect(within(fullOnlyRow as HTMLElement).getByText('stage full exited with code 1')).toBeInTheDocument()
+
+  const remoteOnlyRow = screen.getByText('remote only').closest('tr')
+  expect(remoteOnlyRow).not.toBeNull()
+  expect(within(remoteOnlyRow as HTMLElement).getByText('remote')).toBeInTheDocument()
+  expect(within(remoteOnlyRow as HTMLElement).getByText('stage remote exited with code 2')).toBeInTheDocument()
 })
 
 test('submits production work without requiring a raw id field', async () => {
