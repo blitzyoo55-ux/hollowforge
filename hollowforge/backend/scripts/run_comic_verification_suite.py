@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -32,6 +35,29 @@ def _print_marker(key: str, value: Any) -> None:
 
 def _format_duration(value: float) -> str:
     return f"{max(0.0, value):.3f}"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=10) as response:
+        raw = response.read().decode("utf-8")
+    data = json.loads(raw or "{}")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected JSON object from {url}")
+    return data
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -90,10 +116,14 @@ def main(argv: list[str] | None = None) -> int:
     continue_on_failure = bool(args.continue_on_failure)
     stage_exit_codes: dict[str, int | None] = {stage: None for stage in STAGE_ORDER}
     stage_durations: dict[str, str] = {stage: "" for stage in STAGE_ORDER}
+    stage_duration_secs: dict[str, float] = {stage: 0.0 for stage in STAGE_ORDER}
+    stage_error_summaries: dict[str, str] = {stage: "" for stage in STAGE_ORDER}
     completed_stages: list[str] = []
     failed_stage = ""
     missing_stage_script = ""
+    failure_detail = ""
     suite_start = time.monotonic()
+    started_at = _utc_now_iso()
 
     for stage in requested_stages:
         stage_start = time.monotonic()
@@ -111,12 +141,23 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         stage_exit_codes[stage] = exit_code
-        stage_durations[stage] = _format_duration(time.monotonic() - stage_start)
+        stage_duration_secs[stage] = time.monotonic() - stage_start
+        stage_durations[stage] = _format_duration(stage_duration_secs[stage])
         completed_stages.append(stage)
 
         if exit_code != 0:
             if not failed_stage:
                 failed_stage = stage
+                failure_detail = (
+                    f"stage {stage} script is missing"
+                    if not script_path.exists()
+                    else f"stage {stage} exited with code {exit_code}"
+                )
+            stage_error_summaries[stage] = (
+                f"stage {stage} script is missing"
+                if not script_path.exists()
+                else f"stage {stage} exited with code {exit_code}"
+            )
             if not continue_on_failure:
                 break
 
@@ -146,7 +187,64 @@ def main(argv: list[str] | None = None) -> int:
     for key, value in summary.items():
         _print_marker(key, value)
 
-    return 0 if overall_success else 1
+    finished_at = _utc_now_iso()
+    payload: dict[str, Any] = {
+        "run_mode": (
+            "full_only"
+            if args.full_only
+            else "remote_only"
+            if args.remote_only
+            else "suite"
+        ),
+        "status": "completed" if overall_success else "failed",
+        "overall_success": overall_success,
+        "failure_stage": None if not failed_stage else failed_stage,
+        "error_summary": None if not failure_detail else failure_detail,
+        "base_url": base_url,
+        "total_duration_sec": round(time.monotonic() - suite_start, 3),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "stage_status": {
+            stage: {
+                "status": (
+                    "skipped"
+                    if stage_exit_codes[stage] is None
+                    else "passed"
+                    if stage_exit_codes[stage] == 0
+                    else "failed"
+                ),
+                **(
+                    {"duration_sec": round(stage_duration_secs[stage], 3)}
+                    if stage_exit_codes[stage] is not None
+                    else {}
+                ),
+                **(
+                    {"error_summary": stage_error_summaries[stage]}
+                    if stage_exit_codes[stage] not in {None, 0}
+                    else {}
+                ),
+            }
+            for stage in STAGE_ORDER
+        },
+    }
+
+    persistence_ok = False
+    try:
+        response = _post_json(
+            f"{base_url}/api/v1/production/comic-verification/runs",
+            payload,
+        )
+    except Exception as exc:  # pragma: no cover - exercised in tests
+        print("comic_verification_run_persisted: false")
+        print(f"comic_verification_run_persist_error: {exc}")
+    else:
+        persistence_ok = True
+        print("comic_verification_run_persisted: true")
+        run_id = response.get("id")
+        if run_id:
+            print(f"comic_verification_run_id: {run_id}")
+
+    return 0 if overall_success and persistence_ok else 1
 
 
 if __name__ == "__main__":

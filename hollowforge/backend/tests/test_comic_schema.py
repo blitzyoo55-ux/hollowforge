@@ -101,6 +101,132 @@ async def test_comic_and_sequence_tables_expose_production_link_columns(temp_db)
 
 
 @pytest.mark.asyncio
+async def test_comic_verification_run_table_exists(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "comic_verification_runs" in table_names
+
+
+@pytest.mark.asyncio
+async def test_comic_verification_run_schema_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        columns = {
+            row[1]: {
+                "type": row[2],
+                "notnull": row[3],
+                "default": row[4],
+                "pk": row[5],
+            }
+            for row in conn.execute("PRAGMA table_info(comic_verification_runs)").fetchall()
+        }
+        schema_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'comic_verification_runs'
+            """
+        ).fetchone()[0]
+
+    assert {
+        "id",
+        "run_mode",
+        "status",
+        "overall_success",
+        "failure_stage",
+        "error_summary",
+        "base_url",
+        "total_duration_sec",
+        "started_at",
+        "finished_at",
+        "stage_status_json",
+        "created_at",
+        "updated_at",
+    } <= set(columns)
+    assert columns["id"]["pk"] == 1
+    assert columns["run_mode"]["notnull"] == 1
+    assert columns["status"]["notnull"] == 1
+    assert columns["overall_success"]["notnull"] == 1
+    assert columns["base_url"]["notnull"] == 1
+    assert columns["started_at"]["notnull"] == 1
+    assert columns["finished_at"]["notnull"] == 1
+    assert columns["stage_status_json"]["notnull"] == 1
+    assert columns["stage_status_json"]["default"] == "'{}'"
+    assert columns["created_at"]["notnull"] == 1
+    assert columns["updated_at"]["notnull"] == 1
+
+    normalized_schema_sql = re.sub(r"\s+", " ", schema_sql).strip()
+    assert re.search(
+        r"run_mode TEXT NOT NULL CHECK \(\s*run_mode IN \('preflight', 'suite', 'full_only', 'remote_only'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"status TEXT NOT NULL CHECK \(\s*status IN \('completed', 'failed'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"overall_success INTEGER NOT NULL CHECK \(\s*overall_success IN \(0, 1\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert "stage_status_json TEXT NOT NULL DEFAULT '{}'" in normalized_schema_sql
+
+
+@pytest.mark.asyncio
+async def test_comic_verification_run_indexes_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        index_rows = {
+            row[1]: row[4]
+            for row in conn.execute(
+                """
+                PRAGMA index_list(comic_verification_runs)
+                """
+            ).fetchall()
+        }
+        run_mode_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_run_mode_finished_created_id",),
+        ).fetchone()[0]
+        recent_runs_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_finished_created_id",),
+        ).fetchone()[0]
+
+    assert {
+        "idx_comic_verification_runs_run_mode_finished_created_id",
+        "idx_comic_verification_runs_finished_created_id",
+    } <= set(index_rows)
+    assert index_rows["idx_comic_verification_runs_run_mode_finished_created_id"] == 0
+    assert index_rows["idx_comic_verification_runs_finished_created_id"] == 0
+    assert "run_mode, finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        run_mode_index_sql,
+    )
+    assert "finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        recent_runs_index_sql,
+    )
+
+
+@pytest.mark.asyncio
 async def test_comic_episodes_enforce_unique_production_episode_link(temp_db) -> None:
     await init_db()
     await create_comic_episode(

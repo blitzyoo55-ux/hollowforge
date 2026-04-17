@@ -14,6 +14,34 @@ export interface LoraInput {
   category: string | null;
 }
 
+export interface ComicVerificationStageStatusResponse {
+  status: 'passed' | 'failed' | 'skipped' | string
+  duration_sec?: number | null
+  error_summary?: string | null
+}
+
+export interface ComicVerificationRunResponse {
+  id: string
+  run_mode: 'preflight' | 'suite' | 'full_only' | 'remote_only' | string
+  status: 'completed' | 'failed' | string
+  overall_success: boolean
+  failure_stage: string | null
+  error_summary: string | null
+  base_url: string
+  total_duration_sec: number | null
+  started_at: string
+  finished_at: string
+  stage_status: Record<string, ComicVerificationStageStatusResponse>
+  created_at: string
+  updated_at: string
+}
+
+export interface ComicVerificationSummaryResponse {
+  latest_preflight: ComicVerificationRunResponse | null
+  latest_suite: ComicVerificationRunResponse | null
+  recent_runs: ComicVerificationRunResponse[]
+}
+
 export interface GenerationCreate {
   prompt: string;
   negative_prompt?: string | null;
@@ -307,6 +335,13 @@ export interface LoraProfile {
 }
 
 export type LoraProfileResponse = LoraProfile
+
+export async function getProductionComicVerificationSummary(): Promise<ComicVerificationSummaryResponse> {
+  const response = await api.get<ComicVerificationSummaryResponse>(
+    '/production/comic-verification/summary',
+  )
+  return response.data
+}
 
 export interface LoraProfileCreate {
   display_name: string;
