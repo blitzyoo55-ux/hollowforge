@@ -271,9 +271,10 @@ async def test_queue_panel_render_candidates_uses_character_version_defaults_and
         "lowres, deformed, bad anatomy, extra fingers, duplicate, poorly drawn "
         "hands, explicit nudity, graphic sexual content, single-subject glamour "
         "poster, beauty key visual, pinup composition, close portrait, fashion "
-        "editorial, waxy skin, dead eyes, unreadable text, random letters, gibberish "
-        "text, logo, watermark, subtitle overlay, caption box, speech bubble outline, "
-        "camera frame, viewfinder, screenshot border, interface overlay, recording overlay"
+        "editorial, waxy skin, dead eyes, school uniform, sailor collar, neck ribbon, "
+        "bow, ribbon tie, unreadable text, random letters, gibberish text, logo, "
+        "watermark, subtitle overlay, caption box, speech bubble outline, camera frame, "
+        "viewfinder, screenshot border, interface overlay, recording overlay"
     )
     assert generation_payload["checkpoint"] == "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors"
     assert generation_payload["workflow_lane"] == "sdxl_illustrious"
@@ -342,9 +343,9 @@ async def test_build_prompt_frontloads_setting_for_establish_panels_without_glam
     )
 
     assert prompt.startswith("Setting: inside Artist Loft Morning.")
-    assert "Composition: wide room view inside Artist Loft Morning" in prompt
+    assert "Composition: wide room view, single adult subject" in prompt
     assert "subject secondary to environment" in prompt
-    assert "leave negative space for dialogue" in prompt
+    assert "leave negative space for dialogue" not in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
@@ -375,7 +376,7 @@ async def test_establish_prompt_uses_composition_cues_without_direct_manga_style
     assert "japanese manga style" not in prompt.lower()
     assert "establish manga panel" not in prompt.lower()
     assert "wide room view inside Artist Loft Morning" in prompt
-    assert "leave negative space for dialogue" in prompt
+    assert "leave negative space for dialogue" not in prompt
     assert "subject secondary to environment" in prompt
 
 
@@ -431,7 +432,7 @@ async def test_establish_prompt_scene_first_for_artist_loft_morning() -> None:
     assert prompt.startswith(
         "Setting: inside Artist Loft Morning. Scene cues: tall factory windows, easel."
     )
-    assert "Composition: wide room view inside Artist Loft Morning" in prompt
+    assert "Composition: wide room view, single adult subject" in prompt
     assert (
         "Quality focus: room readability, reduced subject occupancy, environment depth."
         in prompt
@@ -492,9 +493,10 @@ async def test_establish_negative_prompt_appends_single_subject_glamour_poster_a
         "single-subject glamour poster, pinup composition, beauty key visual, "
         "empty background, minimal room detail, subject filling frame, holding note, "
         "holding letter, message card, placard, sign held to viewer, paper presented to viewer, "
-        "rec frame, lower third subtitle, unreadable text, random letters, gibberish text, "
-        "logo, watermark, subtitle overlay, caption box, speech bubble outline, camera frame, "
-        "viewfinder, screenshot border, interface overlay, recording overlay"
+        "rec frame, lower third subtitle, school uniform, sailor collar, neck ribbon, bow, "
+        "ribbon tie, blazer and tie, classroom idol styling, unreadable text, random letters, "
+        "gibberish text, logo, watermark, subtitle overlay, caption box, speech bubble outline, "
+        "camera frame, viewfinder, screenshot border, interface overlay, recording overlay"
     )
 
 
@@ -571,14 +573,15 @@ async def test_build_generation_request_uses_establish_profile_dimensions(
         "single-subject glamour poster, pinup composition, beauty key visual, "
         "empty background, minimal room detail, subject filling frame, holding note, "
         "holding letter, message card, placard, sign held to viewer, paper presented to viewer, "
-        "rec frame, lower third subtitle, unreadable text, random letters, gibberish text, "
-        "logo, watermark, subtitle overlay, caption box, speech bubble outline, camera frame, "
-        "viewfinder, screenshot border, interface overlay, recording overlay"
+        "rec frame, lower third subtitle, school uniform, sailor collar, neck ribbon, bow, "
+        "ribbon tie, blazer and tie, classroom idol styling, unreadable text, random letters, "
+        "gibberish text, logo, watermark, subtitle overlay, caption box, speech bubble outline, "
+        "camera frame, viewfinder, screenshot border, interface overlay, recording overlay"
     )
     assert payload["source_id"] == source_id
 
 
-async def test_establish_generation_filters_beauty_enhancer_loras(
+async def test_establish_generation_keeps_character_version_loras(
     temp_db: Path,
 ) -> None:
     panel_id = await _create_panel_fixture(temp_db, panel_type="establish")
@@ -591,7 +594,17 @@ async def test_establish_generation_filters_beauty_enhancer_loras(
     )
 
     payload = generation_service.batch_calls[0][0]
-    assert payload["loras"] == []
+    with sqlite3.connect(temp_db) as conn:
+        expected_loras_json = conn.execute(
+            """
+            SELECT loras
+            FROM character_versions
+            WHERE id = ?
+            """,
+            ("charver_kaede_ren_still_v1",),
+        ).fetchone()[0]
+
+    assert payload["loras"] == json.loads(expected_loras_json)
 
 
 async def test_closeup_generation_keeps_character_version_loras(
@@ -721,13 +734,83 @@ async def test_build_generation_request_v2_merges_role_quality_focus_and_negativ
         }
     )
 
-    assert "Quality focus: expression readability, natural body pose, clear hand acting." in generation.prompt
+    assert "Prioritize expression readability, natural body pose, clear hand acting." in generation.prompt
     assert (
         generation.negative_prompt
         == "Role negative: single-subject glamour poster, beauty key visual"
     )
     assert generation.width == profile.width
     assert generation.height == profile.height
+
+
+async def test_build_generation_request_v2_omits_internal_metadata_labels_from_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Contract:
+        execution_params = {
+            "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+            "loras": (),
+            "steps": 30,
+            "cfg": 5.4,
+            "sampler": "euler_a",
+        }
+        identity_block = ("Camila identity anchor.",)
+        style_block = (
+            "Series style: Camila Pilot V1",
+            "Keep linework clean and readable.",
+            "Style notes: Pilot series style canon.",
+        )
+        binding_block = (
+            "Binding notes: Camila-only pilot binding.",
+            "Identity lock: strong",
+            "Hair lock: strong",
+            "Face lock: strong",
+            "Keep Camila appealing in an adult, grounded way.",
+            "Wardrobe family: simple functional everyday wardrobe",
+            "Do not mutate: identity ownership.",
+            "Location: Artist Loft Morning",
+            "Continuity: Hold Artist Loft Morning continuity.",
+        )
+        role_block = ("Panel type: establish", "Role profile: establish_env_v2")
+        negative_rules = ("Role negative: single-subject glamour poster, beauty key visual",)
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "resolve_comic_render_v2_contract",
+        lambda **_: _Contract(),
+    )
+
+    generation = comic_render_service._build_generation_request(
+        {
+            "render_lane": "character_canon_v2",
+            "panel_type": "establish",
+            "series_style_id": "camila_pilot_v1",
+            "character_series_binding_id": "camila_pilot_binding_v1",
+            "location_label": "Artist Loft Morning",
+            "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
+            "action_intent": "Camila pauses near the windows and scans the room.",
+            "expression_intent": "calm alertness",
+            "camera_intent": "wide room view",
+            "framing": "subject secondary to environment",
+            "scheduler": "normal",
+            "clip_skip": 2,
+        }
+    )
+
+    lowered = generation.prompt.lower()
+    assert "panel type:" not in lowered
+    assert "role profile:" not in lowered
+    assert "series style:" not in lowered
+    assert "style notes:" not in lowered
+    assert "binding notes:" not in lowered
+    assert "identity lock:" not in lowered
+    assert "hair lock:" not in lowered
+    assert "face lock:" not in lowered
+    assert "do not mutate:" not in lowered
+    assert "location:" not in lowered
+    assert "continuity:" not in lowered
+    assert "Keep linework clean and readable." in generation.prompt
+    assert "Keep Camila appealing in an adult, grounded way." in generation.prompt
 
 
 async def test_build_generation_request_v2_filters_style_loras_by_panel_profile() -> None:
@@ -768,23 +851,37 @@ async def test_build_generation_request_v2_filters_style_loras_by_panel_profile(
     assert beat_generation.loras[1].strength == pytest.approx(0.36)
 
 
-async def test_build_generation_request_v2_uses_text_only_establish_lane() -> None:
-    establish_generation = comic_render_service._build_generation_request(
-        {
-            "render_lane": "character_canon_v2",
-            "panel_type": "establish",
-            "series_style_id": "camila_pilot_v1",
-            "character_series_binding_id": "camila_pilot_binding_v1",
-            "location_label": "Artist Loft Morning",
-            "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
-            "scheduler": "normal",
-            "clip_skip": 2,
-        }
-    )
+async def test_build_generation_request_v2_uses_compact_reference_guided_establish_lane() -> None:
+    context = {
+        "render_lane": "character_canon_v2",
+        "panel_type": "establish",
+        "series_style_id": "camila_pilot_v1",
+        "character_series_binding_id": "camila_pilot_binding_v1",
+        "location_label": "Artist Loft Morning",
+        "scene_continuity_notes": "Hold Artist Loft Morning continuity.",
+        "scheduler": "normal",
+        "clip_skip": 2,
+    }
+    establish_generation = comic_render_service._build_generation_request(context)
 
     assert establish_generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
     assert establish_generation.loras == []
-    assert getattr(establish_generation, "reference_guided", None) is not True
+    assert context["reference_guided"] is True
+    assert context["still_backend_family"] == "sdxl_ipadapter_still"
+    assert context["reference_images"] == [
+        "camila_v2_establish_anchor_hero.png",
+        "camila_v2_establish_anchor_halfbody.png",
+    ]
+    lowered = establish_generation.prompt.lower()
+    assert "setting:" not in lowered
+    assert "scene cues:" not in lowered
+    assert "composition:" not in lowered
+    assert "quality focus:" not in lowered
+    assert "panel type:" not in lowered
+    assert "role profile:" not in lowered
+    assert "leave negative space for dialogue" not in lowered
+    assert "inside artist loft morning" in lowered
+    assert "wide room view" in lowered
 
 
 async def test_build_generation_request_v2_populates_reference_guided_establish_context(
@@ -828,13 +925,82 @@ async def test_build_generation_request_v2_populates_reference_guided_establish_
     assert generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
     assert context["reference_guided"] is True
     assert context["still_backend_family"] == "sdxl_ipadapter_still"
-    assert context["ipadapter_weight"] == pytest.approx(0.35)
-    assert context["ipadapter_start_at"] == pytest.approx(0.62)
-    assert context["ipadapter_end_at"] == pytest.approx(0.95)
+    assert context["ipadapter_weight"] == pytest.approx(0.92)
+    assert context["ipadapter_start_at"] == pytest.approx(0.0)
+    assert context["ipadapter_end_at"] == pytest.approx(1.0)
     assert context["reference_images"] == [
         *binding.reference_sets["establish"].primary,
         *binding.reference_sets["establish"].secondary,
     ]
+
+
+async def test_build_generation_request_v2_respects_reference_guided_env_tuning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ReferenceGuidedContract:
+        execution_params = {
+            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+            "loras": (),
+            "steps": 30,
+            "cfg": 5.4,
+            "sampler": "euler_a",
+            "reference_guided": True,
+            "still_backend_family": "sdxl_ipadapter_still",
+        }
+        identity_block = ("Camila identity anchor.",)
+        style_block = ("Camila style anchor.",)
+        binding_block = ("Camila binding anchor.",)
+        role_block = ("Panel type: establish", "Role profile: establish_static_v1")
+        negative_rules = ("Role negative: single-subject glamour poster, beauty key visual",)
+
+    monkeypatch.setattr(
+        comic_render_service,
+        "resolve_comic_render_v2_contract",
+        lambda **_: _ReferenceGuidedContract(),
+    )
+    monkeypatch.setattr(
+        comic_render_service.settings,
+        "HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_WEIGHT",
+        0.84,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        comic_render_service.settings,
+        "HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_START_AT",
+        0.05,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        comic_render_service.settings,
+        "HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_END_AT",
+        0.75,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        comic_render_service.settings,
+        "HOLLOWFORGE_REFERENCE_GUIDED_ESTABLISH_INCLUDE_SECONDARY",
+        False,
+        raising=False,
+    )
+
+    context = {
+        "render_lane": "character_canon_v2",
+        "panel_type": "establish",
+        "series_style_id": "camila_pilot_v1",
+        "character_series_binding_id": "camila_pilot_binding_v1",
+        "scheduler": "normal",
+        "clip_skip": 2,
+    }
+
+    generation = comic_render_service._build_generation_request(context)
+
+    assert generation.checkpoint == "akiumLumenILLBase_baseV2.safetensors"
+    assert context["reference_images"] == [
+        "camila_v2_establish_anchor_hero.png",
+    ]
+    assert context["ipadapter_weight"] == pytest.approx(0.84)
+    assert context["ipadapter_start_at"] == pytest.approx(0.05)
+    assert context["ipadapter_end_at"] == pytest.approx(0.75)
 
 
 async def test_build_remote_render_job_request_json_includes_reference_guided_still_payload() -> None:
@@ -846,7 +1012,7 @@ async def test_build_remote_render_job_request_json_includes_reference_guided_st
             "series_style_id": "camila_pilot_v1",
             "character_series_binding_id": "camila_pilot_binding_v1",
             "reference_images": [
-                "camila_v2_establish_anchor_face.png",
+                "camila_v2_establish_anchor_hero.png",
                 "camila_v2_establish_anchor_halfbody.png",
             ],
             "resolver_sections": {},
@@ -877,7 +1043,7 @@ async def test_build_remote_render_job_request_json_includes_reference_guided_st
 
     assert request_json["backend_family"] == "sdxl_ipadapter_still"
     assert request_json["reference_images"] == [
-        "camila_v2_establish_anchor_face.png",
+        "camila_v2_establish_anchor_hero.png",
         "camila_v2_establish_anchor_halfbody.png",
     ]
     assert request_json["adapter_profile"] == "plus_face"

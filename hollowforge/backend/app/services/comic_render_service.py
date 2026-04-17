@@ -64,6 +64,49 @@ _RENDER_ASSET_SELECT_COLUMNS = """
     a.updated_at
 """
 
+_V2_ESTABLISH_PROMPT_MAX_LEN = 1800
+_V2_ESTABLISH_NEGATIVE_MAX_LEN = 800
+
+_ESTABLISH_NEGATIVE_PRIORITY_TERMS: tuple[str, ...] = (
+    "glamour shoot",
+    "fashion editorial",
+    "close portrait",
+    "beauty key visual",
+    "subject filling frame",
+    "minimal room detail",
+    "holding note",
+    "holding letter",
+    "message card",
+    "placard",
+    "sign held to viewer",
+    "paper presented to viewer",
+    "school uniform",
+    "sailor collar",
+    "neck ribbon",
+    "bow",
+    "ribbon tie",
+    "blazer and tie",
+    "classroom idol styling",
+    "orange hair",
+    "youth-coded anime heroine drift",
+    "unreadable text",
+    "random letters",
+    "gibberish text",
+    "subtitle overlay",
+    "caption box",
+    "logo",
+    "watermark",
+    "camera frame",
+    "viewfinder",
+    "screenshot border",
+    "interface overlay",
+    "recording overlay",
+    "blur",
+    "warped anatomy",
+    "over-smoothing",
+)
+
+
 def _reference_guided_ipadapter_weight() -> float:
     return max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_WEIGHT))
 
@@ -105,6 +148,10 @@ def _reference_guided_repair_strength() -> float:
         1.0,
         max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_REPAIR_STRENGTH)),
     )
+
+
+def _reference_guided_establish_include_secondary() -> bool:
+    return bool(settings.HOLLOWFORGE_REFERENCE_GUIDED_ESTABLISH_INCLUDE_SECONDARY)
 
 
 def _now_iso() -> str:
@@ -180,6 +227,9 @@ def _profile_signature(profile: Any) -> str:
         "height": profile.height,
         "negative_prompt_append": profile.negative_prompt_append,
         "quality_selector_hints": list(getattr(profile, "quality_selector_hints", ())),
+        "quality_recipe_family": str(
+            getattr(profile, "quality_recipe_family", "") or ""
+        ),
         "anchor_filter_mode": profile.anchor_filter_mode,
     }
     digest = hashlib.sha1(
@@ -614,7 +664,171 @@ def _build_quality_focus_sentence(profile: Any) -> str | None:
     return _build_labeled_sentence("Quality focus", hints)
 
 
-def _build_establish_action_sentence(context: dict[str, Any]) -> str | None:
+def _ensure_sentence(value: str | None) -> str | None:
+    cleaned = _clean_prompt_fragment(value)
+    if cleaned is None:
+        return None
+    if cleaned.endswith((".", "!", "?")):
+        return cleaned
+    return f"{cleaned}."
+
+
+def _build_prompt_safe_contract_fragments(fragments: list[str] | tuple[str, ...]) -> list[str]:
+    safe_fragments: list[str] = []
+    for fragment in fragments:
+        cleaned = _clean_prompt_fragment(fragment)
+        if cleaned is None:
+            continue
+        lowered = cleaned.lower()
+        if lowered.startswith(
+            (
+                "panel type:",
+                "role profile:",
+                "series style:",
+                "style notes:",
+                "binding notes:",
+                "identity lock:",
+                "hair lock:",
+                "face lock:",
+                "do not mutate:",
+                "location:",
+                "continuity:",
+            )
+        ):
+            continue
+        if lowered.startswith("wardrobe family:"):
+            wardrobe = cleaned.split(":", 1)[1].strip()
+            if wardrobe:
+                safe_fragments.append(f"Keep wardrobe within a {wardrobe} range.")
+            continue
+        sentence = _ensure_sentence(cleaned)
+        if sentence:
+            safe_fragments.append(sentence)
+    return safe_fragments
+
+
+def _normalize_fragment_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _dedupe_fragments(fragments: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for fragment in fragments:
+        cleaned = _clean_prompt_fragment(fragment)
+        if cleaned is None:
+            continue
+        key = _normalize_fragment_key(cleaned)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(cleaned)
+    return deduped
+
+
+def _join_prompt_fragments_with_budget(
+    fragments: list[str],
+    *,
+    max_len: int,
+) -> str:
+    selected: list[str] = []
+    for fragment in _dedupe_fragments(fragments):
+        sentence = _ensure_sentence(fragment)
+        if sentence is None:
+            continue
+        candidate = " ".join([*selected, sentence]).strip()
+        if selected and len(candidate) > max_len:
+            break
+        if not selected and len(candidate) > max_len:
+            return sentence[:max_len].rstrip()
+        selected.append(sentence)
+    return " ".join(selected).strip()
+
+
+def _compact_establish_story_prompt_fragments(story_prompt_fragments: list[str]) -> list[str]:
+    preferred_indices = (0, 1, 2, 4)
+    selected = [
+        story_prompt_fragments[index]
+        for index in preferred_indices
+        if index < len(story_prompt_fragments)
+    ]
+    return _dedupe_fragments(selected)
+
+
+def _compact_v2_establish_prompt(
+    *,
+    story_prompt_fragments: list[str],
+    resolver_sections: dict[str, list[str]],
+) -> str:
+    identity_fragments = _build_prompt_safe_contract_fragments(
+        resolver_sections["identity_block"]
+    )
+    style_fragments = _build_prompt_safe_contract_fragments(
+        resolver_sections["style_block"]
+    )
+    binding_fragments = _build_prompt_safe_contract_fragments(
+        resolver_sections["binding_block"]
+    )
+    compact_fragments = [
+        *_compact_establish_story_prompt_fragments(story_prompt_fragments),
+        *(identity_fragments[index] for index in (0, 1, 2, 3, 7, 8) if index < len(identity_fragments)),
+        *(style_fragments[index] for index in (0, 3, 4) if index < len(style_fragments)),
+        *(binding_fragments[index] for index in (0, 1) if index < len(binding_fragments)),
+    ]
+    return _join_prompt_fragments_with_budget(
+        compact_fragments,
+        max_len=_V2_ESTABLISH_PROMPT_MAX_LEN,
+    )
+
+
+def _compact_v2_establish_negative_prompt(
+    *,
+    resolver_sections: dict[str, list[str]],
+    profile: Any,
+) -> str | None:
+    token_map: dict[str, str] = {}
+    for raw_rule in [
+        *resolver_sections["negative_rules"],
+        profile.negative_prompt_append,
+    ]:
+        if not isinstance(raw_rule, str):
+            continue
+        for token in raw_rule.split(","):
+            cleaned = _clean_prompt_fragment(token)
+            if cleaned is None:
+                continue
+            token_map.setdefault(_normalize_fragment_key(cleaned), cleaned)
+
+    selected_tokens: list[str] = []
+    for term in _ESTABLISH_NEGATIVE_PRIORITY_TERMS:
+        normalized = _normalize_fragment_key(term)
+        value = token_map.get(normalized)
+        if value and value not in selected_tokens:
+            selected_tokens.append(value)
+
+    if not selected_tokens:
+        return None
+
+    negative_prompt = ", ".join(selected_tokens)
+    if len(negative_prompt) <= _V2_ESTABLISH_NEGATIVE_MAX_LEN:
+        return negative_prompt
+
+    trimmed_tokens: list[str] = []
+    for token in selected_tokens:
+        candidate = ", ".join([*trimmed_tokens, token])
+        if trimmed_tokens and len(candidate) > _V2_ESTABLISH_NEGATIVE_MAX_LEN:
+            break
+        if not trimmed_tokens and len(candidate) > _V2_ESTABLISH_NEGATIVE_MAX_LEN:
+            return token[:_V2_ESTABLISH_NEGATIVE_MAX_LEN].rstrip(", ")
+        trimmed_tokens.append(token)
+    return ", ".join(trimmed_tokens) or None
+
+
+def _build_establish_action_sentence(
+    context: dict[str, Any],
+    *,
+    metadata_safe: bool = False,
+) -> str | None:
     action_intent = _clean_prompt_fragment(context.get("action_intent"))
     establish_fragments = [
         "lead inhabits the room naturally with relaxed empty hands",
@@ -622,6 +836,8 @@ def _build_establish_action_sentence(context: dict[str, Any]) -> str | None:
     ]
     if action_intent and "window" in action_intent.lower():
         establish_fragments.insert(0, "lead settles naturally near the window side of the room")
+    if metadata_safe:
+        return _ensure_sentence(", ".join(fragment for fragment in establish_fragments if fragment))
     return _build_labeled_sentence("Action", establish_fragments)
 
 
@@ -629,20 +845,25 @@ def _build_establish_composition_sentence(
     context: dict[str, Any],
     *,
     profile: Any,
+    metadata_safe: bool = False,
 ) -> str | None:
     location_label = str(context.get("location_label") or "").strip()
     camera_intent = _normalize_positive_visual_prompt_fragment(context.get("camera_intent"))
     framing = _normalize_positive_visual_prompt_fragment(context.get("framing"))
     establish_fragments: list[str | None] = [
-        f"wide room view inside {location_label}" if location_label else "wide room view",
+        "wide room view",
         "single adult subject",
         "subject secondary to environment",
         "props readable",
-        "leave negative space for dialogue",
     ]
     if profile.subject_prominence_mode == "reduced":
         establish_fragments.insert(2, "single lead only")
     establish_fragments.extend([camera_intent, framing])
+    if metadata_safe:
+        cleaned_fragments = [fragment for fragment in establish_fragments if fragment]
+        if not cleaned_fragments:
+            return None
+        return _ensure_sentence("Use " + ", ".join(cleaned_fragments))
     return _build_labeled_sentence("Composition", establish_fragments)
 
 
@@ -652,6 +873,7 @@ def _build_panel_story_prompt_sentences(
     profile: Any,
     style_and_subject: str | None = None,
     include_quality_focus: bool = True,
+    metadata_safe: bool = False,
 ) -> list[str]:
     location_label = str(context.get("location_label") or "").strip()
     scene_continuity_notes = str(context.get("scene_continuity_notes") or "").strip()
@@ -689,21 +911,35 @@ def _build_panel_story_prompt_sentences(
         ),
     }.get(panel_type_lower)
 
-    setting_sentence = _build_labeled_sentence(
-        "Setting",
-        [f"inside {location_label}" if location_label else None],
-    )
-    action_sentence = (
-        _build_establish_action_sentence(context)
-        if panel_type_lower == "establish"
+    setting_sentence = (
+        _ensure_sentence(f"Inside {location_label}")
+        if metadata_safe and location_label
         else _build_labeled_sentence(
-            "Action",
-            [_clean_prompt_fragment(context.get("action_intent"))],
+            "Setting",
+            [f"inside {location_label}" if location_label else None],
         )
     )
-    emotion_sentence = _build_labeled_sentence(
-        "Emotion",
-        [_clean_prompt_fragment(context.get("expression_intent"))],
+    action_sentence = (
+        _build_establish_action_sentence(context, metadata_safe=metadata_safe)
+        if panel_type_lower == "establish"
+        else (
+            _ensure_sentence(_clean_prompt_fragment(context.get("action_intent")))
+            if metadata_safe
+            else _build_labeled_sentence(
+                "Action",
+                [_clean_prompt_fragment(context.get("action_intent"))],
+            )
+        )
+    )
+    emotion_sentence = (
+        _ensure_sentence(
+            f"The expression should read as {_clean_prompt_fragment(context.get('expression_intent'))}"
+        )
+        if metadata_safe and _clean_prompt_fragment(context.get("expression_intent"))
+        else _build_labeled_sentence(
+            "Emotion",
+            [_clean_prompt_fragment(context.get("expression_intent"))],
+        )
     )
     subject_prominence_sentence = _build_labeled_sentence(
         "Subject prominence",
@@ -718,25 +954,55 @@ def _build_panel_story_prompt_sentences(
         ),
     )
     quality_focus_sentence = (
-        _build_quality_focus_sentence(profile) if include_quality_focus else None
-    )
-    composition_sentence = (
-        _build_establish_composition_sentence(context, profile=profile)
-        if panel_type_lower == "establish"
-        else _build_labeled_sentence(
-            "Composition",
-            [
-                f"{panel_type_lower} manga panel" if panel_type_lower else None,
-                composition_priority_hint,
-                _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
-                _normalize_positive_visual_prompt_fragment(context.get("framing")),
-            ],
+        (
+            _ensure_sentence(
+                "Prioritize " + ", ".join(profile.quality_selector_hints)
+            )
+            if metadata_safe and include_quality_focus and profile.quality_selector_hints
+            else _build_quality_focus_sentence(profile) if include_quality_focus else None
         )
     )
-    continuity_sentence = _build_labeled_sentence(
-        "Continuity",
-        continuity_fragments,
-        separator=". ",
+    composition_sentence = (
+        _build_establish_composition_sentence(
+            context,
+            profile=profile,
+            metadata_safe=metadata_safe,
+        )
+        if panel_type_lower == "establish"
+        else (
+            _ensure_sentence(
+                "Use "
+                + ", ".join(
+                    fragment
+                    for fragment in [
+                        f"{panel_type_lower} composition" if panel_type_lower else None,
+                        composition_priority_hint,
+                        _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
+                        _normalize_positive_visual_prompt_fragment(context.get("framing")),
+                    ]
+                    if fragment
+                )
+            )
+            if metadata_safe
+            else _build_labeled_sentence(
+                "Composition",
+                [
+                    f"{panel_type_lower} manga panel" if panel_type_lower else None,
+                    composition_priority_hint,
+                    _normalize_positive_visual_prompt_fragment(context.get("camera_intent")),
+                    _normalize_positive_visual_prompt_fragment(context.get("framing")),
+                ],
+            )
+        )
+    )
+    continuity_sentence = (
+        _ensure_sentence(". ".join(fragment for fragment in continuity_fragments if fragment))
+        if metadata_safe
+        else _build_labeled_sentence(
+            "Continuity",
+            continuity_fragments,
+            separator=". ",
+        )
     )
 
     if panel_type_lower == "establish":
@@ -745,16 +1011,24 @@ def _build_panel_story_prompt_sentences(
             location,
             scene_cue_mode=profile.scene_cue_mode,
         )
-        scene_cues_sentence = _build_labeled_sentence(
-            "Scene cues",
-            scene_cues,
+        scene_cues_sentence = (
+            _ensure_sentence(
+                ", ".join(scene_cues[:-1]) + f", and {scene_cues[-1]} anchor the space"
+                if len(scene_cues) > 1
+                else f"{scene_cues[0]} anchors the space" if scene_cues else None
+            )
+            if metadata_safe
+            else _build_labeled_sentence(
+                "Scene cues",
+                scene_cues,
+            )
         )
         prompt_sentences = [
             setting_sentence,
             scene_cues_sentence,
             composition_sentence,
             quality_focus_sentence,
-            subject_prominence_sentence,
+            None if metadata_safe else subject_prominence_sentence,
             action_sentence,
             f"{style_and_subject}." if style_and_subject else None,
             continuity_sentence,
@@ -1007,7 +1281,7 @@ _ROLE_SELECTION_THRESHOLDS: dict[str, float] = {
 
 
 def _normalize_quality_signal_list(value: Any) -> list[str]:
-    if not isinstance(value, list | tuple):
+    if not isinstance(value, (list, tuple)):
         return []
     normalized: list[str] = []
     for item in value:
@@ -1035,7 +1309,7 @@ def _normalize_quality_assessment_payload(
 
 
 def _normalize_identity_signal_list(value: Any) -> list[str]:
-    if not isinstance(value, list | tuple):
+    if not isinstance(value, (list, tuple)):
         return []
     normalized: list[str] = []
     for item in value:
@@ -1674,7 +1948,7 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
         resolver_execution_summary = {
             key: (
                 filtered_v2_loras
-                if key == "loras" and isinstance(value, tuple | list)
+                if key == "loras" and isinstance(value, (tuple, list))
                 else value
             )
             for key, value in dict(execution_params).items()
@@ -1686,10 +1960,9 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
                 raise ValueError(
                     "Reference-guided comic render request missing binding reference set"
                 )
-            reference_images = [
-                *binding_reference_set.primary,
-                *binding_reference_set.secondary,
-            ]
+            reference_images = [*binding_reference_set.primary]
+            if panel_type != "establish" or _reference_guided_establish_include_secondary():
+                reference_images.extend(binding_reference_set.secondary)
             if not reference_images:
                 raise ValueError(
                     "Reference-guided comic render request missing binding reference images"
@@ -1706,28 +1979,33 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
             context,
             profile=profile,
             style_and_subject=None,
-            include_quality_focus=False,
+            include_quality_focus=True,
+            metadata_safe=True,
         )
-        prompt_fragments = [
-            *resolver_sections["role_block"],
-            *story_prompt_fragments,
-            *(
-                [
-                    f"Quality focus: {', '.join(profile.quality_selector_hints)}."
-                ]
-                if profile.quality_selector_hints
-                else []
-            ),
-            *resolver_sections["identity_block"],
-            *resolver_sections["style_block"],
-            *resolver_sections["binding_block"],
-        ]
-        prompt = " ".join(fragment.strip() for fragment in prompt_fragments if fragment.strip())
+        if str(context.get("panel_type") or "").strip().lower() == "establish":
+            prompt = _compact_v2_establish_prompt(
+                story_prompt_fragments=story_prompt_fragments,
+                resolver_sections=resolver_sections,
+            )
+            negative_prompt = _compact_v2_establish_negative_prompt(
+                resolver_sections=resolver_sections,
+                profile=profile,
+            )
+        else:
+            prompt_fragments = [
+                *story_prompt_fragments,
+                *_build_prompt_safe_contract_fragments(resolver_sections["identity_block"]),
+                *_build_prompt_safe_contract_fragments(resolver_sections["style_block"]),
+                *_build_prompt_safe_contract_fragments(resolver_sections["binding_block"]),
+            ]
+            prompt = " ".join(
+                fragment.strip() for fragment in prompt_fragments if fragment.strip()
+            )
+            negative_prompt = ", ".join(
+                rule.strip() for rule in resolver_sections["negative_rules"] if rule.strip()
+            ) or None
         if not prompt:
             raise ValueError("V2 comic render resolver returned an empty prompt")
-        negative_prompt = ", ".join(
-            rule.strip() for rule in resolver_sections["negative_rules"] if rule.strip()
-        ) or None
 
         context["resolver_sections"] = resolver_sections
         context["resolver_execution_summary"] = resolver_execution_summary

@@ -128,12 +128,12 @@ def test_build_comic_remote_worker_payload_preserves_reference_guided_request_fi
                 {
                     "backend_family": "sdxl_ipadapter_still",
                     "reference_images": [
-                        "camila_v2_establish_anchor_hero.png",
+                        "camila_v2_establish_anchor_face.png",
                         "camila_v2_establish_anchor_halfbody.png",
                     ],
-                    "ipadapter_weight": 0.92,
+                    "ipadapter_weight": 0.72,
                     "ipadapter_start_at": 0.0,
-                    "ipadapter_end_at": 1.0,
+                    "ipadapter_end_at": 0.55,
                 }
             ),
         },
@@ -166,12 +166,12 @@ def test_build_comic_remote_worker_payload_preserves_reference_guided_request_fi
     assert payload["target_tool"] == "comic_panel_still"
     assert payload["request_json"]["backend_family"] == "sdxl_ipadapter_still"
     assert payload["request_json"]["reference_images"] == [
-        "camila_v2_establish_anchor_hero.png",
+        "camila_v2_establish_anchor_face.png",
         "camila_v2_establish_anchor_halfbody.png",
     ]
-    assert payload["request_json"]["ipadapter_weight"] == pytest.approx(0.92)
+    assert payload["request_json"]["ipadapter_weight"] == pytest.approx(0.72)
     assert payload["request_json"]["ipadapter_start_at"] == pytest.approx(0.0)
-    assert payload["request_json"]["ipadapter_end_at"] == pytest.approx(1.0)
+    assert payload["request_json"]["ipadapter_end_at"] == pytest.approx(0.55)
 
 
 def test_build_comic_remote_worker_payload_keeps_fallback_backend_family_for_text_only_requests() -> None:

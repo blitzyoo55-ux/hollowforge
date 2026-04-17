@@ -313,9 +313,12 @@ async def test_v2_lane_uses_resolver_contract_not_legacy_prompt_assembly_and_rec
     assert payload["sampler"] == "euler_a"
     assert payload["width"] == 960
     assert payload["height"] == 1216
-    assert "Setting: inside Artist Loft Morning." in payload["prompt"]
-    assert "Action:" in payload["prompt"]
-    assert "Composition:" in payload["prompt"]
+    assert "Inside Artist Loft Morning." in payload["prompt"]
+    assert "Camila checks notes beside the easel." in payload["prompt"]
+    assert "Action:" not in payload["prompt"]
+    assert "Composition:" not in payload["prompt"]
+    assert "Series style:" not in payload["prompt"]
+    assert "Binding notes:" not in payload["prompt"]
 
     with sqlite3.connect(temp_db) as conn:
         raw_snapshot = conn.execute(
@@ -466,8 +469,8 @@ async def test_v2_establish_override_and_beat_panel_keeps_base_style_stack(
         ).fetchone()[0]
 
     snapshot = json.loads(raw_snapshot)
-    assert snapshot["resolver_execution_summary"].get("reference_guided") is not True
-    assert "still_backend_family" not in snapshot["resolver_execution_summary"]
+    assert snapshot["resolver_execution_summary"]["reference_guided"] is True
+    assert snapshot["resolver_execution_summary"]["still_backend_family"] == "sdxl_ipadapter_still"
 
     beat_payload, _, _ = beat_generation_service.batch_calls[0]
     assert beat_payload["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
@@ -521,6 +524,9 @@ async def test_v2_establish_lane_rolls_back_to_text_only_execution_payload(
     assert establish_payload["loras"] == []
     assert establish_payload.get("reference_guided") is not True
     assert "still_backend_family" not in establish_payload
+    assert len(establish_payload["prompt"]) <= 1800
+    assert len(establish_payload["negative_prompt"]) <= 800
+    assert establish_payload["prompt"].count("Artist Loft Morning") <= 2
 
 
 async def test_v2_remote_job_request_json_carries_lane_binding_and_resolver_summary(
