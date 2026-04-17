@@ -112,7 +112,11 @@ def _extract_panel_ids(episode_detail: dict[str, Any]) -> list[str]:
     return panel_ids
 
 
-def _extract_selected_panel_assets(assembly_detail: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_selected_panel_assets(
+    assembly_detail: dict[str, Any],
+    *,
+    allow_placeholder_assets: bool = False,
+) -> list[dict[str, Any]]:
     teaser_handoff_manifest_path = str(
         assembly_detail.get("teaser_handoff_manifest_path") or ""
     ).strip()
@@ -128,7 +132,7 @@ def _extract_selected_panel_assets(assembly_detail: dict[str, Any]) -> list[dict
     assets = _require_list(selected_assets or [], label="selected_panel_assets")
     for asset in assets:
         storage_path = str(asset.get("storage_path") or "").strip()
-        if PLACEHOLDER_ASSET_MARKER in storage_path:
+        if not allow_placeholder_assets and PLACEHOLDER_ASSET_MARKER in storage_path:
             raise RuntimeError(
                 f"Refusing placeholder comic asset path in production dry-run: {storage_path}"
             )
@@ -153,7 +157,12 @@ def _expected_layered_zip_members(export_detail: dict[str, Any]) -> list[str]:
     return expected_members
 
 
-def _validate_export_zip(export_zip_path: str, export_detail: dict[str, Any]) -> None:
+def _validate_export_zip(
+    export_zip_path: str,
+    export_detail: dict[str, Any],
+    *,
+    allow_placeholder_assets: bool = False,
+) -> None:
     zip_path = settings.DATA_DIR / export_zip_path
     if not zip_path.is_file():
         raise RuntimeError(f"Comic export ZIP not found: {zip_path}")
@@ -161,7 +170,7 @@ def _validate_export_zip(export_zip_path: str, export_detail: dict[str, Any]) ->
     with zipfile.ZipFile(zip_path) as archive:
         names = set(archive.namelist())
         for name in names:
-            if PLACEHOLDER_ASSET_MARKER in name:
+            if not allow_placeholder_assets and PLACEHOLDER_ASSET_MARKER in name:
                 raise RuntimeError(
                     f"Refusing placeholder comic asset path in export ZIP: {name}"
                 )

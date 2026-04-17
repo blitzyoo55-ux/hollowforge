@@ -17,6 +17,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 import launch_comic_mvp_smoke as comic_smoke
+from comic_verification_profiles import FULL_PROFILE
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -27,6 +28,8 @@ DEFAULT_STORY_PROMPT = (
 )
 DEFAULT_STORY_LANE = "adult_nsfw"
 DEFAULT_EXECUTION_MODE = "remote_worker"
+DEFAULT_RENDER_POLL_ATTEMPTS = FULL_PROFILE.render_poll_attempts
+DEFAULT_RENDER_POLL_SEC = FULL_PROFILE.render_poll_sec
 
 
 def _assert_remote_queue_response(
@@ -171,8 +174,16 @@ def main() -> int:
     parser.add_argument("--title", default=DEFAULT_TITLE)
     parser.add_argument("--panel-multiplier", type=int, default=1)
     parser.add_argument("--candidate-count", type=int, default=3)
-    parser.add_argument("--render-poll-attempts", type=int, default=20)
-    parser.add_argument("--render-poll-sec", type=float, default=1.0)
+    parser.add_argument(
+        "--render-poll-attempts",
+        type=int,
+        default=DEFAULT_RENDER_POLL_ATTEMPTS,
+    )
+    parser.add_argument(
+        "--render-poll-sec",
+        type=float,
+        default=DEFAULT_RENDER_POLL_SEC,
+    )
     args = parser.parse_args()
 
     summary: dict[str, Any] = {

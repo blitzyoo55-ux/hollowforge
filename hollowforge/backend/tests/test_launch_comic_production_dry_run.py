@@ -520,3 +520,43 @@ def test_main_refuses_smoke_placeholder_assets(
         assert "smoke_assets" in str(exc)
     else:
         raise AssertionError("Expected smoke placeholder asset rejection")
+
+
+def test_extract_selected_panel_assets_allows_smoke_placeholders_when_explicitly_enabled(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module.settings, "DATA_DIR", tmp_path / "data")
+
+    teaser_manifest_path = (
+        module.settings.DATA_DIR
+        / "comics"
+        / "manifests"
+        / "comic-ep-prod-1_jp_2x2_v1_teaser_handoff.json"
+    )
+    teaser_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    teaser_manifest_path.write_text(
+        json.dumps(
+            {
+                "episode_id": "comic-ep-prod-1",
+                "selected_panel_assets": [
+                    {
+                        "panel_id": "panel-1",
+                        "asset_id": "asset-1",
+                        "storage_path": "comics/previews/smoke_assets/panel-1_asset-1.png",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assets = module._extract_selected_panel_assets(
+        {"teaser_handoff_manifest_path": "comics/manifests/comic-ep-prod-1_jp_2x2_v1_teaser_handoff.json"},
+        allow_placeholder_assets=True,
+    )
+
+    assert len(assets) == 1
+    assert assets[0]["storage_path"].endswith("panel-1_asset-1.png")
