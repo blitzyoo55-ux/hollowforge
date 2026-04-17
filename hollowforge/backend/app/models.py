@@ -1158,6 +1158,53 @@ class ComicEpisodeSummaryResponse(BaseModel):
     page_count: int = Field(default=0, ge=0)
 
 
+class ComicVerificationStageStatusResponse(BaseModel):
+    status: str
+    duration_sec: float | None = None
+    error_summary: str | None = None
+
+
+class ComicVerificationRunCreate(BaseModel):
+    run_mode: Literal["preflight", "suite", "full_only", "remote_only"]
+    status: Literal["completed", "failed"]
+    overall_success: bool
+    failure_stage: str | None = None
+    error_summary: str | None = None
+    base_url: str
+    total_duration_sec: float | None = None
+    started_at: str
+    finished_at: str
+    stage_status: dict[str, ComicVerificationStageStatusResponse] = Field(
+        default_factory=dict
+    )
+
+
+class ComicVerificationRunResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    run_mode: Literal["preflight", "suite", "full_only", "remote_only"]
+    status: Literal["completed", "failed"]
+    overall_success: bool
+    failure_stage: str | None = None
+    error_summary: str | None = None
+    base_url: str
+    total_duration_sec: float | None = None
+    started_at: str
+    finished_at: str
+    stage_status: dict[str, ComicVerificationStageStatusResponse] = Field(
+        default_factory=dict
+    )
+    created_at: str
+    updated_at: str
+
+
+class ComicVerificationSummaryResponse(BaseModel):
+    latest_preflight: ComicVerificationRunResponse | None = None
+    latest_suite: ComicVerificationRunResponse | None = None
+    recent_runs: list[ComicVerificationRunResponse] = Field(default_factory=list)
+
+
 class ComicDialogueGenerationResponse(BaseModel):
     panel: ComicScenePanelResponse
     dialogues: List[ComicPanelDialogueResponse] = Field(default_factory=list)
