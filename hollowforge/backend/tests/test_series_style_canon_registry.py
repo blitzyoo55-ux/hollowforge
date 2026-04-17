@@ -56,13 +56,13 @@ def test_load_test_only_series_style_canon_uses_different_teaser_motion_policy()
     )
 
 
-def test_load_pilot_series_style_canon_keeps_establish_override_text_only() -> None:
+def test_load_pilot_series_style_canon_exposes_reference_guided_establish_override() -> None:
     style = get_series_style_canon(series_style_id="camila_pilot_v1")
 
     assert style.role_execution_overrides == {
         "establish": {
-            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
-            "loras": (),
+            "reference_guided": True,
+            "still_backend_family": "sdxl_ipadapter_still",
         }
     }
 

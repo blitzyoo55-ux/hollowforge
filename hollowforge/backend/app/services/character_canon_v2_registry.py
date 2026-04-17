@@ -17,6 +17,7 @@ class CharacterCanonV2Entry(BaseModel):
     skin_surface_policy: str = Field(min_length=1, max_length=1000)
     body_signature: str = Field(min_length=1, max_length=1000)
     expression_range: str = Field(min_length=1, max_length=1000)
+    adult_appeal_notes: str = Field(min_length=1, max_length=1000)
     identity_negative_rules: str = Field(min_length=1, max_length=1000)
     anti_drift: str = Field(min_length=1, max_length=1000)
     wardrobe_notes: str = Field(min_length=1, max_length=600)
@@ -36,14 +37,14 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
         name="Camila",
         identity_anchor=(
             "Camila Duarte, adult Brazilian woman with warm sun-kissed tan skin, "
-            "long chestnut-brown wavy hair, and a practical grounded presence"
+            "long chestnut-brown wavy hair, and a naturally elegant grounded presence"
         ),
         face_structure_notes=(
-            "Defined adult face structure with calm cheekbone and jawline balance, "
+            "Graceful adult face structure with calm cheekbone and jawline balance, "
             "stable recognition, and no youthful simplification."
         ),
         eye_signature=(
-            "Warm hazel eyes with steady directness, consistent gaze, and adult calm."
+            "Warm hazel eyes with steady directness, calm confidence, and adult warmth."
         ),
         hair_signature=(
             "Long chestnut-brown waves with warm highlights; never orange, blonde, "
@@ -51,14 +52,18 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
         ),
         skin_surface_policy=(
             "Preserve a natural lightly tanned skin surface with warm undertone, "
-            "light texture, and no oversmoothing."
+            "light texture, healthy warmth, and no oversmoothing."
         ),
         body_signature=(
             "Adult grounded build with believable feminine presence, balanced posture, "
-            "and no youth-coded proportions."
+            "healthy proportions, and no youth-coded silhouette."
         ),
         expression_range=(
             "Calm, observant, and direct with small controlled shifts in emotion."
+        ),
+        adult_appeal_notes=(
+            "Composed mature beauty, approachable warmth, and quietly magnetic adult "
+            "presence; attractive without glamour posing or teen-coded stylization."
         ),
         identity_negative_rules=(
             "No glamour styling, no editorial beauty language, no resort presentation, "
@@ -71,17 +76,18 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
             "or youthful heroine shortcuts."
         ),
         wardrobe_notes=(
-            "Simple functional studio-casual wardrobe such as soft knits, shirts, "
-            "or adult loungewear that supports the scene without turning her into a "
-            "fashion portrait."
+            "Simple studio-casual wardrobe such as soft knits, open-collar shirts, "
+            "relaxed adult blouses, or understated camisoles layered under cardigans; "
+            "never schoolwear trims, ribbon ties, or costume-coded accents."
         ),
         personality_notes=(
             "Measured, observant, and direct; she reads as self-possessed, mature, "
-            "and grounded rather than performatively styled."
+            "grounded, and quietly alluring through confidence rather than performance."
         ),
         reference_descriptor_notes=(
-            "Chestnut-brown hair with warm highlights, lightly tanned skin, and an "
-            "adult grounded presentation. Reject school-uniform and youth-coded drift."
+            "Chestnut-brown hair with warm highlights, lightly tanned skin, and a "
+            "mature calm presence with natural elegance. Reject school-uniform and "
+            "youth-coded drift."
         ),
         reference_hair_brightness_range=(0.14, 0.48),
         reference_hair_warmth_range=(0.03, 0.28),
@@ -93,7 +99,9 @@ _CHARACTER_CANON_V2_REGISTRY: dict[str, CharacterCanonV2Entry] = {
             "sailor_collar",
             "necktie",
             "bow",
+            "hair_bow",
             "neck_ribbon",
+            "ribbon",
             "plaid_skirt",
         ),
         forbidden_youth_tags=(

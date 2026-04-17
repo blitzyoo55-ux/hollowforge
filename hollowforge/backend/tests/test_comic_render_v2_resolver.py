@@ -5,6 +5,7 @@ from types import MappingProxyType
 import pytest
 
 from app.services.comic_render_profiles import ComicPanelRenderProfile
+from app.services.comic_render_profiles import resolve_comic_panel_render_profile
 from app.services.comic_render_v2_resolver import (
     _BINDING_EXECUTION_REGISTRY,
     _STYLE_EXECUTION_REGISTRY,
@@ -95,7 +96,68 @@ def test_resolve_comic_render_v2_contract_materializes_required_sections() -> No
     )
 
 
-def test_resolve_comic_render_v2_contract_uses_establish_style_override() -> None:
+def test_resolve_comic_render_v2_contract_keeps_base_stack_for_establish() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=_make_establish_role_profile(),
+    )
+
+    assert contract.execution_params["quality_recipe_family"] == "room_safe"
+    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert contract.execution_params["loras"] == ()
+
+
+def test_resolve_comic_render_v2_contract_applies_favorite_informed_room_safe_recipe(
+) -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="establish",
+        location_label="artist loft morning",
+        continuity_notes=None,
+        role_profile=resolve_comic_panel_render_profile({"panel_type": "establish"}),
+    )
+
+    assert contract.execution_params["quality_recipe_family"] == "room_safe"
+    assert contract.execution_params["quality_recipe_id"] == "favorite_room_safe_v1"
+    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
+    assert contract.execution_params["loras"] == ()
+    assert any(
+        "spacious readable room layout" in fragment.lower()
+        for fragment in contract.binding_block
+    )
+    assert any(
+        "empty background" in rule.lower() for rule in contract.negative_rules
+    )
+
+
+def test_resolve_comic_render_v2_contract_tags_beat_with_lifestyle_safe_recipe() -> None:
+    contract = resolve_comic_render_v2_contract(
+        character_id="camila_v2",
+        series_style_id="camila_pilot_v1",
+        binding_id="camila_pilot_binding_v1",
+        panel_type="beat",
+        location_label=None,
+        continuity_notes=None,
+        role_profile=resolve_comic_panel_render_profile({"panel_type": "beat"}),
+    )
+
+    assert contract.execution_params["quality_recipe_family"] == "lifestyle_safe"
+    assert contract.execution_params["quality_recipe_id"] == "favorite_lifestyle_safe_v1"
+    assert contract.execution_params["checkpoint"] == "prefectIllustriousXL_v70.safetensors"
+    assert contract.execution_params["loras"] == (
+        {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+        {"filename": "Face_Enhancer_Illustrious.safetensors", "strength": 0.36},
+    )
+
+
+def test_camila_v2_establish_uses_base_checkpoint_before_profile_lora_filtering() -> None:
     contract = resolve_comic_render_v2_contract(
         character_id="camila_v2",
         series_style_id="camila_pilot_v1",
@@ -108,9 +170,11 @@ def test_resolve_comic_render_v2_contract_uses_establish_style_override() -> Non
 
     assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert contract.execution_params["loras"] == ()
+    assert contract.execution_params["reference_guided"] is True
+    assert contract.execution_params["still_backend_family"] == "sdxl_ipadapter_still"
 
 
-def test_camila_v2_establish_uses_bounded_text_only_execution_lane() -> None:
+def test_camila_v2_establish_uses_reference_guided_metadata_on_base_stack() -> None:
     contract = resolve_comic_render_v2_contract(
         character_id="camila_v2",
         series_style_id="camila_pilot_v1",
@@ -123,47 +187,30 @@ def test_camila_v2_establish_uses_bounded_text_only_execution_lane() -> None:
 
     assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert contract.execution_params["loras"] == ()
-    assert contract.execution_params.get("reference_guided") is not True
-    assert "still_backend_family" not in contract.execution_params
+    assert contract.execution_params["reference_guided"] is True
+    assert contract.execution_params["still_backend_family"] == "sdxl_ipadapter_still"
 
 
-def test_camila_v2_establish_rolls_back_to_bounded_text_only_execution_lane() -> None:
-    contract = resolve_comic_render_v2_contract(
-        character_id="camila_v2",
-        series_style_id="camila_pilot_v1",
-        binding_id="camila_pilot_binding_v1",
-        panel_type="establish",
-        location_label=None,
-        continuity_notes=None,
-        role_profile=_make_establish_role_profile(),
-    )
-
-    assert contract.execution_params["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
-    assert contract.execution_params["loras"] == ()
-    assert contract.execution_params.get("reference_guided") is not True
-    assert "still_backend_family" not in contract.execution_params
-
-
-def test_series_style_canon_exposes_role_override() -> None:
+def test_series_style_canon_exposes_reference_guided_establish_override_for_pilot() -> None:
     pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
     motion_test = get_series_style_canon(series_style_id="camila_motion_test_v1")
 
     assert pilot.role_execution_overrides == {
         "establish": {
-            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
-            "loras": (),
+            "reference_guided": True,
+            "still_backend_family": "sdxl_ipadapter_still",
         }
     }
     assert motion_test.role_execution_overrides == {}
 
 
-def test_series_style_canon_establish_override_is_text_only() -> None:
+def test_series_style_canon_pilot_establish_uses_reference_guided_override() -> None:
     pilot = get_series_style_canon(series_style_id="camila_pilot_v1")
 
     assert pilot.role_execution_overrides == {
         "establish": {
-            "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
-            "loras": (),
+            "reference_guided": True,
+            "still_backend_family": "sdxl_ipadapter_still",
         }
     }
 
@@ -319,8 +366,8 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
         "Composed mature beauty, approachable warmth, and quietly magnetic adult presence; attractive without glamour posing or teen-coded stylization.",
         (
             "Simple studio-casual wardrobe such as soft knits, open-collar shirts, "
-            "or adult loungewear that flatters an adult silhouette without turning "
-            "her into a fashion portrait."
+            "relaxed adult blouses, or understated camisoles layered under "
+            "cardigans; never schoolwear trims, ribbon ties, or costume-coded accents."
         ),
         (
             "Measured, observant, and direct; she reads as self-possessed, mature, "
@@ -349,10 +396,12 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
     )
     assert contract.binding_block == (
         "Binding notes: Camila-only pilot binding for the V2 registry pilot.",
+        "natural body pose",
+        "clear hand acting",
         "Identity lock: strong",
         "Hair lock: strong",
         "Face lock: strong",
-        "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, and natural charm without glamour posing.",
+        "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm skin, graceful posture, natural charm, and studio-casual adult clothing with open collars or soft knit layers, never ribbons or schoolwear trims.",
         "Wardrobe family: simple functional everyday wardrobe",
         "Do not mutate: Do not mutate Camila identity ownership or style ownership through this binding.",
         "Location: artist loft morning",
@@ -379,7 +428,13 @@ def test_resolve_comic_render_v2_contract_materializes_richer_quality_contract()
             "Avoid drifting into editorial beauty framing, school-uniform styling, "
             "or youthful heroine shortcuts."
         ),
-        "No wardrobe drift, no glamour drift, no editorial styling drift, no camera-frame drift, no UI overlay drift, no random text drift, no school uniform, no necktie, no blazer-and-tie school look.",
+        "No wardrobe drift, no glamour drift, no editorial styling drift, no camera-frame drift, no UI overlay drift, no random text drift, no school uniform, no sailor collar, no necktie, no bow, no neck ribbon, no blazer-and-tie school look.",
+        "single-subject glamour poster",
+        "beauty key visual",
+        "waxy skin",
+        "dead eyes",
+        "camera frame",
+        "subtitle overlay",
         "Role negative: plastic skin, waxy face, dead eyes",
     )
 

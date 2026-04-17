@@ -42,10 +42,16 @@ def test_load_camila_binding_by_explicit_id() -> None:
     assert binding.allowed_wardrobe_family == (
         "simple functional everyday wardrobe"
     )
+    assert binding.appeal_notes == (
+        "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm "
+        "skin, graceful posture, natural charm, and studio-casual adult clothing "
+        "with open collars or soft knit layers, never ribbons or schoolwear trims."
+    )
     assert binding.binding_negative_rules == (
         "No wardrobe drift, no glamour drift, no editorial styling drift, no "
         "camera-frame drift, no UI overlay drift, no random text drift, no "
-        "school uniform, no necktie, no blazer-and-tie school look."
+        "school uniform, no sailor collar, no necktie, no bow, no neck ribbon, "
+        "no blazer-and-tie school look."
     )
     assert binding.do_not_mutate == (
         "Do not mutate Camila identity ownership or style ownership through this "
@@ -59,7 +65,7 @@ def test_load_camila_binding_by_explicit_id() -> None:
     )
 
 
-def test_camila_binding_exposes_establish_reference_set() -> None:
+def test_camila_binding_exposes_establish_hero_first_reference_set() -> None:
     binding = get_character_series_binding("camila_pilot_binding_v1")
 
     assert binding.reference_sets["establish"].primary == (

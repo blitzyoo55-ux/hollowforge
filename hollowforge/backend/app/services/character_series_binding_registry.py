@@ -42,16 +42,18 @@ _CHARACTER_SERIES_BINDING_REGISTRY: dict[str, CharacterSeriesBindingEntry] = {
         allowed_wardrobe_family="simple functional everyday wardrobe",
         appeal_notes=(
             "Keep Camila appealing in an adult, grounded way: calm eyes, healthy warm "
-            "skin, graceful posture, and natural charm without glamour posing."
+            "skin, graceful posture, natural charm, and studio-casual adult clothing "
+            "with open collars or soft knit layers, never ribbons or schoolwear trims."
         ),
         binding_negative_rules=(
             "No wardrobe drift, no glamour drift, no editorial styling drift, no "
             "camera-frame drift, no UI overlay drift, no random text drift, no "
-            "school uniform, no necktie, no blazer-and-tie school look."
+            "school uniform, no sailor collar, no necktie, no bow, no neck ribbon, "
+            "no blazer-and-tie school look."
         ),
         reference_sets={
             "establish": CharacterSeriesReferenceSetEntry(
-                primary=("camila_v2_establish_anchor_face.png",),
+                primary=("camila_v2_establish_anchor_hero.png",),
                 secondary=("camila_v2_establish_anchor_halfbody.png",),
             )
         },

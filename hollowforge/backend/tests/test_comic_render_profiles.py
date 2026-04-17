@@ -14,6 +14,7 @@ def test_resolve_profile_returns_establish_env_profile_for_establish_panel() -> 
     assert profile.profile_id == "establish_env_v2"
     assert profile.width == 1216
     assert profile.height == 832
+    assert profile.lora_mode == "inherit_all"
     assert profile.prompt_order_mode == "scene_first"
     assert profile.subject_prominence_mode == "reduced"
     assert profile.scene_cue_mode == "artist_loft_scene_cues"
@@ -166,6 +167,18 @@ def test_profiles_expose_role_quality_selector_hints() -> None:
         "alive eyes",
         "artifact suppression",
     )
+
+
+def test_profiles_expose_role_quality_recipe_families() -> None:
+    establish = resolve_comic_panel_render_profile({"panel_type": "establish"})
+    beat = resolve_comic_panel_render_profile({"panel_type": "beat"})
+    insert = resolve_comic_panel_render_profile({"panel_type": "insert"})
+    closeup = resolve_comic_panel_render_profile({"panel_type": "closeup"})
+
+    assert establish.quality_recipe_family == "room_safe"
+    assert beat.quality_recipe_family == "lifestyle_safe"
+    assert insert.quality_recipe_family == "comic_close_safe"
+    assert closeup.quality_recipe_family == "comic_close_safe"
 
 
 def test_role_negatives_penalize_glamour_poster_failure_patterns() -> None:

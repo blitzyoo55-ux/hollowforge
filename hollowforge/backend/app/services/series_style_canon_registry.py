@@ -63,8 +63,8 @@ _SERIES_STYLE_CANON_REGISTRY: dict[str, SeriesStyleCanonEntry] = {
         ),
         role_execution_overrides={
             "establish": {
-                "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
-                "loras": (),
+                "reference_guided": True,
+                "still_backend_family": "sdxl_ipadapter_still",
             }
         },
     ),

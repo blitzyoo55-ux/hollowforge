@@ -11,7 +11,11 @@ from pydantic import BaseModel, Field
 
 from app.services.character_canon_v2_registry import get_character_canon_v2
 from app.services.character_series_binding_registry import get_character_series_binding
-from app.services.comic_render_profiles import ComicPanelRenderProfile
+from app.services.comic_render_profiles import (
+    ComicPanelRenderProfile,
+    resolve_quality_recipe_family,
+)
+from app.services.favorite_quality_recipe_catalog import get_favorite_quality_recipe
 from app.services.series_style_canon_registry import get_series_style_canon
 
 
@@ -96,6 +100,11 @@ _REQUIRED_STYLE_EXECUTION_KEYS: tuple[str, ...] = (
     "sampler",
 )
 
+_OPTIONAL_STYLE_EXECUTION_KEYS: tuple[str, ...] = (
+    "reference_guided",
+    "still_backend_family",
+)
+
 
 def _resolve_style_execution_params(series_style_id: str) -> dict[str, Any]:
     style_execution = _STYLE_EXECUTION_REGISTRY.get(series_style_id)
@@ -124,6 +133,29 @@ def _merge_style_execution_override(
     if role_execution_override:
         merged_execution.update(deepcopy(role_execution_override))
     return merged_execution
+
+
+def _merge_favorite_quality_recipe(
+    style_execution: dict[str, Any],
+    *,
+    recipe_family: str,
+) -> tuple[dict[str, Any], Any | None]:
+    merged_execution = deepcopy(style_execution)
+    recipe = get_favorite_quality_recipe(recipe_family=recipe_family)
+    if recipe is None:
+        return merged_execution, None
+
+    if recipe.apply_execution_override:
+        merged_execution.update(
+            {
+                "checkpoint": recipe.checkpoint,
+                "loras": recipe.loras,
+                "steps": recipe.steps,
+                "cfg": recipe.cfg,
+                "sampler": recipe.sampler,
+            }
+        )
+    return merged_execution, recipe
 
 
 def _deep_freeze(value: Any) -> Any:
@@ -192,27 +224,40 @@ def resolve_comic_render_v2_contract(
         f"Style notes: {style.notes}",
     )
 
-    binding_fragments: list[str] = [
-        f"Binding notes: {binding.notes}",
-        f"Identity lock: {binding.identity_lock_strength}",
-        f"Hair lock: {binding.hair_lock_strength}",
-        f"Face lock: {binding.face_lock_strength}",
-        binding.appeal_notes,
-        f"Wardrobe family: {binding.allowed_wardrobe_family}",
-        f"Do not mutate: {binding.do_not_mutate}",
-    ]
+    recipe_family = resolve_quality_recipe_family(
+        panel_type=panel_type,
+        role_profile=role_profile,
+    )
+    style_execution = _resolve_style_execution_params(series_style_id)
+    style_execution, recipe = _merge_favorite_quality_recipe(
+        style_execution,
+        recipe_family=recipe_family,
+    )
+    style_execution = _merge_style_execution_override(
+        style_execution,
+        style.role_execution_overrides.get(panel_type),
+    )
+
+    binding_fragments: list[str] = [f"Binding notes: {binding.notes}"]
+    if recipe is not None:
+        binding_fragments.extend(recipe.prompt_fragments)
+    binding_fragments.extend(
+        [
+            f"Identity lock: {binding.identity_lock_strength}",
+            f"Hair lock: {binding.hair_lock_strength}",
+            f"Face lock: {binding.face_lock_strength}",
+            binding.appeal_notes,
+            f"Wardrobe family: {binding.allowed_wardrobe_family}",
+            f"Do not mutate: {binding.do_not_mutate}",
+        ]
+    )
     if location_label and location_label.strip():
         binding_fragments.append(f"Location: {location_label.strip()}")
     if continuity_notes and continuity_notes.strip():
         binding_fragments.append(f"Continuity: {continuity_notes.strip()}")
     binding_block = tuple(binding_fragments)
 
-    style_execution = _merge_style_execution_override(
-        _resolve_style_execution_params(series_style_id),
-        style.role_execution_overrides.get(panel_type),
-    )
-
-    # Precedence: style base execution -> style role override -> binding lock strengths -> role constraints.
+    # Precedence: style base execution -> favorite-informed role recipe -> style role override -> binding lock strengths -> role constraints.
     execution_params: dict[str, Any] = {
         "checkpoint": style_execution["checkpoint"],
         "loras": style_execution["loras"],
@@ -222,6 +267,14 @@ def resolve_comic_render_v2_contract(
         "positive_merge_sequence": _POSITIVE_MERGE_SEQUENCE,
         "negative_merge_sequence": _NEGATIVE_MERGE_SEQUENCE,
     }
+    if recipe is not None:
+        execution_params["quality_recipe_family"] = recipe.family
+        execution_params["quality_recipe_id"] = recipe.recipe_id
+        execution_params["quality_prompt_fragments"] = recipe.prompt_fragments
+        execution_params["quality_negative_fragments"] = recipe.negative_fragments
+    for key in _OPTIONAL_STYLE_EXECUTION_KEYS:
+        if key in style_execution:
+            execution_params[key] = style_execution[key]
     execution_params.update(
         _BINDING_EXECUTION_REGISTRY.get(binding_id, _DEFAULT_BINDING_LOCK_STRENGTHS)
     )
@@ -229,13 +282,16 @@ def resolve_comic_render_v2_contract(
     execution_params["height"] = role_profile.height
     execution_params["framing_profile"] = role_profile.profile_id
 
-    negative_rules = (
+    negative_rule_fragments: list[str] = [
         style.artifact_avoidance_policy,
         character.identity_negative_rules,
         character.anti_drift,
         binding.binding_negative_rules,
-        f"Role negative: {role_profile.negative_prompt_append}",
-    )
+    ]
+    if recipe is not None:
+        negative_rule_fragments.extend(recipe.negative_fragments)
+    negative_rule_fragments.append(f"Role negative: {role_profile.negative_prompt_append}")
+    negative_rules = tuple(negative_rule_fragments)
 
     immutable_execution_params = _deep_freeze(execution_params)
 

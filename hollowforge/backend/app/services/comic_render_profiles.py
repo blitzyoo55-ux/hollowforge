@@ -26,6 +26,7 @@ class ComicPanelRenderProfile:
     subject_prominence_mode: str = "default"
     scene_cue_mode: str = "none"
     quality_selector_hints: tuple[str, ...] = ()
+    quality_recipe_family: str = ""
 
 
 _BEAUTY_ENHANCER_MARKERS = (
@@ -153,6 +154,7 @@ def _make_profile(
     height: int,
     negative_prompt_append: str,
     quality_selector_hints: tuple[str, ...] = (),
+    quality_recipe_family: str = "",
     anchor_filter_mode: str,
     prompt_order_mode: str = "default_subject_first",
     subject_prominence_mode: str = "default",
@@ -166,6 +168,7 @@ def _make_profile(
         height=height,
         negative_prompt_append=negative_prompt_append,
         quality_selector_hints=quality_selector_hints,
+        quality_recipe_family=quality_recipe_family,
         anchor_filter_mode=anchor_filter_mode,
         prompt_order_mode=prompt_order_mode,
         subject_prominence_mode=subject_prominence_mode,
@@ -177,13 +180,16 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
     _make_profile(
         "establish_env_v2",
         ("establish",),
-        lora_mode="filter_beauty_enhancers",
+        lora_mode="inherit_all",
         width=1216,
         height=832,
         negative_prompt_append=(
             "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
             "copy-paste composition, single-subject glamour poster, pinup composition, "
             "beauty key visual, empty background, minimal room detail, subject filling frame, "
+            "holding note, holding letter, message card, placard, sign held to viewer, "
+            "paper presented to viewer, rec frame, lower third subtitle, school uniform, "
+            "sailor collar, neck ribbon, bow, ribbon tie, blazer and tie, classroom idol styling, "
             f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
@@ -191,6 +197,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
             "reduced subject occupancy",
             "environment depth",
         ),
+        quality_recipe_family="room_safe",
         anchor_filter_mode="drop_portrait_bias",
         prompt_order_mode="scene_first",
         subject_prominence_mode="reduced",
@@ -204,7 +211,8 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         height=1216,
         negative_prompt_append=(
             "single-subject glamour poster, beauty key visual, pinup composition, "
-            "close portrait, fashion editorial, waxy skin, dead eyes, "
+            "close portrait, fashion editorial, waxy skin, dead eyes, school uniform, "
+            "sailor collar, neck ribbon, bow, ribbon tie, "
             f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
@@ -212,6 +220,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
             "natural body pose",
             "clear hand acting",
         ),
+        quality_recipe_family="lifestyle_safe",
         anchor_filter_mode="drop_face_gloss_bias",
     ),
     _make_profile(
@@ -223,7 +232,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         negative_prompt_append=(
             "glamour shoot, fashion editorial, close portrait, airbrushed skin, "
             "copy-paste composition, single-subject glamour poster, beauty key visual, "
-            "floating props, portrait pull, "
+            "floating props, portrait pull, school uniform, sailor collar, neck ribbon, bow, "
             f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
@@ -231,6 +240,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
             "action readability",
             "hand-prop contact",
         ),
+        quality_recipe_family="comic_close_safe",
         anchor_filter_mode="drop_portrait_bias",
     ),
     _make_profile(
@@ -240,7 +250,8 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
         width=832,
         height=1216,
         negative_prompt_append=(
-            "plastic skin, waxy face, dead eyes, malformed hands, "
+            "plastic skin, waxy face, dead eyes, malformed hands, school uniform, "
+            "sailor collar, neck ribbon, bow, ribbon tie, "
             f"{_TEXT_AND_OVERLAY_NEGATIVE}"
         ),
         quality_selector_hints=(
@@ -248,6 +259,7 @@ _PROFILE_REGISTRY: tuple[ComicPanelRenderProfile, ...] = (
             "alive eyes",
             "artifact suppression",
         ),
+        quality_recipe_family="comic_close_safe",
         anchor_filter_mode="drop_face_gloss_bias",
     ),
 )
@@ -267,6 +279,22 @@ def resolve_comic_panel_render_profile(
     if profile is not None:
         return profile
     return _PROFILE_BY_PANEL_TYPE["beat"]
+
+
+def resolve_quality_recipe_family(
+    *,
+    panel_type: str,
+    role_profile: ComicPanelRenderProfile | None = None,
+) -> str:
+    family = str(getattr(role_profile, "quality_recipe_family", "") or "").strip()
+    if family:
+        return family
+
+    normalized_panel_type = panel_type.strip().lower()
+    fallback_profile = _PROFILE_BY_PANEL_TYPE.get(normalized_panel_type)
+    if fallback_profile is None:
+        fallback_profile = _PROFILE_BY_PANEL_TYPE["beat"]
+    return str(fallback_profile.quality_recipe_family or "").strip()
 
 
 def select_scene_cues(
