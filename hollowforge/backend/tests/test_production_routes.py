@@ -294,6 +294,13 @@ def test_create_and_list_comic_verification_runs(temp_db) -> None:
     assert summary["recent_runs"][0]["finished_at"] == "2026-04-17T00:00:06+00:00"
     assert len(summary["recent_runs"]) == 5
 
+    rejected_limit_response = client.get(
+        "/api/v1/production/comic-verification/summary",
+        params={"limit": 2},
+    )
+    assert rejected_limit_response.status_code == 400, rejected_limit_response.text
+    assert rejected_limit_response.json()["detail"] == "comic verification summary does not support limit"
+
 
 def test_production_routes_mount_in_lightweight_and_full_apps(temp_db) -> None:
     lightweight_app = create_app(lightweight=True)

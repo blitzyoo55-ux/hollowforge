@@ -124,5 +124,12 @@ async def create_comic_verification_run_endpoint(
     "/comic-verification/summary",
     response_model=ComicVerificationSummaryResponse,
 )
-async def get_comic_verification_summary_endpoint() -> ComicVerificationSummaryResponse:
+async def get_comic_verification_summary_endpoint(
+    limit: Optional[int] = Query(default=None),
+) -> ComicVerificationSummaryResponse:
+    if limit is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="comic verification summary does not support limit",
+        )
     return await get_comic_verification_summary(limit=5)
