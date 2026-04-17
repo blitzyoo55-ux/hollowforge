@@ -12,10 +12,12 @@ from fastapi import APIRouter, Header, HTTPException, Query, status
 from app.config import settings
 from app.db import get_db
 from app.models import (
+    AnimationCurrentShotResponse,
     AnimationExecutorConfigResponse,
     AnimationJobCallbackPayload,
     AnimationJobCreate,
     AnimationJobDispatchResponse,
+    AnimationReconciliationResponse,
     AnimationPresetLaunchRequest,
     AnimationPresetLaunchResponse,
     AnimationPresetResponse,
@@ -26,6 +28,13 @@ from app.services.animation_dispatch_service import (
     AnimationDispatchError,
     dispatch_to_remote_worker,
 )
+from app.services.animation_shot_registry import (
+    create_animation_shot_variant,
+    get_current_animation_shot,
+    resolve_or_create_current_animation_shot,
+    update_animation_shot_variant_from_job,
+)
+from app.services.animation_reconciliation_service import reconcile_stale_animation_jobs
 from app.services.sequence_repository import mark_shot_clip_ready_for_completed_job
 
 router = APIRouter(prefix="/api/v1/animation", tags=["animation"])
@@ -440,6 +449,10 @@ def _candidate_status_for_job_status(job_status: str) -> str:
     }.get(job_status, "approved")
 
 
+def _is_terminal_animation_status(status_value: str) -> bool:
+    return status_value in {"completed", "failed", "cancelled"}
+
+
 def _extract_bearer_token(authorization: str | None) -> str | None:
     if not authorization:
         return None
@@ -482,6 +495,100 @@ async def _require_animation_job(job_id: str) -> dict[str, Any]:
             detail=f"Animation job {job_id} not found",
         )
     return row
+
+
+def _launch_comic_shot_context_is_present(payload: AnimationPresetLaunchRequest) -> bool:
+    return any(
+        value is not None
+        for value in (
+            payload.episode_id,
+            payload.scene_panel_id,
+            payload.selected_render_asset_id,
+        )
+    )
+
+
+def _require_comic_shot_launch_context(
+    payload: AnimationPresetLaunchRequest,
+) -> tuple[str, str, str, str] | None:
+    if not _launch_comic_shot_context_is_present(payload):
+        return None
+
+    missing_fields = [
+        field_name
+        for field_name, value in (
+            ("episode_id", payload.episode_id),
+            ("scene_panel_id", payload.scene_panel_id),
+            ("selected_render_asset_id", payload.selected_render_asset_id),
+        )
+        if not value
+    ]
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="episode_id, scene_panel_id, and selected_render_asset_id are required for comic shot linkage",
+        )
+
+    selected_generation_id = str(payload.generation_id or "").strip()
+    if not selected_generation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="generation_id is required for comic shot linkage",
+        )
+
+    return (
+        str(payload.episode_id or "").strip(),
+        str(payload.scene_panel_id or "").strip(),
+        str(payload.selected_render_asset_id or "").strip(),
+        selected_generation_id,
+    )
+
+
+async def _link_launch_to_comic_shot(
+    *,
+    preset_id: str,
+    launch_job: AnimationJobResponse,
+    payload: AnimationPresetLaunchRequest,
+    comic_shot_launch_context: tuple[str, str, str, str] | None = None,
+) -> tuple[str | None, str | None]:
+    if comic_shot_launch_context is None:
+        comic_shot_launch_context = _require_comic_shot_launch_context(payload)
+    if comic_shot_launch_context is None:
+        return None, None
+
+    episode_id, scene_panel_id, selected_render_asset_id, selected_generation_id = (
+        comic_shot_launch_context
+    )
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT 1
+            FROM animation_shots
+            WHERE selected_render_asset_id = ?
+            LIMIT 1
+            """,
+            (selected_render_asset_id,),
+        )
+        existing_shot = await cursor.fetchone()
+
+    current_shot = await resolve_or_create_current_animation_shot(
+        episode_id=episode_id,
+        scene_panel_id=scene_panel_id,
+        selected_render_asset_id=selected_render_asset_id,
+        generation_id=selected_generation_id,
+    )
+    variant = await create_animation_shot_variant(
+        animation_shot_id=current_shot.id,
+        animation_job_id=launch_job.id,
+        preset_id=preset_id,
+        launch_reason="rerun" if existing_shot is not None else "initial",
+        status=launch_job.status,
+        output_path=launch_job.output_path,
+        error_message=launch_job.error_message,
+        completed_at=launch_job.completed_at,
+    )
+    return current_shot.id, variant.id
 
 
 async def _apply_animation_job_update(
@@ -587,6 +694,9 @@ async def _apply_animation_job_update(
             clip_ready_path = next_output_path.strip()
         elif isinstance(next_external_job_url, str) and next_external_job_url.strip():
             clip_ready_path = next_external_job_url.strip()
+    if next_status in {"completed", "failed", "cancelled"}:
+        await update_animation_shot_variant_from_job(current["id"])
+
     if clip_ready_path is not None:
         await mark_shot_clip_ready_for_completed_job(
             animation_job_id=current["id"],
@@ -618,6 +728,37 @@ async def get_animation_executor_config() -> AnimationExecutorConfigResponse:
         preferred_flow=preferred_flow,
         supported_target_tools=_SUPPORTED_TARGET_TOOLS,
     )
+
+
+@router.post("/reconcile-stale", response_model=AnimationReconciliationResponse)
+async def reconcile_stale_animation_jobs_route() -> AnimationReconciliationResponse:
+    try:
+        summary = await reconcile_stale_animation_jobs()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reconcile stale animation jobs",
+        ) from exc
+    return AnimationReconciliationResponse(**summary)
+
+
+@router.get("/shots/current", response_model=AnimationCurrentShotResponse)
+async def get_current_animation_shot_route(
+    scene_panel_id: str,
+    selected_render_asset_id: str,
+    limit: int = Query(default=8, ge=1, le=20),
+) -> AnimationCurrentShotResponse:
+    current_shot = await get_current_animation_shot(
+        scene_panel_id=scene_panel_id,
+        selected_render_asset_id=selected_render_asset_id,
+        limit=limit,
+    )
+    if current_shot.shot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current animation shot not found",
+        )
+    return current_shot
 
 
 @router.get("/presets", response_model=list[AnimationPresetResponse])
@@ -811,6 +952,7 @@ async def launch_animation_preset(
     payload: AnimationPresetLaunchRequest,
 ) -> AnimationPresetLaunchResponse:
     preset = _get_animation_preset_or_404(preset_id)
+    comic_shot_launch_context = _require_comic_shot_launch_context(payload)
     request_json = _build_preset_request_json(preset, payload.request_overrides)
 
     created_job = await create_animation_job(
@@ -835,11 +977,31 @@ async def launch_animation_preset(
             detail = exc.detail
             dispatch_error = detail if isinstance(detail, str) else str(detail)
 
+    final_job = dispatch_result.animation_job if dispatch_result else created_job
+    animation_shot_id: str | None = None
+    animation_shot_variant_id: str | None = None
+    try:
+        animation_shot_id, animation_shot_variant_id = await _link_launch_to_comic_shot(
+            preset_id=preset_id,
+            launch_job=final_job,
+            payload=payload,
+            comic_shot_launch_context=comic_shot_launch_context,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to link animation launch to comic shot",
+        ) from exc
+
     return AnimationPresetLaunchResponse(
         preset=preset,
-        animation_job=dispatch_result.animation_job if dispatch_result else created_job,
+        animation_job=final_job,
         dispatch=dispatch_result,
         dispatch_error=dispatch_error,
+        animation_shot_id=animation_shot_id,
+        animation_shot_variant_id=animation_shot_variant_id,
     )
 
 
@@ -918,7 +1080,26 @@ async def callback_animation_job(
                 detail="Invalid animation callback token",
             )
 
-    current = await _require_animation_job(job_id)
     async with get_db() as db:
-        updated_row = await _apply_animation_job_update(db, current, payload, _now_iso())
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await db.execute(
+                "SELECT * FROM animation_jobs WHERE id = ?",
+                (job_id,),
+            )
+            current = await cursor.fetchone()
+            if current is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Animation job {job_id} not found",
+                )
+
+            if _is_terminal_animation_status(current["status"]):
+                await db.rollback()
+                return _row_to_animation_job(current)
+
+            updated_row = await _apply_animation_job_update(db, current, payload, _now_iso())
+        except Exception:
+            await db.rollback()
+            raise
     return _row_to_animation_job(updated_row)

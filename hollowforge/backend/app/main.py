@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db import init_db
+from app.services.animation_reconciliation_service import reconcile_stale_animation_jobs
 from app.services.comfyui_client import ComfyUIClient
 from app.services.favorite_upscale_service import FavoriteUpscaleService
 from app.services.generation_service import GenerationService
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _iter_public_data_dirs() -> tuple[pathlib.Path, ...]:
     return (
+        settings.DATA_DIR / "outputs",
         settings.IMAGES_DIR,
         settings.IMAGES_DIR / "upscaled",
         settings.IMAGES_DIR / "adetailed",
@@ -35,6 +37,10 @@ def _iter_public_data_dirs() -> tuple[pathlib.Path, ...]:
         settings.IMAGES_DIR / "watermarked",
         settings.THUMBS_DIR,
         settings.WORKFLOWS_DIR,
+        settings.COMICS_DIR,
+        settings.COMICS_PREVIEWS_DIR,
+        settings.COMICS_EXPORTS_DIR,
+        settings.COMICS_MANIFESTS_DIR,
     )
 
 
@@ -45,6 +51,11 @@ def _ensure_public_data_dirs() -> None:
 
 def _mount_static_dirs(app: FastAPI) -> None:
     _ensure_public_data_dirs()
+    app.mount(
+        "/data/outputs",
+        StaticFiles(directory=str(settings.DATA_DIR / "outputs")),
+        name="data-outputs",
+    )
     app.mount(
         "/data/images/watermarked",
         StaticFiles(directory=str(settings.IMAGES_DIR / "watermarked")),
@@ -65,23 +76,42 @@ def _mount_static_dirs(app: FastAPI) -> None:
         StaticFiles(directory=str(settings.WORKFLOWS_DIR)),
         name="data-workflows",
     )
+    app.mount(
+        "/data/comics/previews",
+        StaticFiles(directory=str(settings.COMICS_PREVIEWS_DIR)),
+        name="data-comics-previews",
+    )
+    app.mount(
+        "/data/comics/exports",
+        StaticFiles(directory=str(settings.COMICS_EXPORTS_DIR)),
+        name="data-comics-exports",
+    )
+    app.mount(
+        "/data/comics/manifests",
+        StaticFiles(directory=str(settings.COMICS_MANIFESTS_DIR)),
+        name="data-comics-manifests",
+    )
 
 
 def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     if lightweight:
-        from app.routes import sequences
+        from app.routes import comic, production, sequences
 
+        app.include_router(comic.router)
+        app.include_router(production.router)
         app.include_router(sequences.router)
         return
 
     from app.routes import (
         animation,
+        comic,
         collections,
         dreamactor,
         favorites,
         gallery,
         generations,
         loras,
+        production,
         presets,
         publishing,
         reproduce,
@@ -105,6 +135,8 @@ def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     app.include_router(publishing.router)
     app.include_router(reproduce.router)
     app.include_router(sequences.router)
+    app.include_router(comic.router)
+    app.include_router(production.router)
     app.include_router(export_router)
     app.include_router(seedance.router)
     app.include_router(quality_ai_router)
@@ -135,6 +167,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("Initializing database...")
     await init_db()
+    try:
+        animation_reconciliation_summary = await reconcile_stale_animation_jobs()
+    except Exception:
+        logger.exception("Animation stale reconciliation skipped during startup")
+    else:
+        logger.info(
+            (
+                "Startup stale animation reconciliation complete: "
+                "checked=%d updated=%d failed_restart=%d completed=%d cancelled=%d "
+                "skipped_unreachable=%d"
+            ),
+            animation_reconciliation_summary["checked"],
+            animation_reconciliation_summary["updated"],
+            animation_reconciliation_summary["failed_restart"],
+            animation_reconciliation_summary["completed"],
+            animation_reconciliation_summary["cancelled"],
+            animation_reconciliation_summary["skipped_unreachable"],
+        )
     _ensure_public_data_dirs()
 
     # ComfyUI client

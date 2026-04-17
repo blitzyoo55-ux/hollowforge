@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import {
   createSequenceBlueprint,
   createSequenceRun,
+  getProductionEpisode,
   getSequenceRun,
   listSequenceBlueprints,
   listSequenceRuns,
@@ -29,13 +31,28 @@ function formatDate(value: string): string {
 
 export default function SequenceStudio() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const productionEpisodeId = searchParams.get('production_episode_id')?.trim() || null
+  const mode = searchParams.get('mode')
+  const hasProductionContext = Boolean(productionEpisodeId)
+  const isCreateFromProduction = hasProductionContext && mode === 'create_from_production'
+  const isOpenCurrent = hasProductionContext && mode === 'open_current'
 
   const blueprintsQuery = useQuery({
-    queryKey: ['sequence-blueprints'],
-    queryFn: () => listSequenceBlueprints(),
+    queryKey: ['sequence-blueprints', productionEpisodeId],
+    queryFn: () =>
+      hasProductionContext && productionEpisodeId
+        ? listSequenceBlueprints({ production_episode_id: productionEpisodeId })
+        : listSequenceBlueprints(),
     refetchInterval: 30_000,
+  })
+
+  const productionEpisodeQuery = useQuery({
+    queryKey: ['production-episode', productionEpisodeId],
+    queryFn: () => getProductionEpisode(productionEpisodeId as string),
+    enabled: isCreateFromProduction,
   })
 
   const runsQuery = useQuery({
@@ -52,11 +69,13 @@ export default function SequenceStudio() {
   const effectiveSelectedBlueprintId = useMemo(() => {
     const rows = blueprintsQuery.data ?? []
     if (rows.length === 0) return null
+    if (isOpenCurrent && rows.length !== 1 && !selectedBlueprintId) return null
     if (selectedBlueprintId && rows.some((row) => row.blueprint.id === selectedBlueprintId)) {
       return selectedBlueprintId
     }
+    if (isOpenCurrent && rows.length !== 1) return null
     return rows[0].blueprint.id
-  }, [blueprintsQuery.data, selectedBlueprintId])
+  }, [blueprintsQuery.data, isOpenCurrent, selectedBlueprintId])
 
   const effectiveSelectedRunId = useMemo(() => {
     const rows = runsQuery.data ?? []
@@ -77,6 +96,13 @@ export default function SequenceStudio() {
       return run.status === 'planning' || run.status === 'animating' ? 10_000 : false
     },
   })
+
+  useEffect(() => {
+    if (!isOpenCurrent) return
+    const rows = blueprintsQuery.data ?? []
+    if (rows.length !== 1) return
+    setSelectedBlueprintId(rows[0].blueprint.id)
+  }, [blueprintsQuery.data, isOpenCurrent])
 
   const createBlueprintMutation = useMutation({
     mutationFn: (payload: SequenceBlueprintCreate) => createSequenceBlueprint(payload),
@@ -120,6 +146,74 @@ export default function SequenceStudio() {
     [blueprintsQuery.data, effectiveSelectedBlueprintId],
   )
 
+  const blueprintFormInitialValues = useMemo<Partial<SequenceBlueprintCreate> | undefined>(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return undefined
+    const episode = productionEpisodeQuery.data
+    return {
+      content_mode: episode.content_mode,
+      work_id: episode.work_id,
+      series_id: episode.series_id,
+      production_episode_id: episode.id,
+    }
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+
+  const blueprintFormInitialValuesKey = useMemo(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
+    return productionEpisodeQuery.data.id
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+
+  const isCreateFromProductionContextReady = Boolean(isCreateFromProduction && productionEpisodeQuery.data)
+  const productionContextLabel = useMemo(() => {
+    if (!isCreateFromProduction || !productionEpisodeQuery.data) return null
+    return `${productionEpisodeQuery.data.title} (${productionEpisodeQuery.data.id})`
+  }, [isCreateFromProduction, productionEpisodeQuery.data])
+  const createFromProductionLinkedRows = useMemo(
+    () => (isCreateFromProduction ? (blueprintsQuery.data ?? []) : []),
+    [blueprintsQuery.data, isCreateFromProduction],
+  )
+  const openCurrentAmbiguousRows = useMemo(
+    () => (isOpenCurrent && (blueprintsQuery.data?.length ?? 0) > 1 ? (blueprintsQuery.data ?? []) : []),
+    [blueprintsQuery.data, isOpenCurrent],
+  )
+  const hasLinkedBlueprintForCreateFromProduction = createFromProductionLinkedRows.length > 0
+  const isCreateFromProductionLinkageLoading = Boolean(
+    isCreateFromProduction && blueprintsQuery.isLoading && !blueprintsQuery.data,
+  )
+
+  useEffect(() => {
+    if (!isOpenCurrent) return
+    if ((blueprintsQuery.data?.length ?? 0) <= 1) return
+    setSelectedBlueprintId(null)
+  }, [blueprintsQuery.data, isOpenCurrent])
+
+  const isBlueprintSubmissionBlocked = Boolean(
+    isCreateFromProduction
+      && (
+        !isCreateFromProductionContextReady
+        || hasLinkedBlueprintForCreateFromProduction
+        || isCreateFromProductionLinkageLoading
+      ),
+  )
+
+  const blueprintSubmissionBlockedReason = useMemo(() => {
+    if (!isCreateFromProduction) return null
+    if (hasLinkedBlueprintForCreateFromProduction) {
+      return 'A sequence blueprint is already linked to this production episode. Open the linked blueprint below instead of creating a duplicate.'
+    }
+    if (isCreateFromProductionLinkageLoading) {
+      return 'Checking linked blueprints for this production episode before creating a new track.'
+    }
+    if (productionEpisodeQuery.isError) return 'Production episode context failed to load; retry before creating a blueprint.'
+    if (!productionEpisodeQuery.data) return 'Loading production episode context before blueprint creation.'
+    return null
+  }, [
+    hasLinkedBlueprintForCreateFromProduction,
+    isCreateFromProduction,
+    isCreateFromProductionLinkageLoading,
+    productionEpisodeQuery.data,
+    productionEpisodeQuery.isError,
+  ])
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-6">
@@ -129,9 +223,9 @@ export default function SequenceStudio() {
               Stage 1 Sequence
             </span>
             <div>
-              <h1 className="text-2xl font-bold text-gray-100">Sequence Studio</h1>
+              <h1 className="text-2xl font-bold text-gray-100">Animation Track Studio</h1>
               <p className="mt-1 max-w-3xl text-sm text-gray-400">
-                Create Stage 1 sequence blueprints, launch orchestration runs, and review per-shot progress with rough-cut candidates in one place.
+                Plan sequence blueprints, launch animation-track runs, and review shot-by-shot progress with rough-cut candidates in one place.
               </p>
             </div>
           </div>
@@ -156,8 +250,36 @@ export default function SequenceStudio() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <SequenceBlueprintForm
-          onSubmit={(payload) => createBlueprintMutation.mutate(payload)}
+          onSubmit={async (payload) => {
+            if (isCreateFromProduction) {
+              if (!productionEpisodeQuery.data) return
+              const linkedRows = await queryClient.fetchQuery({
+                queryKey: ['sequence-blueprints', productionEpisodeQuery.data.id],
+                queryFn: () => listSequenceBlueprints({ production_episode_id: productionEpisodeQuery.data!.id }),
+              })
+              if (linkedRows.length > 0) {
+                notify.error('Linked sequence blueprints already exist for this production episode. Open the existing blueprint instead of creating a duplicate.')
+                return
+              }
+              createBlueprintMutation.mutate({
+                ...payload,
+                content_mode: productionEpisodeQuery.data.content_mode,
+                work_id: productionEpisodeQuery.data.work_id,
+                series_id: productionEpisodeQuery.data.series_id,
+                production_episode_id: productionEpisodeQuery.data.id,
+              })
+              return
+            }
+
+            createBlueprintMutation.mutate(payload)
+          }}
           isSubmitting={createBlueprintMutation.isPending}
+          initialValues={blueprintFormInitialValues}
+          initialValuesKey={blueprintFormInitialValuesKey}
+          productionContextLabel={productionContextLabel}
+          lockContentMode={isCreateFromProductionContextReady}
+          isSubmissionBlocked={isBlueprintSubmissionBlocked}
+          submissionBlockedReason={blueprintSubmissionBlockedReason}
         />
 
         <section className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
@@ -169,6 +291,48 @@ export default function SequenceStudio() {
               </p>
             </div>
           </div>
+
+          {hasLinkedBlueprintForCreateFromProduction ? (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-200">Duplicate Create Blocked</h3>
+              <p className="text-sm text-amber-50/90">
+                This production episode is already linked to one or more sequence blueprints. Use manual open below instead of creating another track from this URL.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {createFromProductionLinkedRows.map((item) => (
+                  <button
+                    key={item.blueprint.id}
+                    type="button"
+                    onClick={() => setSelectedBlueprintId(item.blueprint.id)}
+                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+                  >
+                    Open Linked Blueprint {item.blueprint.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {openCurrentAmbiguousRows.length > 0 ? (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-200">Open Current Ambiguity</h3>
+              <p className="text-sm text-amber-50/90">
+                Multiple linked blueprints were found for this production episode. No blueprint is auto-selected; choose one manually.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {openCurrentAmbiguousRows.map((item) => (
+                  <button
+                    key={item.blueprint.id}
+                    type="button"
+                    onClick={() => setSelectedBlueprintId(item.blueprint.id)}
+                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+                  >
+                    Open Linked Blueprint {item.blueprint.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {blueprintsQuery.isLoading ? (
             <div className="flex items-center justify-center py-12">

@@ -12,6 +12,10 @@ import httpx
 from app.config import settings
 
 
+class ComfyUIWaitCancelledError(RuntimeError):
+    """Raised when a waiting prompt is cancelled by the caller."""
+
+
 class ComfyUIClient:
     """Thin async wrapper around the ComfyUI HTTP API."""
 
@@ -139,6 +143,7 @@ class ComfyUIClient:
         save_node_id: str,
         timeout: float | None = None,
         poll_interval: float | None = None,
+        cancel_check: Callable[[], bool | Awaitable[bool]] | None = None,
     ) -> list[dict[str, Any]]:
         """Poll /history until the prompt finishes, then return image info list."""
         timeout = timeout or settings.GENERATION_TIMEOUT
@@ -146,6 +151,15 @@ class ComfyUIClient:
         elapsed = 0.0
 
         while True:
+            if cancel_check is not None:
+                should_cancel = cancel_check()
+                if asyncio.iscoroutine(should_cancel):
+                    should_cancel = await should_cancel
+                if should_cancel:
+                    raise ComfyUIWaitCancelledError(
+                        f"Cancelled while waiting for completion. prompt_id={prompt_id}"
+                    )
+
             if elapsed > timeout:
                 raise TimeoutError(
                     f"Timeout waiting for completion. prompt_id={prompt_id}"

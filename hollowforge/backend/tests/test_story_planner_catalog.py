@@ -44,6 +44,7 @@ def test_load_story_planner_catalog_returns_spec_aligned_entries():
         "setting_anchor",
         "visual_rules",
         "restricted_elements",
+        "scene_cues",
     }
     policy_pack_keys = {
         "id",
@@ -64,6 +65,9 @@ def test_load_story_planner_catalog_returns_spec_aligned_entries():
     assert all(character.preferred_checkpoints for character in catalog.characters)
     assert all(location.visual_rules for location in catalog.locations)
     assert all(pack.planner_rules for pack in catalog.policy_packs)
+    assert next(
+        location for location in catalog.locations if location.id == "artist_loft_morning"
+    ).scene_cues[:2] == ["tall factory windows", "easel"]
     assert all(
         SHARED_HARD_FORBIDDEN_BASELINE.issubset(set(pack.forbidden_defaults))
         for pack in catalog.policy_packs

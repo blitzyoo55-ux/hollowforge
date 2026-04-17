@@ -1,0 +1,95 @@
+{
+  "version": "2026-04-11",
+  "recipes": [
+    {
+      "recipe_id": "favorite_room_safe_v1",
+      "family": "room_safe",
+      "apply_execution_override": true,
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": [],
+      "steps": 28,
+      "cfg": 5.1,
+      "sampler": "euler_a",
+      "prompt_fragments": [
+        "spacious readable room layout",
+        "single adult lead secondary to environment"
+      ],
+      "negative_fragments": [
+        "empty background",
+        "minimal room detail",
+        "subject filling frame",
+        "single-subject glamour poster",
+        "beauty key visual",
+        "camera frame",
+        "viewfinder",
+        "screenshot border",
+        "subtitle overlay"
+      ]
+    },
+    {
+      "recipe_id": "favorite_lifestyle_safe_v1",
+      "family": "lifestyle_safe",
+      "apply_execution_override": false,
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.45,
+          "category": "eyes"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.4,
+      "sampler": "euler_a",
+      "prompt_fragments": [
+        "natural body pose",
+        "clear hand acting"
+      ],
+      "negative_fragments": [
+        "single-subject glamour poster",
+        "beauty key visual",
+        "waxy skin",
+        "dead eyes",
+        "camera frame",
+        "subtitle overlay"
+      ]
+    },
+    {
+      "recipe_id": "favorite_comic_close_safe_v1",
+      "family": "comic_close_safe",
+      "apply_execution_override": false,
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        {
+          "filename": "DetailedEyes_V3.safetensors",
+          "strength": 0.45,
+          "category": "eyes"
+        },
+        {
+          "filename": "Face_Enhancer_Illustrious.safetensors",
+          "strength": 0.36,
+          "category": "style"
+        }
+      ],
+      "steps": 30,
+      "cfg": 5.4,
+      "sampler": "euler_a",
+      "prompt_fragments": [
+        "adult facial clarity",
+        "alive eyes"
+      ],
+      "negative_fragments": [
+        "plastic skin",
+        "waxy face",
+        "dead eyes",
+        "camera frame",
+        "subtitle overlay"
+      ]
+    }
+  ]
+}

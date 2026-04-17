@@ -27,6 +27,7 @@ from app.services.sequence_registry import (
     get_animation_executor_profile,
 )
 from app.services.sequence_repository import (
+    SequenceBlueprintProductionEpisodeConflictError,
     create_blueprint,
     get_blueprint,
     get_run,
@@ -149,10 +150,14 @@ async def create_sequence_blueprint(
             shot_count=payload.shot_count,
             content_mode=payload.content_mode,
         )
+        blueprint = await create_blueprint(payload)
     except (SequenceRegistryError, ValueError) as exc:
         raise _bad_request(str(exc)) from exc
-
-    blueprint = await create_blueprint(payload)
+    except SequenceBlueprintProductionEpisodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     return _blueprint_detail_response(blueprint)
 
 
@@ -160,10 +165,12 @@ async def create_sequence_blueprint(
 async def list_sequence_blueprints(
     content_mode: Optional[SequenceContentMode] = Query(default=None),
     policy_profile_id: Optional[str] = Query(default=None),
+    production_episode_id: Optional[str] = Query(default=None),
 ) -> list[SequenceBlueprintDetailResponse]:
     blueprints = await list_blueprints(
         content_mode=content_mode,
         policy_profile_id=policy_profile_id,
+        production_episode_id=production_episode_id,
     )
     return [_blueprint_detail_response(blueprint) for blueprint in blueprints]
 
