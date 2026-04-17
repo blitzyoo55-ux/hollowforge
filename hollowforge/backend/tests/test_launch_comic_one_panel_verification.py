@@ -161,7 +161,7 @@ def test_main_prints_success_markers_for_one_panel_verification(
     captured = capsys.readouterr()
     assert len(remote_queue_calls) == 1
     assert remote_queue_calls[0]["candidate_count"] == 1
-    assert remote_queue_calls[0]["poll_attempts"] == 240
+    assert remote_queue_calls[0]["poll_attempts"] == 360
     assert remote_queue_calls[0]["poll_sec"] == 2.0
     assert "execution_mode: remote_worker" in captured.out
     assert "episode_create_success: true" in captured.out

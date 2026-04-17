@@ -128,7 +128,7 @@ def test_main_uses_extended_default_remote_poll_budget(
 
     captured = capsys.readouterr()
     assert len(queue_calls) == 1
-    assert queue_calls[0]["poll_attempts"] == 240
+    assert queue_calls[0]["poll_attempts"] == 360
     assert queue_calls[0]["poll_sec"] == 2.0
     assert "queue_renders_success: true" in captured.out
     assert "overall_success: true" in captured.out
