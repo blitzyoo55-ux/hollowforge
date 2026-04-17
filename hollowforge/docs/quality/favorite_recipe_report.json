@@ -1,0 +1,175 @@
+{
+  "generated_at": "2026-04-17T01:41:30.873287+00:00",
+  "source_db": "/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/data/hollowforge.db",
+  "favorite_count": 1140,
+  "safe_no_lora_candidates": [
+    {
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "count": 23
+    },
+    {
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "count": 17
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "count": 17
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v140.safetensors",
+      "count": 13
+    },
+    {
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "count": 8
+    },
+    {
+      "checkpoint": "hassakuXLIllustrious_v34.safetensors",
+      "count": 8
+    },
+    {
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "count": 3
+    }
+  ],
+  "enhancer_combo_candidates": [
+    {
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.34, \"category\": \"style\"}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.41, \"category\": \"eyes\"}]",
+      "count": 6
+    },
+    {
+      "checkpoint": "illustrij_v20.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.52, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.32, \"category\": null}]",
+      "count": 5
+    },
+    {
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.45, \"category\": \"eyes\"}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.36, \"category\": \"style\"}]",
+      "count": 5
+    },
+    {
+      "checkpoint": "animayhemPaleRider_v2TrueGrit.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.58, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.38, \"category\": null}]",
+      "count": 3
+    },
+    {
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.55, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.3, \"category\": null}]",
+      "count": 3
+    },
+    {
+      "checkpoint": "ultimateHentaiAnimeRXTRexAnime_rxV1.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.36, \"category\": \"style\"}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.42, \"category\": \"eyes\"}]",
+      "count": 3
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.48, \"category\": \"eyes\"}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.36, \"category\": \"style\"}]",
+      "count": 3
+    },
+    {
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": "[{\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.7, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"incase_new_style_red_ill.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 2
+    },
+    {
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.45, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": "[{\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.7, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"1-A_Dot_AI_Style__NSFW_v2.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "illustrij_v20.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"Body_weight_slider_ILXL.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"plumpill.safetensors\", \"strength\": 0.8, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.47, \"category\": \"eyes\"}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.34, \"category\": \"style\"}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"96YOTTEA-WAI.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"incase_new_style_red_ill.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Drool-IL.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"incase_new_style_red_ill.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"incoth.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"THE Official pit style (illustriousPony).safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"96YOTTEA-WAI.safetensors\", \"strength\": 0.5, \"category\": null}, {\"filename\": \"iranon.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    },
+    {
+      "checkpoint": "waiIllustriousSDXL_v160.safetensors",
+      "loras": "[{\"filename\": \"Face_Enhancer_Illustrious.safetensors\", \"strength\": 0.6, \"category\": null}, {\"filename\": \"DetailedEyes_V3.safetensors\", \"strength\": 0.5, \"category\": null}]",
+      "count": 1
+    }
+  ],
+  "selected_recipes": {
+    "room_safe": {
+      "recipe_id": "favorite_room_safe_v1",
+      "checkpoint": "akiumLumenILLBase_baseV2.safetensors",
+      "loras": []
+    },
+    "lifestyle_safe": {
+      "recipe_id": "favorite_lifestyle_safe_v1",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        "DetailedEyes_V3.safetensors",
+        "Face_Enhancer_Illustrious.safetensors"
+      ]
+    },
+    "comic_close_safe": {
+      "recipe_id": "favorite_comic_close_safe_v1",
+      "checkpoint": "prefectIllustriousXL_v70.safetensors",
+      "loras": [
+        "DetailedEyes_V3.safetensors",
+        "Face_Enhancer_Illustrious.safetensors"
+      ]
+    }
+  }
+}
