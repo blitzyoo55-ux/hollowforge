@@ -2,6 +2,8 @@
 
 Date: 2026-04-08
 
+Last verified update: 2026-04-17
+
 ## Goal
 
 This SOP defines the bounded operator flow for the current HollowForge comic
@@ -208,6 +210,34 @@ Recovery rule is:
 
 Use these only when UI verification needs a backend-side proof.
 
+Canonical comic verification path:
+
+1. run remote still preflight
+2. run the comic verification suite
+3. rerun a single stage only if the suite has already narrowed the failing lane
+
+Canonical comic verification suite:
+
+```bash
+cd backend
+./.venv/bin/python scripts/check_comic_remote_render_preflight.py \
+  --backend-url http://127.0.0.1:8000
+
+./.venv/bin/python scripts/run_comic_verification_suite.py \
+  --base-url http://127.0.0.1:8000
+```
+
+The suite runner is the default operator entry for:
+
+- `smoke -> full -> remote`
+- fail-fast by default
+- `--smoke-only`, `--full-only`, `--remote-only` for isolated reruns
+- `--continue-on-failure` when a full failure map is more useful than fail-fast
+
+The shared `full` remote-worker poll budget is now `360 * 2s`. This was raised
+after real worker completions exceeded the older 480-second window while still
+finishing successfully through callback materialization.
+
 Canonical teaser smoke:
 
 ```bash
@@ -254,6 +284,14 @@ Stale reconcile fallback:
 ```bash
 cd backend
 ./.venv/bin/python scripts/reconcile_stale_animation_jobs.py \
+  --base-url http://127.0.0.1:8000
+```
+
+Isolated full-lane rerun:
+
+```bash
+cd backend
+./.venv/bin/python scripts/launch_comic_one_panel_verification.py \
   --base-url http://127.0.0.1:8000
 ```
 
