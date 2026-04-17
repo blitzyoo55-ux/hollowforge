@@ -150,6 +150,7 @@ def build_comic_draft_from_story_plan(
     involved_character_ids = _scene_involved_character_ids(approved_plan)
     scenes: list[ComicEpisodeSceneDraft] = []
     panels: list[ComicScenePanelDraft] = []
+    reading_order = 0
 
     for shot in approved_plan.shots:
         scenes.append(
@@ -166,6 +167,7 @@ def build_comic_draft_from_story_plan(
         )
 
         for panel_no in range(1, panel_multiplier + 1):
+            reading_order += 1
             panels.append(
                 ComicScenePanelDraft(
                     scene_no=shot.shot_no,
@@ -200,7 +202,7 @@ def build_comic_draft_from_story_plan(
                         panel_no=panel_no,
                     ),
                     continuity_lock=shot.continuity_note,
-                    reading_order=panel_no,
+                    reading_order=reading_order,
                 )
             )
 

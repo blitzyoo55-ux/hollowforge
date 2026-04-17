@@ -268,7 +268,7 @@ async def get_comic_episode(episode_id: str) -> ComicEpisodeDetailResponse:
 async def queue_comic_panel_render_candidates(
     panel_id: str,
     request: Request,
-    candidate_count: int = Query(default=3, ge=2, le=24),
+    candidate_count: int = Query(default=3, ge=1, le=24),
     execution_mode: ComicRenderExecutionMode = Query(default="local_preview"),
 ) -> ComicPanelRenderQueueResponse:
     try:

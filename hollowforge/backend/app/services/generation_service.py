@@ -389,8 +389,8 @@ class GenerationService:
         """
         gen = _apply_default_negative_prompt(gen)
         await self._validate_lora_compatibility(gen)
-        if count < 2:
-            raise ValueError("count must be >= 2 for batch generation")
+        if count < 1:
+            raise ValueError("count must be >= 1 for batch generation")
         if seed_increment < 1:
             raise ValueError("seed_increment must be >= 1")
         if gen.source_id:
@@ -438,8 +438,8 @@ class GenerationService:
         """Insert queued generation lineage shells without local worker enqueue."""
         gen = _apply_default_negative_prompt(gen)
         await self._validate_lora_compatibility(gen)
-        if count < 2:
-            raise ValueError("count must be >= 2 for batch generation")
+        if count < 1:
+            raise ValueError("count must be >= 1 for batch generation")
         if seed_increment < 1:
             raise ValueError("seed_increment must be >= 1")
         if gen.source_id:

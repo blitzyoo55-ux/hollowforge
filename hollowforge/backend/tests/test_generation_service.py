@@ -97,3 +97,45 @@ async def test_queue_generation_batch_rejects_partial_source_id_batch(
         )
 
     assert _count_generations_for_source(temp_db, "story-planner:shot-02") == 1
+
+
+async def test_queue_generation_batch_accepts_single_generation(
+    temp_db: Path,
+) -> None:
+    service = GenerationService()
+
+    base_seed, queued = await service.queue_generation_batch(
+        GenerationCreate(
+            prompt="single generation batch",
+            checkpoint="waiIllustriousSDXL_v140.safetensors",
+            workflow_lane="sdxl_illustrious",
+            source_id="story-planner:single-batch",
+        ),
+        count=1,
+    )
+
+    assert len(queued) == 1
+    assert queued[0].seed == base_seed
+    assert _count_generations_for_source(temp_db, "story-planner:single-batch") == 1
+
+
+async def test_create_generation_shell_batch_accepts_single_generation(
+    temp_db: Path,
+) -> None:
+    service = GenerationService()
+
+    base_seed, queued = await service.create_generation_shell_batch(
+        GenerationCreate(
+            prompt="single shell batch",
+            checkpoint="waiIllustriousSDXL_v140.safetensors",
+            workflow_lane="sdxl_illustrious",
+            source_id="story-planner:single-shell-batch",
+        ),
+        count=1,
+    )
+
+    assert len(queued) == 1
+    assert queued[0].seed == base_seed
+    assert _count_generations_for_source(
+        temp_db, "story-planner:single-shell-batch"
+    ) == 1

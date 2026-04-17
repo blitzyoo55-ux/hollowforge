@@ -82,3 +82,4 @@ def test_story_plan_bridge_maps_single_panel_per_shot_to_canonical_role_sequence
         "insert",
         "closeup",
     ]
+    assert [panel.reading_order for panel in detail.panels] == [1, 2, 3, 4]

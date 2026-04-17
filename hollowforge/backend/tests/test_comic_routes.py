@@ -1266,6 +1266,28 @@ def test_queue_comic_panel_renders_accepts_remote_execution_mode(temp_db, monkey
     assert job_count == 3
 
 
+def test_queue_comic_panel_renders_accepts_single_candidate(temp_db) -> None:
+    panel_id = _insert_panel_fixture(temp_db)
+    app = create_app(lightweight=True)
+    app.state.generation_service = _StubGenerationService(temp_db)
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/v1/comic/panels/{panel_id}/queue-renders",
+        params={"candidate_count": 1, "execution_mode": "local_preview"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["execution_mode"] == "local_preview"
+    assert body["requested_count"] == 1
+    assert body["queued_generation_count"] == 1
+    assert body["materialized_asset_count"] == 1
+    assert body["pending_render_job_count"] == 0
+    assert body["remote_job_count"] == 0
+    assert len(body["render_assets"]) == 1
+
+
 def test_get_panel_render_jobs_lists_jobs_newest_first(temp_db) -> None:
     panel_id = _insert_panel_render_jobs_fixture(temp_db)
     client = _build_client()
@@ -1555,6 +1577,40 @@ def test_import_story_plan_route_returns_four_scenes_and_two_panels_per_scene(
         scene["scene"]["involved_character_ids"] == ["char_kaede_ren"]
         for scene in body["scenes"]
     )
+
+
+def test_import_story_plan_route_persists_global_reading_order_for_single_panel_shots(
+    temp_db,
+) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Night Intake Single Panel",
+            "panel_multiplier": 1,
+        },
+    )
+
+    assert response.status_code == 201
+    episode_id = response.json()["episode"]["id"]
+
+    with sqlite3.connect(temp_db) as conn:
+        rows = conn.execute(
+            """
+            SELECT p.reading_order
+            FROM comic_scene_panels p
+            JOIN comic_episode_scenes s ON s.id = p.episode_scene_id
+            WHERE s.episode_id = ?
+            ORDER BY s.scene_no ASC, p.panel_no ASC
+            """,
+            (episode_id,),
+        ).fetchall()
+
+    assert [row[0] for row in rows] == [1, 2, 3, 4]
 
 
 def test_import_story_plan_route_persists_source_story_plan_json(temp_db) -> None:
