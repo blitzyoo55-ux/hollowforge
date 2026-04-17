@@ -1,4 +1,4 @@
-"""Run a local-only four-panel comic benchmark and recommend the execution boundary."""
+"""Run a four-panel comic verification benchmark and recommend the execution boundary."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 import launch_comic_mvp_smoke as comic_smoke
 import launch_comic_production_dry_run as comic_dry_run
+import launch_comic_remote_render_smoke as remote_smoke
 from app.config import settings
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -32,7 +33,9 @@ DEFAULT_STORY_LANE = "adult_nsfw"
 DEFAULT_LAYOUT_TEMPLATE_ID = "jp_2x2_v1"
 DEFAULT_MANUSCRIPT_PROFILE_ID = "jp_manga_rightbound_v1"
 DEFAULT_PANEL_MULTIPLIER = 1
-DEFAULT_RENDER_POLL_ATTEMPTS = 240
+DEFAULT_CANDIDATE_COUNT = 1
+DEFAULT_EXECUTION_MODE = remote_smoke.DEFAULT_EXECUTION_MODE
+DEFAULT_RENDER_POLL_ATTEMPTS = 360
 DEFAULT_MAX_TOTAL_DURATION_SEC = 900.0
 DEFAULT_MAX_PANEL_RENDER_DURATION_SEC = 180.0
 DEFAULT_MAX_AVERAGE_PANEL_RENDER_DURATION_SEC = 120.0
@@ -223,7 +226,8 @@ def _run_production_dry_run(
     if not export_zip_path:
         raise RuntimeError("Comic export detail is missing export_zip_path")
 
-    comic_dry_run._validate_export_zip(export_zip_path)
+    layered_handoff_summary = comic_dry_run._extract_layered_handoff_summary(export_detail)
+    comic_dry_run._validate_export_zip(export_zip_path, export_detail)
     report_path = comic_dry_run._write_report(
         episode_id=episode_id,
         layout_template_id=layout_template_id,
@@ -232,14 +236,19 @@ def _run_production_dry_run(
         assembly_detail=assembly_detail,
         export_detail=export_detail,
         selected_panel_assets=selected_panel_assets,
+        layered_handoff_summary=layered_handoff_summary,
     )
     return {
         "dry_run_success": True,
+        "layered_package_verified": True,
         "panel_count": len(comic_dry_run._extract_panel_ids(episode_detail)),
         "selected_panel_asset_count": len(selected_panel_assets),
         "page_count": len(export_detail.get("pages") or []),
         "export_zip_path": export_zip_path,
-        "dry_run_report_path": comic_dry_run._relative_data_path(report_path),
+        "layered_manifest_path": layered_handoff_summary["layered_manifest_path"],
+        "handoff_validation_path": layered_handoff_summary["handoff_validation_path"],
+        "hard_block_count": layered_handoff_summary["hard_block_count"],
+        "report_path": comic_dry_run._relative_data_path(report_path),
     }
 
 
@@ -253,6 +262,8 @@ def _run_benchmark_flow(
     story_lane: str,
     title: str,
     candidate_count: int,
+    execution_mode: str = "local_preview",
+    fail_fast_on_budget_exceed: bool = False,
     render_poll_attempts: int,
     render_poll_sec: float,
     layout_template_id: str,
@@ -261,6 +272,7 @@ def _run_benchmark_flow(
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "base_url": base_url.rstrip("/"),
+        "execution_mode": str(execution_mode or "").strip(),
         "layout_template_id": layout_template_id,
         "manuscript_profile_id": manuscript_profile_id,
         "story_lane": story_lane,
@@ -271,6 +283,11 @@ def _run_benchmark_flow(
         "export_success": False,
         "dry_run_success": False,
         "overall_success": False,
+        "layered_package_verified": False,
+        "layered_manifest_path": "",
+        "handoff_validation_path": "",
+        "hard_block_count": 0,
+        "materialized_asset_count": 0,
         "panel_render_benchmarks": [],
     }
     current_step = "bootstrap"
@@ -351,21 +368,42 @@ def _run_benchmark_flow(
         queued_generation_count = 0
         render_asset_count = 0
         selected_panel_asset_count = 0
+        materialized_asset_count = 0
+        remote_job_count = 0
         panel_render_benchmarks: list[dict[str, Any]] = []
         for panel_id in panel_ids:
-            (
-                result,
-                render_duration_sec,
-            ) = _measure_call(
-                comic_smoke._queue_and_select_panel_asset,
-                base_url=base_url,
-                panel_id=panel_id,
-                candidate_count=candidate_count,
-                poll_attempts=render_poll_attempts,
-                poll_sec=render_poll_sec,
-                allow_synthetic_asset_fallback=False,
-            )
-            queue_response, selected_asset, _ = result
+            if execution_mode == DEFAULT_EXECUTION_MODE:
+                (
+                    result,
+                    render_duration_sec,
+                ) = _measure_call(
+                    remote_smoke._queue_and_select_remote_panel_asset,
+                    base_url=base_url,
+                    panel_id=panel_id,
+                    candidate_count=candidate_count,
+                    poll_attempts=render_poll_attempts,
+                    poll_sec=render_poll_sec,
+                )
+                queue_response, selected_asset, render_jobs = result
+                remote_job_count += len(render_jobs)
+                materialized_asset_count += sum(
+                    1 for job in render_jobs if str(job.get("output_path") or "").strip()
+                )
+            else:
+                (
+                    result,
+                    render_duration_sec,
+                ) = _measure_call(
+                    comic_smoke._queue_and_select_panel_asset,
+                    base_url=base_url,
+                    panel_id=panel_id,
+                    candidate_count=candidate_count,
+                    poll_attempts=render_poll_attempts,
+                    poll_sec=render_poll_sec,
+                    allow_synthetic_asset_fallback=False,
+                )
+                queue_response, selected_asset, _ = result
+                materialized_asset_count += 1
             render_assets = comic_smoke._require_list(
                 queue_response.get("render_assets") or [],
                 label=f"comic panel render assets {panel_id}",
@@ -388,27 +426,33 @@ def _run_benchmark_flow(
             summary["queued_generation_count"] = queued_generation_count
             summary["render_asset_count"] = render_asset_count
             summary["selected_panel_asset_count"] = selected_panel_asset_count
+            summary["materialized_asset_count"] = materialized_asset_count
+            summary["remote_job_count"] = remote_job_count
             summary["average_panel_render_duration_sec"] = _average_panel_render_duration(
                 panel_render_benchmarks
             )
             if render_duration_sec > max_panel_render_duration_sec:
-                current_step = "queue_renders_budget_exceeded"
-                summary["render_budget_exceeded_panel_id"] = panel_id
-                summary["render_budget_exceeded_threshold_sec"] = round(
-                    max_panel_render_duration_sec,
-                    3,
-                )
-                summary["render_budget_exceeded_value_sec"] = render_duration_sec
-                raise RuntimeError(
-                    f"Panel {panel_id} render duration {render_duration_sec:.3f}s "
-                    f"exceeded fail-fast budget {max_panel_render_duration_sec:.3f}s"
-                )
+                if not str(summary.get("render_budget_exceeded_panel_id") or "").strip():
+                    summary["render_budget_exceeded_panel_id"] = panel_id
+                    summary["render_budget_exceeded_threshold_sec"] = round(
+                        max_panel_render_duration_sec,
+                        3,
+                    )
+                    summary["render_budget_exceeded_value_sec"] = render_duration_sec
+                if fail_fast_on_budget_exceed:
+                    current_step = "queue_renders_budget_exceeded"
+                    raise RuntimeError(
+                        f"Panel {panel_id} render duration {render_duration_sec:.3f}s "
+                        f"exceeded fail-fast budget {max_panel_render_duration_sec:.3f}s"
+                    )
 
         summary["panel_render_benchmarks"] = panel_render_benchmarks
         summary["queue_renders_success"] = True
         summary["queued_generation_count"] = queued_generation_count
         summary["render_asset_count"] = render_asset_count
         summary["selected_panel_asset_count"] = selected_panel_asset_count
+        summary["materialized_asset_count"] = materialized_asset_count
+        summary["remote_job_count"] = remote_job_count
         summary["average_panel_render_duration_sec"] = _average_panel_render_duration(
             panel_render_benchmarks
         )
@@ -495,12 +539,27 @@ def _run_benchmark_flow(
         )
         summary["production_dry_run_duration_sec"] = duration_sec
         summary["dry_run_success"] = bool(dry_run_summary.get("dry_run_success"))
+        summary["layered_package_verified"] = bool(
+            dry_run_summary.get("layered_package_verified")
+        )
         summary["page_count"] = int(dry_run_summary.get("page_count") or summary["page_count"])
         summary["selected_panel_asset_count"] = int(
             dry_run_summary.get("selected_panel_asset_count")
             or summary["selected_panel_asset_count"]
         )
-        summary["dry_run_report_path"] = dry_run_summary.get("dry_run_report_path")
+        summary["export_zip_path"] = (
+            dry_run_summary.get("export_zip_path") or summary.get("export_zip_path")
+        )
+        summary["layered_manifest_path"] = (
+            dry_run_summary.get("layered_manifest_path") or ""
+        )
+        summary["handoff_validation_path"] = (
+            dry_run_summary.get("handoff_validation_path") or ""
+        )
+        summary["hard_block_count"] = int(dry_run_summary.get("hard_block_count") or 0)
+        summary["dry_run_report_path"] = dry_run_summary.get("report_path") or dry_run_summary.get(
+            "dry_run_report_path"
+        )
 
         summary["total_duration_sec"] = _round_duration(_now_monotonic() - total_started)
         summary["overall_success"] = True
@@ -521,7 +580,16 @@ def main() -> int:
     parser.add_argument("--story-prompt", default=DEFAULT_STORY_PROMPT)
     parser.add_argument("--story-lane", default=DEFAULT_STORY_LANE)
     parser.add_argument("--title", default=DEFAULT_TITLE)
-    parser.add_argument("--candidate-count", type=int, default=3)
+    parser.add_argument("--candidate-count", type=int, default=DEFAULT_CANDIDATE_COUNT)
+    parser.add_argument(
+        "--execution-mode",
+        default=DEFAULT_EXECUTION_MODE,
+        choices=("local_preview", "remote_worker"),
+    )
+    parser.add_argument(
+        "--fail-fast-on-budget-exceed",
+        action="store_true",
+    )
     parser.add_argument(
         "--render-poll-attempts",
         type=int,
@@ -568,6 +636,8 @@ def main() -> int:
             story_lane=args.story_lane,
             title=args.title,
             candidate_count=args.candidate_count,
+            execution_mode=args.execution_mode,
+            fail_fast_on_budget_exceed=args.fail_fast_on_budget_exceed,
             render_poll_attempts=args.render_poll_attempts,
             render_poll_sec=args.render_poll_sec,
             layout_template_id=args.layout_template_id,

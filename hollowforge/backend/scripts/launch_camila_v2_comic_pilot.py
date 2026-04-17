@@ -5,11 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import launch_comic_production_dry_run as comic_dry_run
 from app.services.comic_render_service import select_best_render_asset_for_selection
 
 
@@ -25,6 +31,8 @@ DEFAULT_EXECUTION_MODE = "remote_worker"
 DEFAULT_RENDER_POLL_ATTEMPTS = 420
 DEFAULT_RENDER_POLL_SEC = 1.0
 DEFAULT_PANEL_LIMIT = 1
+DEFAULT_LAYOUT_TEMPLATE_ID = comic_dry_run.DEFAULT_LAYOUT_TEMPLATE_ID
+DEFAULT_MANUSCRIPT_PROFILE_ID = comic_dry_run.DEFAULT_MANUSCRIPT_PROFILE_ID
 
 EXPECTED_CHARACTER_ID = "char_camila_duarte"
 EXPECTED_CHARACTER_VERSION_ID = "charver_camila_duarte_still_v1"
@@ -208,6 +216,49 @@ def _poll_render_job_output_path(
     )
 
 
+def _run_production_dry_run(
+    *,
+    base_url: str,
+    episode_id: str,
+    layout_template_id: str,
+    manuscript_profile_id: str,
+) -> dict[str, Any]:
+    episode_detail, assembly_detail, export_detail = comic_dry_run._ensure_exported_episode(
+        base_url=base_url,
+        episode_id=episode_id,
+        layout_template_id=layout_template_id,
+        manuscript_profile_id=manuscript_profile_id,
+    )
+    selected_panel_assets = comic_dry_run._extract_selected_panel_assets(assembly_detail)
+    export_zip_path = str(export_detail.get("export_zip_path") or "").strip()
+    if not export_zip_path:
+        raise RuntimeError("Comic export detail is missing export_zip_path")
+
+    layered_handoff_summary = comic_dry_run._extract_layered_handoff_summary(export_detail)
+    comic_dry_run._validate_export_zip(export_zip_path, export_detail)
+    report_path = comic_dry_run._write_report(
+        episode_id=episode_id,
+        layout_template_id=layout_template_id,
+        manuscript_profile_id=manuscript_profile_id,
+        episode_detail=episode_detail,
+        assembly_detail=assembly_detail,
+        export_detail=export_detail,
+        selected_panel_assets=selected_panel_assets,
+        layered_handoff_summary=layered_handoff_summary,
+    )
+    return {
+        "dry_run_success": True,
+        "layered_package_verified": True,
+        "selected_panel_asset_count": len(selected_panel_assets),
+        "page_count": len(export_detail.get("pages") or []),
+        "export_zip_path": export_zip_path,
+        "layered_manifest_path": layered_handoff_summary["layered_manifest_path"],
+        "handoff_validation_path": layered_handoff_summary["handoff_validation_path"],
+        "hard_block_count": layered_handoff_summary["hard_block_count"],
+        "report_path": comic_dry_run._relative_data_path(report_path),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -220,6 +271,16 @@ def main() -> int:
     parser.add_argument("--render-poll-attempts", type=int, default=DEFAULT_RENDER_POLL_ATTEMPTS)
     parser.add_argument("--render-poll-sec", type=float, default=DEFAULT_RENDER_POLL_SEC)
     parser.add_argument("--panel-limit", type=int, default=DEFAULT_PANEL_LIMIT)
+    parser.add_argument(
+        "--run-production-dry-run",
+        action="store_true",
+        help="After candidate selection, draft dialogues and verify layered handoff export.",
+    )
+    parser.add_argument("--layout-template-id", default=DEFAULT_LAYOUT_TEMPLATE_ID)
+    parser.add_argument(
+        "--manuscript-profile-id",
+        default=DEFAULT_MANUSCRIPT_PROFILE_ID,
+    )
     parser.add_argument("--character-id", default=EXPECTED_CHARACTER_ID)
     parser.add_argument(
         "--character-version-id",
@@ -240,6 +301,21 @@ def main() -> int:
         "candidate_count": int(args.candidate_count),
         "execution_mode": str(args.execution_mode or "").strip(),
         "panel_limit": int(args.panel_limit),
+        "layout_template_id": str(args.layout_template_id or "").strip(),
+        "manuscript_profile_id": str(args.manuscript_profile_id or "").strip(),
+        "dialogues_success": False,
+        "generated_dialogue_count": 0,
+        "assemble_success": False,
+        "export_success": False,
+        "dry_run_success": False,
+        "layered_package_verified": False,
+        "layered_manifest_path": "",
+        "handoff_validation_path": "",
+        "hard_block_count": 0,
+        "selected_panel_asset_count": 0,
+        "page_count": 0,
+        "export_zip_path": "",
+        "dry_run_report_path": "",
         "selected_render_asset_id": "",
         "selected_render_generation_id": "",
         "selected_scene_panel_id": "",
@@ -331,11 +407,15 @@ def main() -> int:
                     for asset in render_assets
                     if str(asset.get("generation_id") or "").strip()
                 }
+                effective_poll_attempts = max(
+                    int(args.render_poll_attempts or 0),
+                    int(args.render_poll_attempts or 0) * max(1, len(generation_ids)),
+                )
                 _poll_render_job_output_path(
                     base_url=args.base_url,
                     panel_id=panel_id,
                     generation_ids=generation_ids,
-                    poll_attempts=args.render_poll_attempts,
+                    poll_attempts=effective_poll_attempts,
                     poll_sec=args.render_poll_sec,
                 )
                 queue_response = _require_object(
@@ -384,6 +464,60 @@ def main() -> int:
         summary["selected_render_generation_id"] = first_generation_id
         summary["selected_scene_panel_id"] = first_panel_id
         summary["selected_render_asset_storage_path"] = first_storage_path
+
+        if args.run_production_dry_run:
+            current_step = "draft_dialogues"
+            generated_dialogue_count = 0
+            for panel_id in panel_ids:
+                dialogue_response = _require_object(
+                    _request_json(
+                        "POST",
+                        _build_url(
+                            args.base_url,
+                            f"/api/v1/comic/panels/{panel_id}/dialogues/generate",
+                        ),
+                    ),
+                    label=f"comic dialogue generation {panel_id}",
+                )
+                generated_dialogue_count += int(
+                    dialogue_response.get("generated_count") or 0
+                )
+            summary["dialogues_success"] = True
+            summary["generated_dialogue_count"] = generated_dialogue_count
+
+            current_step = "production_dry_run"
+            dry_run_summary = _run_production_dry_run(
+                base_url=args.base_url,
+                episode_id=episode_id,
+                layout_template_id=str(args.layout_template_id or "").strip(),
+                manuscript_profile_id=str(args.manuscript_profile_id or "").strip(),
+            )
+            summary["assemble_success"] = True
+            summary["export_success"] = True
+            summary["dry_run_success"] = bool(dry_run_summary.get("dry_run_success"))
+            summary["layered_package_verified"] = bool(
+                dry_run_summary.get("layered_package_verified")
+            )
+            summary["selected_panel_asset_count"] = int(
+                dry_run_summary.get("selected_panel_asset_count") or 0
+            )
+            summary["page_count"] = int(dry_run_summary.get("page_count") or 0)
+            summary["export_zip_path"] = str(
+                dry_run_summary.get("export_zip_path") or ""
+            ).strip()
+            summary["layered_manifest_path"] = str(
+                dry_run_summary.get("layered_manifest_path") or ""
+            ).strip()
+            summary["handoff_validation_path"] = str(
+                dry_run_summary.get("handoff_validation_path") or ""
+            ).strip()
+            summary["hard_block_count"] = int(
+                dry_run_summary.get("hard_block_count") or 0
+            )
+            summary["dry_run_report_path"] = str(
+                dry_run_summary.get("report_path") or ""
+            ).strip()
+
         summary["overall_success"] = True
         summary["failed_step"] = ""
         return 0

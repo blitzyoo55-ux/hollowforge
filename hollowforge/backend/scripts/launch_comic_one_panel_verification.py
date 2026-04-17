@@ -1,4 +1,4 @@
-"""Run a local-only one-panel comic production verification flow."""
+"""Run a one-panel comic production verification flow against a local backend."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 import launch_comic_mvp_smoke as comic_smoke
 import launch_comic_production_dry_run as comic_dry_run
+import launch_comic_remote_render_smoke as remote_smoke
 from app.models import ComicEpisodeDraft, ComicEpisodeSceneDraft, ComicScenePanelDraft
 from app.services.comic_repository import create_comic_episode_from_draft
 
@@ -29,8 +30,10 @@ DEFAULT_STORY_PROMPT = (
     "{character_name} pauses before the first page turn and checks whether the "
     "handoff-safe composition still reads cleanly."
 )
+DEFAULT_EXECUTION_MODE = remote_smoke.DEFAULT_EXECUTION_MODE
 DEFAULT_LAYOUT_TEMPLATE_ID = "jp_2x2_v1"
 DEFAULT_MANUSCRIPT_PROFILE_ID = "jp_manga_rightbound_v1"
+DEFAULT_CANDIDATE_COUNT = 1
 
 
 def _build_one_panel_verification_draft(
@@ -168,7 +171,12 @@ def main() -> int:
     parser.add_argument("--character-version-id")
     parser.add_argument("--story-prompt", default=DEFAULT_STORY_PROMPT)
     parser.add_argument("--title", default=DEFAULT_TITLE)
-    parser.add_argument("--candidate-count", type=int, default=3)
+    parser.add_argument("--candidate-count", type=int, default=DEFAULT_CANDIDATE_COUNT)
+    parser.add_argument(
+        "--execution-mode",
+        default=DEFAULT_EXECUTION_MODE,
+        choices=("local_preview", "remote_worker"),
+    )
     parser.add_argument("--render-poll-attempts", type=int, default=20)
     parser.add_argument("--render-poll-sec", type=float, default=1.0)
     parser.add_argument("--layout-template-id", default=DEFAULT_LAYOUT_TEMPLATE_ID)
@@ -180,6 +188,7 @@ def main() -> int:
 
     summary: dict[str, Any] = {
         "base_url": args.base_url.rstrip("/"),
+        "execution_mode": str(args.execution_mode or "").strip(),
         "episode_create_success": False,
         "queue_renders_success": False,
         "dialogues_success": False,
@@ -192,6 +201,7 @@ def main() -> int:
         "handoff_validation_path": "",
         "hard_block_count": 0,
         "selected_panel_asset_count": 0,
+        "materialized_asset_count": 0,
     }
     current_step = "bootstrap"
 
@@ -236,14 +246,32 @@ def main() -> int:
         summary["panel_count"] = len(comic_smoke._extract_panel_ids(episode_detail))
 
         current_step = "queue_renders"
-        queue_response, selected_asset, _ = comic_smoke._queue_and_select_panel_asset(
-            base_url=args.base_url,
-            panel_id=panel_id,
-            candidate_count=args.candidate_count,
-            poll_attempts=args.render_poll_attempts,
-            poll_sec=args.render_poll_sec,
-            allow_synthetic_asset_fallback=False,
-        )
+        if args.execution_mode == "remote_worker":
+            queue_response, selected_asset, render_jobs = (
+                remote_smoke._queue_and_select_remote_panel_asset(
+                    base_url=args.base_url,
+                    panel_id=panel_id,
+                    candidate_count=args.candidate_count,
+                    poll_attempts=args.render_poll_attempts,
+                    poll_sec=args.render_poll_sec,
+                )
+            )
+            materialized_asset_count = sum(
+                1
+                for job in render_jobs
+                if str(job.get("output_path") or "").strip()
+                and str(job.get("status") or "").strip().lower() == "completed"
+            )
+        else:
+            queue_response, selected_asset, _ = comic_smoke._queue_and_select_panel_asset(
+                base_url=args.base_url,
+                panel_id=panel_id,
+                candidate_count=args.candidate_count,
+                poll_attempts=args.render_poll_attempts,
+                poll_sec=args.render_poll_sec,
+                allow_synthetic_asset_fallback=False,
+            )
+            materialized_asset_count = 1 if str(selected_asset.get("storage_path") or "").strip() else 0
         render_assets = comic_smoke._require_list(
             queue_response.get("render_assets") or [],
             label=f"comic panel render assets {panel_id}",
@@ -251,6 +279,7 @@ def main() -> int:
         summary["queue_renders_success"] = True
         summary["queued_generation_count"] = int(queue_response.get("queued_generation_count") or 0)
         summary["render_asset_count"] = len(render_assets)
+        summary["materialized_asset_count"] = materialized_asset_count
         summary["selected_panel_asset_count"] = 1
         summary["selected_render_asset_id"] = selected_asset.get("id")
 
