@@ -114,76 +114,84 @@ async def create_comic_verification_run(
 
 
 async def _fetch_latest_run_for_mode(
+    db,
     run_mode: str,
 ) -> ComicVerificationRunResponse | None:
-    async with get_db() as db:
-        cursor = await db.execute(
-            """
-            SELECT
-                id,
-                run_mode,
-                status,
-                overall_success,
-                failure_stage,
-                error_summary,
-                base_url,
-                total_duration_sec,
-                started_at,
-                finished_at,
-                stage_status_json,
-                created_at,
-                updated_at
-            FROM comic_verification_runs
-            WHERE run_mode = ?
-            ORDER BY finished_at DESC, created_at DESC, id DESC
-            LIMIT 1
-            """,
-            (run_mode,),
-        )
-        row = await cursor.fetchone()
+    cursor = await db.execute(
+        """
+        SELECT
+            id,
+            run_mode,
+            status,
+            overall_success,
+            failure_stage,
+            error_summary,
+            base_url,
+            total_duration_sec,
+            started_at,
+            finished_at,
+            stage_status_json,
+            created_at,
+            updated_at
+        FROM comic_verification_runs
+        WHERE run_mode = ?
+        ORDER BY finished_at DESC, created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (run_mode,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None
     return _run_response(cast(dict[str, Any], row))
 
 
+async def _fetch_recent_runs(
+    db,
+    limit: int,
+) -> list[ComicVerificationRunResponse]:
+    cursor = await db.execute(
+        """
+        SELECT
+            id,
+            run_mode,
+            status,
+            overall_success,
+            failure_stage,
+            error_summary,
+            base_url,
+            total_duration_sec,
+            started_at,
+            finished_at,
+            stage_status_json,
+            created_at,
+            updated_at
+        FROM comic_verification_runs
+        ORDER BY finished_at DESC, created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = await cursor.fetchall()
+    return [_run_response(cast(dict[str, Any], row)) for row in rows]
+
+
 async def get_comic_verification_summary(
     limit: int = 10,
 ) -> ComicVerificationSummaryResponse:
-    latest_preflight = await _fetch_latest_run_for_mode("preflight")
-    latest_suite = await _fetch_latest_run_for_mode("suite")
-
-    if limit <= 0:
-        return ComicVerificationSummaryResponse(
-            latest_preflight=latest_preflight,
-            latest_suite=latest_suite,
-        )
-
     async with get_db() as db:
-        cursor = await db.execute(
-            """
-            SELECT
-                id,
-                run_mode,
-                status,
-                overall_success,
-                failure_stage,
-                error_summary,
-                base_url,
-                total_duration_sec,
-                started_at,
-                finished_at,
-                stage_status_json,
-                created_at,
-                updated_at
-            FROM comic_verification_runs
-            ORDER BY finished_at DESC, created_at DESC, id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        rows = await cursor.fetchall()
+        await db.execute("BEGIN")
+        try:
+            latest_preflight = await _fetch_latest_run_for_mode(db, "preflight")
+            latest_suite = await _fetch_latest_run_for_mode(db, "suite")
+            recent_runs = (
+                await _fetch_recent_runs(db, limit) if limit > 0 else []
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
-    recent_runs = [_run_response(cast(dict[str, Any], row)) for row in rows]
     return ComicVerificationSummaryResponse(
         latest_preflight=latest_preflight,
         latest_suite=latest_suite,
