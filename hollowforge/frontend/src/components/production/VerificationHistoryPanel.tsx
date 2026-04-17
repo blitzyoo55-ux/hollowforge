@@ -17,10 +17,10 @@ function formatFinishedAt(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
-function summarizeRun(run: ComicVerificationRunResponse): string {
-  if (run.status === 'completed' && run.overall_success) return 'Completed'
-  if (run.failure_stage) return `Failed at ${run.failure_stage}`
-  return run.status === 'failed' ? 'Failed' : run.status
+function getRunModeLabel(run: ComicVerificationRunResponse): string {
+  if (run.run_mode === 'full_only') return 'full only'
+  if (run.run_mode === 'remote_only') return 'remote only'
+  return run.run_mode
 }
 
 function SummaryRunCard({
@@ -55,6 +55,14 @@ function SummaryRunCard({
       {run ? (
         <dl className="mt-4 grid gap-3 text-sm text-gray-300 sm:grid-cols-2">
           <div>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">Status</dt>
+            <dd className="mt-1 text-gray-100">{run.status}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">Started</dt>
+            <dd className="mt-1 text-gray-100">{formatFinishedAt(run.started_at)}</dd>
+          </div>
+          <div>
             <dt className="text-xs uppercase tracking-wide text-gray-500">Finished</dt>
             <dd className="mt-1 text-gray-100">{formatFinishedAt(run.finished_at)}</dd>
           </div>
@@ -62,23 +70,10 @@ function SummaryRunCard({
             <dt className="text-xs uppercase tracking-wide text-gray-500">Duration</dt>
             <dd className="mt-1 text-gray-100">{formatDuration(run.total_duration_sec)}</dd>
           </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-gray-500">Status</dt>
-            <dd className="mt-1 text-gray-100">{summarizeRun(run)}</dd>
+          <div className="sm:col-span-2">
+            <dt className="text-xs uppercase tracking-wide text-gray-500">Failure Stage</dt>
+            <dd className="mt-1 text-gray-100">{run.failure_stage ?? '—'}</dd>
           </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-gray-500">Base URL</dt>
-            <dd className="mt-1 break-all text-gray-100">{run.base_url}</dd>
-          </div>
-          {run.failure_stage ? (
-            <div className="sm:col-span-2">
-              <dt className="text-xs uppercase tracking-wide text-gray-500">Failure</dt>
-              <dd className="mt-1 text-gray-100">
-                {run.failure_stage}
-                {run.error_summary ? ` - ${run.error_summary}` : ''}
-              </dd>
-            </div>
-          ) : null}
         </dl>
       ) : (
         <p className="mt-3 text-sm text-gray-400">No summary run has been recorded yet.</p>
@@ -102,17 +97,19 @@ function RunsTable({ runs }: { runs: ComicVerificationRunResponse[] }) {
       <table className="min-w-full divide-y divide-gray-800 text-left text-sm">
         <thead className="bg-gray-950/70 text-[11px] uppercase tracking-wide text-gray-500">
           <tr>
-            <th className="px-4 py-3 font-medium">Run Mode</th>
+            <th className="px-4 py-3 font-medium">Started</th>
+            <th className="px-4 py-3 font-medium">Mode</th>
             <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Finished</th>
+            <th className="px-4 py-3 font-medium">Failure Stage</th>
             <th className="px-4 py-3 font-medium">Duration</th>
-            <th className="px-4 py-3 font-medium">Failure</th>
+            <th className="px-4 py-3 font-medium">Error Summary</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800 bg-gray-950/40 text-gray-200">
           {runs.map((run) => (
             <tr key={run.id}>
-              <td className="px-4 py-3 font-medium text-gray-100">{run.run_mode}</td>
+              <td className="px-4 py-3 text-gray-300">{formatFinishedAt(run.started_at)}</td>
+              <td className="px-4 py-3 font-medium text-gray-100">{getRunModeLabel(run)}</td>
               <td className="px-4 py-3">
                 <span
                   className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${
@@ -124,13 +121,9 @@ function RunsTable({ runs }: { runs: ComicVerificationRunResponse[] }) {
                   {run.overall_success ? 'Pass' : 'Fail'}
                 </span>
               </td>
-              <td className="px-4 py-3 text-gray-300">{formatFinishedAt(run.finished_at)}</td>
+              <td className="px-4 py-3 text-gray-300">{run.failure_stage ?? '—'}</td>
               <td className="px-4 py-3 text-gray-300">{formatDuration(run.total_duration_sec)}</td>
-              <td className="px-4 py-3 text-gray-300">
-                {run.failure_stage
-                  ? `${run.failure_stage}${run.error_summary ? ` - ${run.error_summary}` : ''}`
-                  : '—'}
-              </td>
+              <td className="px-4 py-3 text-gray-300">{run.error_summary ?? '—'}</td>
             </tr>
           ))}
         </tbody>
