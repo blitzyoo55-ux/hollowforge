@@ -1,15 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 import {
   createProductionWork,
+  getProductionComicVerificationSummary,
   listProductionEpisodes,
   listProductionSeries,
   listProductionWorks,
 } from '../api/client'
 import type {
+  ComicVerificationRunResponse,
+  ComicVerificationSummaryResponse,
   ProductionEpisodeDetailResponse,
   ProductionSeriesResponse,
   ProductionWorkResponse,
@@ -20,6 +23,7 @@ vi.mock('../api/client', () => ({
   listProductionEpisodes: vi.fn(),
   listProductionWorks: vi.fn(),
   listProductionSeries: vi.fn(),
+  getProductionComicVerificationSummary: vi.fn(),
   createProductionWork: vi.fn(),
   createProductionSeries: vi.fn(),
   createProductionEpisode: vi.fn(),
@@ -97,6 +101,41 @@ function buildSeries(overrides: Partial<ProductionSeriesResponse> = {}): Product
   }
 }
 
+function buildVerificationRun(overrides: Partial<ComicVerificationRunResponse> = {}): ComicVerificationRunResponse {
+  return {
+    id: 'run-1',
+    run_mode: 'preflight',
+    status: 'completed',
+    overall_success: true,
+    failure_stage: null,
+    error_summary: null,
+    base_url: 'http://127.0.0.1:8000',
+    total_duration_sec: 2.345,
+    started_at: '2026-04-17T00:00:00+00:00',
+    finished_at: '2026-04-17T00:00:02+00:00',
+    stage_status: {},
+    created_at: '2026-04-17T00:00:02+00:00',
+    updated_at: '2026-04-17T00:00:02+00:00',
+    ...overrides,
+  }
+}
+
+function buildVerificationSummary(
+  overrides: Partial<ComicVerificationSummaryResponse> = {},
+): ComicVerificationSummaryResponse {
+  return {
+    latest_preflight: null,
+    latest_suite: null,
+    recent_runs: [],
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  vi.mocked(getProductionComicVerificationSummary).mockReset()
+  vi.mocked(getProductionComicVerificationSummary).mockResolvedValue(buildVerificationSummary())
+})
+
 test('renders production episodes with comic and animation track state', async () => {
   vi.mocked(listProductionWorks).mockResolvedValue([])
   vi.mocked(listProductionSeries).mockResolvedValue([])
@@ -146,10 +185,67 @@ test('renders verification ops above the creation forms', async () => {
 
   expect(await screen.findByRole('heading', { name: /Verification Ops/i })).toBeInTheDocument()
   expect(screen.getByText(/Run Comic Verification Suite/i)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /Verification History/i })).toBeInTheDocument()
 
   const opsHeading = screen.getByRole('heading', { name: /Verification Ops/i })
+  const historyHeading = screen.getByRole('heading', { name: /Verification History/i })
   const workHeading = screen.getByRole('heading', { name: /Create Production Work/i })
   expect(opsHeading.compareDocumentPosition(workHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(opsHeading.compareDocumentPosition(historyHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+test('renders verification history summary cards and recent runs', async () => {
+  vi.mocked(listProductionWorks).mockResolvedValue([])
+  vi.mocked(listProductionSeries).mockResolvedValue([])
+  vi.mocked(listProductionEpisodes).mockResolvedValue([])
+  vi.mocked(getProductionComicVerificationSummary).mockResolvedValue(
+    buildVerificationSummary({
+      latest_preflight: buildVerificationRun({
+        id: 'preflight-1',
+        run_mode: 'preflight',
+        overall_success: true,
+      }),
+      latest_suite: buildVerificationRun({
+        id: 'suite-1',
+        run_mode: 'suite',
+        status: 'failed',
+        overall_success: false,
+        failure_stage: 'full',
+        error_summary: 'stage full exited with code 1',
+      }),
+      recent_runs: [
+        buildVerificationRun({
+          id: 'suite-1',
+          run_mode: 'suite',
+          status: 'failed',
+          overall_success: false,
+          failure_stage: 'full',
+          error_summary: 'stage full exited with code 1',
+        }),
+        buildVerificationRun({
+          id: 'preflight-1',
+          run_mode: 'preflight',
+          overall_success: true,
+        }),
+      ],
+    }),
+  )
+
+  renderPage()
+
+  expect(await screen.findByRole('heading', { name: /Verification History/i })).toBeInTheDocument()
+  const preflightHeading = await screen.findByText('Latest Preflight')
+  const preflightCard = preflightHeading.closest('article')
+  expect(preflightCard).not.toBeNull()
+  expect(within(preflightCard as HTMLElement).getByText('preflight')).toBeInTheDocument()
+
+  const suiteHeading = screen.getByText('Latest Suite')
+  const suiteCard = suiteHeading.closest('article')
+  expect(suiteCard).not.toBeNull()
+  expect(within(suiteCard as HTMLElement).getByText('suite')).toBeInTheDocument()
+  expect(within(suiteCard as HTMLElement).getByText(/stage full exited with code 1/i)).toBeInTheDocument()
+
+  expect(screen.getByRole('columnheader', { name: /Run Mode/i })).toBeInTheDocument()
 })
 
 test('submits production work without requiring a raw id field', async () => {

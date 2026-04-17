@@ -18,6 +18,7 @@ import EmptyState from '../components/EmptyState'
 import ProductionEpisodeForm from '../components/production/ProductionEpisodeForm'
 import ProductionSeriesForm from '../components/production/ProductionSeriesForm'
 import ProductionWorkForm from '../components/production/ProductionWorkForm'
+import VerificationHistoryPanel from '../components/production/VerificationHistoryPanel'
 import VerificationOpsCard from '../components/production/VerificationOpsCard'
 import { buildProductionTrackHref } from '../lib/productionEntry'
 import { notify } from '../lib/toast'
@@ -205,6 +206,8 @@ export default function ProductionHub() {
       </section>
 
       <VerificationOpsCard />
+
+      <VerificationHistoryPanel />
 
       <section className="grid gap-6 xl:grid-cols-3">
         <ProductionWorkForm
