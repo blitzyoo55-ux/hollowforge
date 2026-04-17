@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.models import (
     ComicVerificationRunCreate,
@@ -124,12 +124,5 @@ async def create_comic_verification_run_endpoint(
     "/comic-verification/summary",
     response_model=ComicVerificationSummaryResponse,
 )
-async def get_comic_verification_summary_endpoint(
-    request: Request,
-) -> ComicVerificationSummaryResponse:
-    if "limit" in request.query_params:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="comic verification summary does not support limit",
-        )
+async def get_comic_verification_summary_endpoint() -> ComicVerificationSummaryResponse:
     return await get_comic_verification_summary(limit=5)
