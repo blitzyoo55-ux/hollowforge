@@ -880,9 +880,13 @@ async def test_build_remote_render_job_request_json_includes_reference_guided_st
         "camila_v2_establish_anchor_face.png",
         "camila_v2_establish_anchor_halfbody.png",
     ]
-    assert request_json["ipadapter_weight"] == pytest.approx(0.35)
-    assert request_json["ipadapter_start_at"] == pytest.approx(0.62)
-    assert request_json["ipadapter_end_at"] == pytest.approx(0.95)
+    assert request_json["adapter_profile"] == "plus_face"
+    assert request_json["repair_enabled"] is True
+    assert request_json["repair_denoise"] == pytest.approx(0.28)
+    assert request_json["repair_strength"] == pytest.approx(0.82)
+    assert request_json["ipadapter_weight"] == pytest.approx(0.92)
+    assert request_json["ipadapter_start_at"] == pytest.approx(0.0)
+    assert request_json["ipadapter_end_at"] == pytest.approx(1.0)
     assert request_json["still_generation"]["prompt"] == "panel prompt"
     assert request_json["still_generation"]["checkpoint"] == "akiumLumenILLBase_baseV2.safetensors"
     assert request_json["comic"]["character_version_id"] == "charver_camila_v2_still_v1"
@@ -919,6 +923,10 @@ async def test_build_remote_render_job_request_json_keeps_text_only_fallback_wit
 
     assert request_json["backend_family"] == "sdxl_still"
     assert "reference_images" not in request_json
+    assert "adapter_profile" not in request_json
+    assert "repair_enabled" not in request_json
+    assert "repair_denoise" not in request_json
+    assert "repair_strength" not in request_json
     assert "ipadapter_weight" not in request_json
     assert "ipadapter_start_at" not in request_json
     assert "ipadapter_end_at" not in request_json

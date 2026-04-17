@@ -64,9 +64,47 @@ _RENDER_ASSET_SELECT_COLUMNS = """
     a.updated_at
 """
 
-_REFERENCE_GUIDED_IPADAPTER_WEIGHT = 0.35
-_REFERENCE_GUIDED_IPADAPTER_START_AT = 0.62
-_REFERENCE_GUIDED_IPADAPTER_END_AT = 0.95
+def _reference_guided_ipadapter_weight() -> float:
+    return max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_WEIGHT))
+
+
+def _reference_guided_ipadapter_start_at() -> float:
+    return min(
+        1.0,
+        max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_START_AT)),
+    )
+
+
+def _reference_guided_ipadapter_end_at() -> float:
+    return min(
+        1.0,
+        max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_IPADAPTER_END_AT)),
+    )
+
+
+def _reference_guided_repair_adapter_profile() -> str:
+    value = str(
+        settings.HOLLOWFORGE_REFERENCE_GUIDED_REPAIR_ADAPTER_PROFILE or "plus_face"
+    ).strip()
+    return value or "plus_face"
+
+
+def _reference_guided_repair_enabled() -> bool:
+    return bool(settings.HOLLOWFORGE_REFERENCE_GUIDED_REPAIR_ENABLED)
+
+
+def _reference_guided_repair_denoise() -> float:
+    return min(
+        1.0,
+        max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_REPAIR_DENOISE)),
+    )
+
+
+def _reference_guided_repair_strength() -> float:
+    return min(
+        1.0,
+        max(0.0, float(settings.HOLLOWFORGE_REFERENCE_GUIDED_REPAIR_STRENGTH)),
+    )
 
 
 def _now_iso() -> str:
@@ -258,13 +296,23 @@ def _resolve_reference_guided_still_request_metadata(
             "Reference-guided comic render request missing reference_images"
         )
 
-    return {
+    metadata = {
         "backend_family": still_backend_family,
         "reference_images": reference_images,
-        "ipadapter_weight": _REFERENCE_GUIDED_IPADAPTER_WEIGHT,
-        "ipadapter_start_at": _REFERENCE_GUIDED_IPADAPTER_START_AT,
-        "ipadapter_end_at": _REFERENCE_GUIDED_IPADAPTER_END_AT,
+        "adapter_profile": _reference_guided_repair_adapter_profile(),
+        "ipadapter_weight": _reference_guided_ipadapter_weight(),
+        "ipadapter_start_at": _reference_guided_ipadapter_start_at(),
+        "ipadapter_end_at": _reference_guided_ipadapter_end_at(),
     }
+    if _reference_guided_repair_enabled():
+        metadata.update(
+            {
+                "repair_enabled": True,
+                "repair_denoise": _reference_guided_repair_denoise(),
+                "repair_strength": _reference_guided_repair_strength(),
+            }
+        )
+    return metadata
 
 
 async def _load_panel_render_context(panel_id: str) -> dict[str, Any]:
@@ -1651,9 +1699,9 @@ def _build_generation_request(context: dict[str, Any]) -> GenerationCreate:
             context["still_backend_family"] = str(
                 execution_params["still_backend_family"]
             )
-            context["ipadapter_weight"] = _REFERENCE_GUIDED_IPADAPTER_WEIGHT
-            context["ipadapter_start_at"] = _REFERENCE_GUIDED_IPADAPTER_START_AT
-            context["ipadapter_end_at"] = _REFERENCE_GUIDED_IPADAPTER_END_AT
+            context["ipadapter_weight"] = _reference_guided_ipadapter_weight()
+            context["ipadapter_start_at"] = _reference_guided_ipadapter_start_at()
+            context["ipadapter_end_at"] = _reference_guided_ipadapter_end_at()
         story_prompt_fragments = _build_panel_story_prompt_sentences(
             context,
             profile=profile,
