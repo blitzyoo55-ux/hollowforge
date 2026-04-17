@@ -101,6 +101,19 @@ async def test_comic_and_sequence_tables_expose_production_link_columns(temp_db)
 
 
 @pytest.mark.asyncio
+async def test_comic_verification_run_table_exists(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "comic_verification_runs" in table_names
+
+
+@pytest.mark.asyncio
 async def test_comic_episodes_enforce_unique_production_episode_link(temp_db) -> None:
     await init_db()
     await create_comic_episode(
