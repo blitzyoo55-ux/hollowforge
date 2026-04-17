@@ -25,6 +25,7 @@ from app.executors import ComfyUILTXVExecutorAdapter
 from app.models import HollowForgeCallbackPayload, WorkerJobCreate
 from app.workflows import (
     SDXLStillRequest,
+    build_sdxl_ipadapter_still_repair_workflow,
     build_sdxl_ipadapter_still_workflow,
     build_sdxl_still_workflow,
     parse_sdxl_ipadapter_still_payload,
@@ -751,6 +752,13 @@ def test_reference_guided_still_payload_parses_nested_still_generation_and_refer
                 "prompt": "panel prompt",
                 "negative_prompt": "bad anatomy",
                 "checkpoint": "comic-checkpoint.safetensors",
+                "loras": [
+                    {"filename": "DetailedEyes_V3.safetensors", "strength": 0.45},
+                    {
+                        "filename": "Face_Enhancer_Illustrious.safetensors",
+                        "strength": 0.36,
+                    },
+                ],
                 "seed": 77,
                 "width": 1216,
                 "height": 960,
@@ -758,6 +766,7 @@ def test_reference_guided_still_payload_parses_nested_still_generation_and_refer
                 "cfg": 5.4,
                 "sampler": "euler_ancestral",
                 "scheduler": "normal",
+                "clip_skip": 2,
             },
         },
         default_prompt="fallback prompt",
@@ -776,6 +785,7 @@ def test_reference_guided_still_payload_parses_nested_still_generation_and_refer
     assert request.height == 960
     assert request.steps == 30
     assert request.cfg == pytest.approx(5.4)
+    assert request.denoise == pytest.approx(1.0)
     assert request.ipadapter_weight == pytest.approx(0.92)
     assert request.ipadapter_start_at == pytest.approx(0.1)
     assert request.ipadapter_end_at == pytest.approx(0.9)
@@ -789,10 +799,34 @@ def test_reference_guided_still_payload_parses_nested_still_generation_and_refer
     assert workflow[save_node_id]["class_type"] == "SaveImage"
     assert not any(node["class_type"] == "SaveVideo" for node in workflow.values())
     assert sum(1 for node in workflow.values() if node["class_type"] == "LoadImage") == 2
+    assert sum(1 for node in workflow.values() if node["class_type"] == "EmptyLatentImage") == 1
+    assert not any(node["class_type"] == "VAEEncode" for node in workflow.values())
+    assert not any(node["class_type"] == "ImageScale" for node in workflow.values())
+    text_nodes = [
+        node for node in workflow.values() if node["class_type"] == "CLIPTextEncodeSDXL"
+    ]
+    assert len(text_nodes) == 2
+    for node in text_nodes:
+        assert node["inputs"]["width"] == 1216
+        assert node["inputs"]["height"] == 960
+        assert node["inputs"]["target_width"] == 1216
+        assert node["inputs"]["target_height"] == 960
     assert (
         sum(1 for node in workflow.values() if node["class_type"] == "IPAdapterAdvanced")
         == 2
     )
+    sampler_nodes = [
+        node for node in workflow.values() if node["class_type"] == "KSampler"
+    ]
+    assert len(sampler_nodes) == 1
+    assert sampler_nodes[0]["inputs"]["denoise"] == pytest.approx(1.0)
+    lora_nodes = [node for node in workflow.values() if node["class_type"] == "LoraLoader"]
+    assert len(lora_nodes) == 2
+    clip_skip_nodes = [
+        node for node in workflow.values() if node["class_type"] == "CLIPSetLastLayer"
+    ]
+    assert len(clip_skip_nodes) == 1
+    assert clip_skip_nodes[0]["inputs"]["stop_at_clip_layer"] == -2
 
 
 def test_reference_guided_still_payload_resolves_plus_face_adapter_profile(
@@ -847,6 +881,181 @@ def test_reference_guided_still_payload_rejects_unknown_adapter_profile() -> Non
             default_prompt="fallback prompt",
             default_checkpoint="fallback-checkpoint.safetensors",
         )
+
+
+def test_reference_guided_still_payload_parses_repair_enabled_fields() -> None:
+    request, reference_images = parse_sdxl_ipadapter_still_payload(
+        {
+            "backend_family": "sdxl_ipadapter_still",
+            "adapter_profile": "plus_face",
+            "repair_enabled": True,
+            "repair_denoise": 0.28,
+            "repair_strength": 0.82,
+            "reference_images": [
+                "camila_v2_establish_anchor_hero.png",
+            ],
+            "still_generation": {
+                "prompt": "panel prompt",
+                "checkpoint": "comic-checkpoint.safetensors",
+            },
+        },
+        default_prompt="fallback prompt",
+        default_checkpoint="fallback-checkpoint.safetensors",
+    )
+
+    assert reference_images == ("camila_v2_establish_anchor_hero.png",)
+    assert request.adapter_profile == "plus_face"
+    assert request.repair_enabled is True
+    assert request.repair_denoise == pytest.approx(0.28)
+    assert request.repair_strength == pytest.approx(0.82)
+
+
+def test_build_sdxl_ipadapter_still_repair_workflow_uses_img2img_latent_path() -> None:
+    request, reference_images = parse_sdxl_ipadapter_still_payload(
+        {
+            "backend_family": "sdxl_ipadapter_still",
+            "adapter_profile": "plus_face",
+            "repair_enabled": True,
+            "repair_denoise": 0.28,
+            "repair_strength": 0.82,
+            "reference_images": [
+                "camila_v2_establish_anchor_hero.png",
+            ],
+            "still_generation": {
+                "prompt": "panel prompt",
+                "checkpoint": "comic-checkpoint.safetensors",
+                "width": 1216,
+                "height": 960,
+            },
+        },
+        default_prompt="fallback prompt",
+        default_checkpoint="fallback-checkpoint.safetensors",
+    )
+
+    workflow, save_node_id = build_sdxl_ipadapter_still_repair_workflow(
+        uploaded_source_image_name="worker-job-source.png",
+        uploaded_reference_image_names=reference_images,
+        request=request,
+        filename_prefix="lab451_animation_worker/worker-job-repair",
+    )
+
+    assert workflow[save_node_id]["class_type"] == "SaveImage"
+    assert sum(1 for node in workflow.values() if node["class_type"] == "LoadImage") == 2
+    assert sum(1 for node in workflow.values() if node["class_type"] == "VAEEncode") == 1
+    assert sum(1 for node in workflow.values() if node["class_type"] == "IPAdapterAdvanced") == 1
+    sampler_nodes = [
+        node for node in workflow.values() if node["class_type"] == "KSampler"
+    ]
+    assert len(sampler_nodes) == 1
+    assert sampler_nodes[0]["inputs"]["denoise"] == pytest.approx(0.28)
+
+
+def test_reference_guided_repair_still_routes_to_source_image_repair_workflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL",
+        "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+        raising=False,
+    )
+    adapter = ComfyUILTXVExecutorAdapter(
+        inputs_dir=tmp_path / "inputs",
+        outputs_dir=tmp_path / "outputs",
+        public_base_url="https://worker.test",
+        comfyui_url="https://comfy.example",
+    )
+    fake_client = FakeComfyUIClient()
+    adapter._client = fake_client
+
+    async def fake_get_ipadapter_models() -> list[str]:
+        return [
+            "ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors",
+            "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+        ]
+
+    fake_client.get_ipadapter_models = fake_get_ipadapter_models  # type: ignore[method-assign]
+
+    download_calls: list[tuple[str, str, str | None]] = []
+
+    async def fake_download_source_image(
+        worker_job_id: str,
+        source_image_url: str,
+        *,
+        callback_url: str | None = None,
+    ) -> Path:
+        download_calls.append((worker_job_id, source_image_url, callback_url))
+        local_path = tmp_path / "inputs" / f"{worker_job_id}.png"
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(f"image:{worker_job_id}".encode("utf-8"))
+        return local_path
+
+    adapter._download_source_image = fake_download_source_image  # type: ignore[method-assign]
+
+    row = {
+        "id": "worker-job-repair-guided",
+        "target_tool": "comic_panel_still",
+        "source_image_url": "https://sec.hlfglll.com/data/outputs/base_panel.png",
+        "callback_url": "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        "generation_metadata": json.dumps(
+            {
+                "prompt": "fallback prompt",
+                "checkpoint": "comic-checkpoint.safetensors",
+            }
+        ),
+        "request_json": json.dumps(
+            {
+                "backend_family": "sdxl_ipadapter_still",
+                "model_profile": "comic_panel_sdxl_v1",
+                "adapter_profile": "plus_face",
+                "repair_enabled": True,
+                "repair_denoise": 0.28,
+                "repair_strength": 0.82,
+                "reference_images": [
+                    "camila_v2_establish_anchor_hero.png",
+                ],
+                "still_generation": {
+                    "prompt": "panel prompt",
+                    "negative_prompt": "bad anatomy",
+                    "checkpoint": "comic-checkpoint.safetensors",
+                    "width": 1216,
+                    "height": 960,
+                    "steps": 30,
+                    "cfg": 5.4,
+                    "seed": 77,
+                    "sampler": "euler_ancestral",
+                    "scheduler": "normal",
+                },
+            }
+        ),
+    }
+
+    submission = asyncio.run(adapter.submit(row))
+
+    assert submission.external_job_id == "prompt-123"
+    assert download_calls == [
+        (
+            "worker-job-repair-guided_reference_00",
+            "https://sec.hlfglll.com/data/outputs/camila_v2_establish_anchor_hero.png",
+            "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        ),
+        (
+            "worker-job-repair-guided",
+            "https://sec.hlfglll.com/data/outputs/base_panel.png",
+            "https://sec.hlfglll.com/api/v1/comic/render-jobs/comic-job-1/callback",
+        ),
+    ]
+    assert "VAEEncode" in fake_client.requested_nodes
+    workflow = fake_client.submitted_workflows[0]
+    assert sum(1 for node in workflow.values() if node["class_type"] == "LoadImage") == 2
+    assert sum(1 for node in workflow.values() if node["class_type"] == "VAEEncode") == 1
+    assert sum(1 for node in workflow.values() if node["class_type"] == "IPAdapterAdvanced") == 1
+    sampler_nodes = [
+        node for node in workflow.values() if node["class_type"] == "KSampler"
+    ]
+    assert len(sampler_nodes) == 1
+    assert sampler_nodes[0]["inputs"]["denoise"] == pytest.approx(0.28)
 
 
 def test_render_video_from_frames_uses_configured_ffmpeg_binary(

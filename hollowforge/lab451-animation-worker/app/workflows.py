@@ -27,10 +27,9 @@ LTXV_REQUIRED_NODES = (
 )
 SDXL_IPADAPTER_REQUIRED_NODES = (
     "LoadImage",
-    "ImageScale",
     "CheckpointLoaderSimple",
-    "CLIPTextEncode",
-    "VAEEncode",
+    "CLIPTextEncodeSDXL",
+    "EmptyLatentImage",
     "IPAdapterModelLoader",
     "CLIPVisionLoader",
     "IPAdapterAdvanced",
@@ -271,6 +270,8 @@ class SDXLIPAdapterRequest:
     sampler_name: str
     scheduler: str
     checkpoint_name: str
+    clip_skip: int
+    loras: list[dict[str, Any]]
     adapter_profile: str
     ipadapter_file: str
     clip_vision_name: str
@@ -284,6 +285,9 @@ class SDXLIPAdapterRequest:
     keyframes: int
     fps: float
     micro_motion_plan: list[tuple[str, float]]
+    repair_enabled: bool
+    repair_denoise: float
+    repair_strength: float
 
     @classmethod
     def from_payload(
@@ -320,6 +324,8 @@ class SDXLIPAdapterRequest:
             sampler_name=str(payload.get("sampler_name") or "dpmpp_2m").strip() or "dpmpp_2m",
             scheduler=str(payload.get("scheduler") or "karras").strip() or "karras",
             checkpoint_name=checkpoint_name,
+            clip_skip=max(1, _int_value(payload.get("clip_skip"), 1)),
+            loras=_parse_loras(payload.get("loras")),
             adapter_profile=adapter_profile,
             ipadapter_file=_resolve_ipadapter_file_for_profile(payload, adapter_profile),
             clip_vision_name=str(
@@ -341,6 +347,9 @@ class SDXLIPAdapterRequest:
                 payload.get("micro_motion_plan"),
                 base_denoise=min(1.0, max(0.0, _float_value(payload.get("denoise"), 0.12))),
             ),
+            repair_enabled=bool(payload.get("repair_enabled")),
+            repair_denoise=min(1.0, max(0.0, _float_value(payload.get("repair_denoise"), 0.28))),
+            repair_strength=min(1.0, max(0.0, _float_value(payload.get("repair_strength"), 0.82))),
         )
 
 
@@ -419,6 +428,10 @@ def parse_sdxl_ipadapter_still_payload(
         merged_payload["checkpoint_name"] = merged_payload["checkpoint"]
     if "sampler_name" not in merged_payload and merged_payload.get("sampler"):
         merged_payload["sampler_name"] = merged_payload["sampler"]
+    if "denoise" not in merged_payload:
+        # Still generation starts from an empty latent canvas rather than img2img latent reuse,
+        # so the video-oriented low denoise default produces washed-out or nearly blank frames.
+        merged_payload["denoise"] = 1.0
 
     request = SDXLIPAdapterRequest.from_payload(
         merged_payload,
@@ -714,22 +727,67 @@ def build_sdxl_ipadapter_still_workflow(
     }
     next_node += 1
 
+    model_ref: list[Any] = [checkpoint_node, 0]
+    clip_ref: list[Any] = [checkpoint_node, 1]
+
+    for lora in request.loras:
+        lora_node = str(next_node)
+        workflow[lora_node] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": model_ref,
+                "clip": clip_ref,
+                "lora_name": lora["filename"],
+                "strength_model": lora["strength"],
+                "strength_clip": lora["strength"],
+            },
+        }
+        model_ref = [lora_node, 0]
+        clip_ref = [lora_node, 1]
+        next_node += 1
+
+    if request.clip_skip > 1:
+        clip_skip_node = str(next_node)
+        workflow[clip_skip_node] = {
+            "class_type": "CLIPSetLastLayer",
+            "inputs": {
+                "stop_at_clip_layer": -request.clip_skip,
+                "clip": clip_ref,
+            },
+        }
+        clip_ref = [clip_skip_node, 0]
+        next_node += 1
+
     positive_node = str(next_node)
     workflow[positive_node] = {
-        "class_type": "CLIPTextEncode",
+        "class_type": "CLIPTextEncodeSDXL",
         "inputs": {
-            "text": request.prompt,
-            "clip": [checkpoint_node, 1],
+            "clip": clip_ref,
+            "width": request.width,
+            "height": request.height,
+            "crop_w": 0,
+            "crop_h": 0,
+            "target_width": request.width,
+            "target_height": request.height,
+            "text_g": request.prompt,
+            "text_l": request.prompt,
         },
     }
     next_node += 1
 
     negative_node = str(next_node)
     workflow[negative_node] = {
-        "class_type": "CLIPTextEncode",
+        "class_type": "CLIPTextEncodeSDXL",
         "inputs": {
-            "text": request.negative_prompt,
-            "clip": [checkpoint_node, 1],
+            "clip": clip_ref,
+            "width": request.width,
+            "height": request.height,
+            "crop_w": 0,
+            "crop_h": 0,
+            "target_width": request.width,
+            "target_height": request.height,
+            "text_g": request.negative_prompt,
+            "text_l": request.negative_prompt,
         },
     }
     next_node += 1
@@ -752,9 +810,6 @@ def build_sdxl_ipadapter_still_workflow(
     }
     next_node += 1
 
-    model_ref: list[Any] = [checkpoint_node, 0]
-    latent_image_ref: list[Any] | None = None
-
     for image_name in image_names:
         load_node = str(next_node)
         workflow[load_node] = {
@@ -765,29 +820,13 @@ def build_sdxl_ipadapter_still_workflow(
         }
         next_node += 1
 
-        scale_node = str(next_node)
-        workflow[scale_node] = {
-            "class_type": "ImageScale",
-            "inputs": {
-                "image": [load_node, 0],
-                "upscale_method": request.upscale_method,
-                "width": request.width,
-                "height": request.height,
-                "crop": request.crop,
-            },
-        }
-        next_node += 1
-
-        if latent_image_ref is None:
-            latent_image_ref = [scale_node, 0]
-
         adapter_node = str(next_node)
         workflow[adapter_node] = {
             "class_type": "IPAdapterAdvanced",
             "inputs": {
                 "model": model_ref,
                 "ipadapter": [ipadapter_loader_node, 0],
-                "image": [scale_node, 0],
+                "image": [load_node, 0],
                 "weight": request.ipadapter_weight,
                 "weight_type": request.ipadapter_weight_type,
                 "combine_embeds": "concat",
@@ -800,14 +839,13 @@ def build_sdxl_ipadapter_still_workflow(
         model_ref = [adapter_node, 0]
         next_node += 1
 
-    assert latent_image_ref is not None
-
     latent_node = str(next_node)
     workflow[latent_node] = {
-        "class_type": "VAEEncode",
+        "class_type": "EmptyLatentImage",
         "inputs": {
-            "pixels": latent_image_ref,
-            "vae": [checkpoint_node, 2],
+            "width": request.width,
+            "height": request.height,
+            "batch_size": 1,
         },
     }
     next_node += 1
@@ -826,6 +864,176 @@ def build_sdxl_ipadapter_still_workflow(
             "negative": [negative_node, 0],
             "latent_image": [latent_node, 0],
             "denoise": request.denoise,
+        },
+    }
+    next_node += 1
+
+    decode_node = str(next_node)
+    workflow[decode_node] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [sampler_node, 0],
+            "vae": [checkpoint_node, 2],
+        },
+    }
+    next_node += 1
+
+    save_node = str(next_node)
+    workflow[save_node] = {
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": [decode_node, 0],
+            "filename_prefix": filename_prefix,
+        },
+    }
+    return workflow, save_node
+
+
+def build_sdxl_ipadapter_still_repair_workflow(
+    *,
+    uploaded_source_image_name: str,
+    uploaded_reference_image_names: list[str] | tuple[str, ...],
+    request: SDXLIPAdapterRequest,
+    filename_prefix: str,
+) -> tuple[dict[str, Any], str]:
+    source_image_name = str(uploaded_source_image_name).strip()
+    if not source_image_name:
+        raise ValueError("Repair workflow requires an uploaded source image")
+    reference_image_names = tuple(
+        str(item).strip() for item in uploaded_reference_image_names if str(item).strip()
+    )
+    if not reference_image_names:
+        raise ValueError("Repair workflow requires at least one uploaded reference image")
+
+    workflow: dict[str, Any] = {}
+    next_node = 1
+
+    checkpoint_node = str(next_node)
+    workflow[checkpoint_node] = {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+            "ckpt_name": request.checkpoint_name,
+        },
+    }
+    next_node += 1
+
+    model_ref: list[Any] = [checkpoint_node, 0]
+    clip_ref: list[Any] = [checkpoint_node, 1]
+
+    positive_node = str(next_node)
+    workflow[positive_node] = {
+        "class_type": "CLIPTextEncodeSDXL",
+        "inputs": {
+            "clip": clip_ref,
+            "width": request.width,
+            "height": request.height,
+            "crop_w": 0,
+            "crop_h": 0,
+            "target_width": request.width,
+            "target_height": request.height,
+            "text_g": request.prompt,
+            "text_l": request.prompt,
+        },
+    }
+    next_node += 1
+
+    negative_node = str(next_node)
+    workflow[negative_node] = {
+        "class_type": "CLIPTextEncodeSDXL",
+        "inputs": {
+            "clip": clip_ref,
+            "width": request.width,
+            "height": request.height,
+            "crop_w": 0,
+            "crop_h": 0,
+            "target_width": request.width,
+            "target_height": request.height,
+            "text_g": request.negative_prompt,
+            "text_l": request.negative_prompt,
+        },
+    }
+    next_node += 1
+
+    ipadapter_loader_node = str(next_node)
+    workflow[ipadapter_loader_node] = {
+        "class_type": "IPAdapterModelLoader",
+        "inputs": {
+            "ipadapter_file": request.ipadapter_file,
+        },
+    }
+    next_node += 1
+
+    clip_vision_loader_node = str(next_node)
+    workflow[clip_vision_loader_node] = {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {
+            "clip_name": request.clip_vision_name,
+        },
+    }
+    next_node += 1
+
+    source_node = str(next_node)
+    workflow[source_node] = {
+        "class_type": "LoadImage",
+        "inputs": {
+            "image": source_image_name,
+        },
+    }
+    next_node += 1
+
+    for image_name in reference_image_names:
+        load_node = str(next_node)
+        workflow[load_node] = {
+            "class_type": "LoadImage",
+            "inputs": {
+                "image": image_name,
+            },
+        }
+        next_node += 1
+
+        adapter_node = str(next_node)
+        workflow[adapter_node] = {
+            "class_type": "IPAdapterAdvanced",
+            "inputs": {
+                "model": model_ref,
+                "ipadapter": [ipadapter_loader_node, 0],
+                "image": [load_node, 0],
+                "weight": request.repair_strength,
+                "weight_type": request.ipadapter_weight_type,
+                "combine_embeds": "concat",
+                "start_at": request.ipadapter_start_at,
+                "end_at": request.ipadapter_end_at,
+                "embeds_scaling": request.embeds_scaling,
+                "clip_vision": [clip_vision_loader_node, 0],
+            },
+        }
+        model_ref = [adapter_node, 0]
+        next_node += 1
+
+    latent_node = str(next_node)
+    workflow[latent_node] = {
+        "class_type": "VAEEncode",
+        "inputs": {
+            "pixels": [source_node, 0],
+            "vae": [checkpoint_node, 2],
+        },
+    }
+    next_node += 1
+
+    sampler_node = str(next_node)
+    workflow[sampler_node] = {
+        "class_type": "KSampler",
+        "inputs": {
+            "model": model_ref,
+            "seed": request.seed,
+            "steps": request.steps,
+            "cfg": request.cfg,
+            "sampler_name": request.sampler_name,
+            "scheduler": request.scheduler,
+            "positive": [positive_node, 0],
+            "negative": [negative_node, 0],
+            "latent_image": [latent_node, 0],
+            "denoise": request.repair_denoise,
         },
     }
     next_node += 1

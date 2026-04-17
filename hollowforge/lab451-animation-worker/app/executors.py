@@ -24,6 +24,7 @@ from app.workflows import (
     SDXL_IPADAPTER_REQUIRED_NODES,
     SDXLIPAdapterRequest,
     build_ltxv_2b_fast_workflow,
+    build_sdxl_ipadapter_still_repair_workflow,
     build_sdxl_still_workflow,
     build_sdxl_ipadapter_frame_workflow,
     build_sdxl_ipadapter_still_workflow,
@@ -294,15 +295,15 @@ class ComfyUILTXVExecutorAdapter:
             )
         return preferred
 
-    async def _resolve_ipadapter_model_name(self) -> str:
+    async def _resolve_ipadapter_model_name(self, preferred: str | None = None) -> str:
         available = await self._client.get_ipadapter_models()
-        preferred = settings.WORKER_COMFYUI_IPADAPTER_MODEL
-        if available and preferred not in available:
+        selected = str(preferred or settings.WORKER_COMFYUI_IPADAPTER_MODEL).strip()
+        if available and selected not in available:
             raise RuntimeError(
                 "Configured IPAdapter model is missing in ComfyUI. "
-                f"expected: {preferred}"
+                f"expected: {selected}"
             )
-        return preferred
+        return selected
 
     async def _resolve_clip_vision_name(self) -> str:
         available = await self._client.get_clip_vision_models()
@@ -475,7 +476,10 @@ class ComfyUILTXVExecutorAdapter:
                     default_prompt=_default_still_prompt_from_row(row),
                     default_checkpoint=default_checkpoint,
                 )
-                missing_nodes = await self._client.missing_nodes(SDXL_IPADAPTER_REQUIRED_NODES)
+                required_nodes = list(SDXL_IPADAPTER_REQUIRED_NODES)
+                if ipadapter_request.repair_enabled and "VAEEncode" not in required_nodes:
+                    required_nodes.append("VAEEncode")
+                missing_nodes = await self._client.missing_nodes(required_nodes)
                 if missing_nodes:
                     raise RuntimeError(
                         f"ComfyUI is missing required SDXL IPAdapter nodes: {', '.join(missing_nodes)}"
@@ -483,18 +487,42 @@ class ComfyUILTXVExecutorAdapter:
                 ipadapter_request.checkpoint_name = await self._resolve_still_checkpoint_name(
                     ipadapter_request.checkpoint_name
                 )
-                ipadapter_request.ipadapter_file = await self._resolve_ipadapter_model_name()
+                ipadapter_request.ipadapter_file = await self._resolve_ipadapter_model_name(
+                    ipadapter_request.ipadapter_file
+                )
                 ipadapter_request.clip_vision_name = await self._resolve_clip_vision_name()
                 uploaded_image_names = await self._resolve_reference_image_inputs(
                     worker_job_id,
                     reference_images,
                     callback_url=callback_url,
                 )
-                workflow, save_node_id = build_sdxl_ipadapter_still_workflow(
-                    uploaded_image_names=uploaded_image_names,
-                    request=ipadapter_request,
-                    filename_prefix=f"lab451_animation_worker/{worker_job_id}",
-                )
+                if ipadapter_request.repair_enabled:
+                    source_image_url = str(row.get("source_image_url") or "").strip()
+                    if not source_image_url:
+                        raise RuntimeError(
+                            "Reference-guided repair still requires source_image_url"
+                        )
+                    local_source = await self._download_source_image(
+                        worker_job_id,
+                        source_image_url,
+                        callback_url=callback_url,
+                    )
+                    uploaded_source_image_name = await self._client.upload_image(
+                        local_source,
+                        filename=local_source.name,
+                    )
+                    workflow, save_node_id = build_sdxl_ipadapter_still_repair_workflow(
+                        uploaded_source_image_name=uploaded_source_image_name,
+                        uploaded_reference_image_names=uploaded_image_names,
+                        request=ipadapter_request,
+                        filename_prefix=f"lab451_animation_worker/{worker_job_id}",
+                    )
+                else:
+                    workflow, save_node_id = build_sdxl_ipadapter_still_workflow(
+                        uploaded_image_names=uploaded_image_names,
+                        request=ipadapter_request,
+                        filename_prefix=f"lab451_animation_worker/{worker_job_id}",
+                    )
                 prompt_id = await self._client.submit_prompt(workflow)
                 self._prompt_id = prompt_id
                 self._save_node_id = save_node_id
@@ -578,7 +606,9 @@ class ComfyUILTXVExecutorAdapter:
                 default_prompt=_default_prompt_from_row(row),
                 default_checkpoint=default_checkpoint,
             )
-            self._sdxl_request.ipadapter_file = await self._resolve_ipadapter_model_name()
+            self._sdxl_request.ipadapter_file = await self._resolve_ipadapter_model_name(
+                self._sdxl_request.ipadapter_file
+            )
             self._sdxl_request.clip_vision_name = await self._resolve_clip_vision_name()
             self._sdxl_source_image_name = uploaded_image_name
             self._job_mode = "sdxl_ipadapter"
