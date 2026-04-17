@@ -7,6 +7,7 @@ from pathlib import Path
 
 _APP_DIR = Path(__file__).resolve().parent
 _WORKER_DIR = _APP_DIR.parent
+_HOLLOWFORGE_DIR = _WORKER_DIR.parent
 
 
 def _load_env_file(path: Path) -> None:
@@ -28,6 +29,11 @@ _load_env_file(_WORKER_DIR / ".env")
 
 class Settings:
     WORKER_API_TOKEN: str = os.getenv("WORKER_API_TOKEN", "").strip()
+    WORKER_CF_ACCESS_CLIENT_ID: str = os.getenv("WORKER_CF_ACCESS_CLIENT_ID", "").strip()
+    WORKER_CF_ACCESS_CLIENT_SECRET: str = os.getenv(
+        "WORKER_CF_ACCESS_CLIENT_SECRET",
+        "",
+    ).strip()
     WORKER_EXECUTOR_BACKEND: str = os.getenv(
         "WORKER_EXECUTOR_BACKEND",
         "stub",
@@ -47,7 +53,10 @@ class Settings:
     )
     WORKER_DEFAULT_NEGATIVE_PROMPT: str = os.getenv(
         "WORKER_DEFAULT_NEGATIVE_PROMPT",
-        "child, teen, underage, school uniform, text, logo, watermark, blurry, lowres, deformed, cropped face",
+        "child, teen, underage, school uniform, text, unreadable text, random letters, "
+        "logo, watermark, subtitle overlay, caption box, speech bubble outline, "
+        "camera frame, viewfinder, screenshot border, interface overlay, recording "
+        "overlay, blurry, lowres, deformed, cropped face",
     ).strip()
     WORKER_COMFYUI_URL: str = os.getenv(
         "WORKER_COMFYUI_URL",
@@ -75,6 +84,18 @@ class Settings:
         "WORKER_COMFYUI_IPADAPTER_MODEL",
         "ipAdapterPlusSd15_ipAdapterPlusSdxlVit.safetensors",
     ).strip()
+    WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_PLUS_FACE_MODEL",
+        "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+    ).strip()
+    WORKER_COMFYUI_IPADAPTER_FACEID_MODEL: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_FACEID_MODEL",
+        "ip-adapter-faceid-plusv2_sdxl.bin",
+    ).strip()
+    WORKER_COMFYUI_IPADAPTER_FACEID_LORA: str = os.getenv(
+        "WORKER_COMFYUI_IPADAPTER_FACEID_LORA",
+        "ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
+    ).strip()
     WORKER_COMFYUI_CLIP_VISION_MODEL: str = os.getenv(
         "WORKER_COMFYUI_CLIP_VISION_MODEL",
         "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
@@ -82,7 +103,8 @@ class Settings:
     WORKER_COMFYUI_IMAGE_COMPRESSION: int = int(
         os.getenv("WORKER_COMFYUI_IMAGE_COMPRESSION", "35")
     )
-    DATA_DIR: Path = Path(os.getenv("WORKER_DATA_DIR", str(_WORKER_DIR / "data")))
+    WORKER_FFMPEG_BIN: str = os.getenv("WORKER_FFMPEG_BIN", "ffmpeg").strip() or "ffmpeg"
+    DATA_DIR: Path = Path(os.getenv("WORKER_DATA_DIR", str(_HOLLOWFORGE_DIR / "data")))
     DB_PATH: Path = DATA_DIR / "animation_worker.db"
     OUTPUTS_DIR: Path = DATA_DIR / "outputs"
     INPUTS_DIR: Path = DATA_DIR / "inputs"

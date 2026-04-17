@@ -1,9 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SequenceBlueprintCreate, SequenceContentMode } from '../api/client'
 
 interface SequenceBlueprintFormProps {
   onSubmit: (payload: SequenceBlueprintCreate) => void
   isSubmitting?: boolean
+  initialValues?: Partial<SequenceBlueprintCreate>
+  initialValuesKey?: string | null
+  productionContextLabel?: string | null
+  lockContentMode?: boolean
+  isSubmissionBlocked?: boolean
+  submissionBlockedReason?: string | null
 }
 
 interface ModeOption {
@@ -93,16 +99,33 @@ function selectDefault(options: ModeOption[]): string {
 export default function SequenceBlueprintForm({
   onSubmit,
   isSubmitting = false,
+  initialValues,
+  initialValuesKey = null,
+  productionContextLabel = null,
+  lockContentMode = false,
+  isSubmissionBlocked = false,
+  submissionBlockedReason = null,
 }: SequenceBlueprintFormProps) {
-  const [contentMode, setContentMode] = useState<SequenceContentMode>('all_ages')
-  const [policyProfileId, setPolicyProfileId] = useState(selectDefault(POLICY_OPTIONS.all_ages))
-  const [executorPolicy, setExecutorPolicy] = useState(selectDefault(EXECUTOR_OPTIONS.all_ages))
-  const [beatGrammarId, setBeatGrammarId] = useState(selectDefault(BEAT_GRAMMAR_OPTIONS.all_ages))
-  const [characterId, setCharacterId] = useState('char_stage1')
-  const [locationId, setLocationId] = useState('location_stage1')
-  const [targetDurationSec, setTargetDurationSec] = useState('36')
-  const [shotCount, setShotCount] = useState('6')
-  const [tone, setTone] = useState('tense')
+  const defaultContentMode = initialValues?.content_mode ?? 'all_ages'
+  const [contentMode, setContentMode] = useState<SequenceContentMode>(defaultContentMode)
+  const [policyProfileId, setPolicyProfileId] = useState(
+    initialValues?.policy_profile_id?.trim() || selectDefault(POLICY_OPTIONS[defaultContentMode]),
+  )
+  const [executorPolicy, setExecutorPolicy] = useState(
+    initialValues?.executor_policy?.trim() || selectDefault(EXECUTOR_OPTIONS[defaultContentMode]),
+  )
+  const [beatGrammarId, setBeatGrammarId] = useState(
+    initialValues?.beat_grammar_id?.trim() || selectDefault(BEAT_GRAMMAR_OPTIONS[defaultContentMode]),
+  )
+  const [characterId, setCharacterId] = useState(initialValues?.character_id ?? 'char_stage1')
+  const [locationId, setLocationId] = useState(initialValues?.location_id ?? 'location_stage1')
+  const [targetDurationSec, setTargetDurationSec] = useState(String(initialValues?.target_duration_sec ?? 36))
+  const [shotCount, setShotCount] = useState(String(initialValues?.shot_count ?? 6))
+  const [tone, setTone] = useState(initialValues?.tone ?? 'tense')
+  const [workId, setWorkId] = useState(initialValues?.work_id ?? null)
+  const [seriesId, setSeriesId] = useState(initialValues?.series_id ?? null)
+  const [productionEpisodeId, setProductionEpisodeId] = useState(initialValues?.production_episode_id ?? null)
+  const appliedInitialValuesKeyRef = useRef<string | null>(initialValuesKey)
 
   const policyOptions = useMemo(() => POLICY_OPTIONS[contentMode], [contentMode])
   const executorOptions = useMemo(() => EXECUTOR_OPTIONS[contentMode], [contentMode])
@@ -111,7 +134,44 @@ export default function SequenceBlueprintForm({
   const activeMode = CONTENT_MODE_OPTIONS.find((option) => option.value === contentMode)
   const activeExecutor = executorOptions.find((option) => option.value === executorPolicy)
   const activeBeatGrammar = beatGrammarOptions.find((option) => option.value === beatGrammarId)
-  const canSubmit = Boolean(policyProfileId && executorPolicy && beatGrammarId && characterId.trim() && locationId.trim())
+  const canSubmit = Boolean(
+    policyProfileId &&
+      executorPolicy &&
+      beatGrammarId &&
+      characterId.trim() &&
+      locationId.trim() &&
+      !isSubmissionBlocked,
+  )
+  const hasProductionContext = Boolean(productionContextLabel || productionEpisodeId || workId || seriesId)
+
+  useEffect(() => {
+    if (!initialValuesKey) {
+      if (appliedInitialValuesKeyRef.current !== null) {
+        setWorkId(null)
+        setSeriesId(null)
+        setProductionEpisodeId(null)
+        appliedInitialValuesKeyRef.current = null
+      }
+      return
+    }
+    if (!initialValues) return
+    if (appliedInitialValuesKeyRef.current === initialValuesKey) return
+
+    const nextMode = initialValues.content_mode ?? 'all_ages'
+    setContentMode(nextMode)
+    setPolicyProfileId(initialValues.policy_profile_id?.trim() || selectDefault(POLICY_OPTIONS[nextMode]))
+    setExecutorPolicy(initialValues.executor_policy?.trim() || selectDefault(EXECUTOR_OPTIONS[nextMode]))
+    setBeatGrammarId(initialValues.beat_grammar_id?.trim() || selectDefault(BEAT_GRAMMAR_OPTIONS[nextMode]))
+    setCharacterId(initialValues.character_id ?? 'char_stage1')
+    setLocationId(initialValues.location_id ?? 'location_stage1')
+    setTargetDurationSec(String(initialValues.target_duration_sec ?? 36))
+    setShotCount(String(initialValues.shot_count ?? 6))
+    setTone(initialValues.tone ?? 'tense')
+    setWorkId(initialValues.work_id ?? null)
+    setSeriesId(initialValues.series_id ?? null)
+    setProductionEpisodeId(initialValues.production_episode_id ?? null)
+    appliedInitialValuesKeyRef.current = initialValuesKey
+  }, [initialValues, initialValuesKey])
 
   const handleContentModeChange = (nextMode: SequenceContentMode) => {
     setContentMode(nextMode)
@@ -125,6 +185,9 @@ export default function SequenceBlueprintForm({
     if (!canSubmit) return
 
     onSubmit({
+      work_id: workId?.trim() ? workId.trim() : null,
+      series_id: seriesId?.trim() ? seriesId.trim() : null,
+      production_episode_id: productionEpisodeId?.trim() ? productionEpisodeId.trim() : null,
       content_mode: contentMode,
       policy_profile_id: policyProfileId.trim(),
       character_id: characterId.trim(),
@@ -154,6 +217,18 @@ export default function SequenceBlueprintForm({
         <p className="mt-1 text-gray-400">{activeMode?.description}</p>
       </div>
 
+      {hasProductionContext ? (
+        <div className="space-y-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-gray-300">
+          <p className="font-medium text-emerald-300">Production Episode Context</p>
+          {productionContextLabel ? <p className="text-xs text-emerald-100">{productionContextLabel}</p> : null}
+          <div className="grid gap-1 text-xs text-gray-400">
+            <p>Production Episode: {productionEpisodeId ?? 'unlinked'}</p>
+            <p>Work: {workId ?? 'unlinked'}</p>
+            <p>Series: {seriesId ?? 'standalone'}</p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-2">
         <label className="space-y-2 text-sm text-gray-300">
           <span>Content Mode</span>
@@ -161,6 +236,7 @@ export default function SequenceBlueprintForm({
             aria-label="Content Mode"
             value={contentMode}
             onChange={(event) => handleContentModeChange(event.target.value as SequenceContentMode)}
+            disabled={lockContentMode}
             className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-gray-100 outline-none transition focus:border-violet-500"
           >
             {CONTENT_MODE_OPTIONS.map((option) => (
@@ -276,7 +352,8 @@ export default function SequenceBlueprintForm({
 
       <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-4">
         <p className="text-xs text-gray-500">
-          Blueprint creation stays lane-aware and does not cross safe and adult sequence domains.
+          {submissionBlockedReason ??
+            'Blueprint creation stays lane-aware and does not cross safe and adult sequence domains.'}
         </p>
         <button
           type="submit"

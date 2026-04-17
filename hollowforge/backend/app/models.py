@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 from typing import Any, Dict, List, Literal, Optional
 
@@ -39,6 +40,19 @@ PromptFactoryCheckpointPreferenceMode = Literal[
 ]
 SequenceContentMode = Literal["all_ages", "adult_nsfw"]
 StoryPlannerLane = Literal["unrestricted", "all_ages", "adult_nsfw"]
+ComicEpisodeStatus = Literal["draft", "planned", "in_production", "released"]
+ComicTargetOutput = Literal["oneshot_manga", "serial_episode", "teaser_animation"]
+ComicPanelType = Literal["splash", "establish", "beat", "insert", "closeup", "transition"]
+ComicDialogueType = Literal["speech", "thought", "caption", "sfx"]
+ComicRenderAssetRole = Literal["candidate", "selected", "derived_preview", "final_master"]
+ComicRenderExecutionMode = Literal["local_preview", "remote_worker"]
+ComicPageExportState = Literal["draft", "preview_ready", "exported"]
+ComicPageLayoutTemplateId = Literal["jp_2x2_v1", "jp_3row_v1"]
+ComicManuscriptProfileId = Literal["jp_manga_rightbound_v1"]
+ComicRenderLane = Literal["legacy", "character_canon_v2"]
+ProductionFormatFamily = Literal["comic", "animation", "mixed"]
+ProductionDeliveryMode = Literal["oneshot", "serial", "anthology"]
+ProductionTargetOutput = Literal["comic", "animation"]
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +306,275 @@ class WatermarkSettingsUpdate(BaseModel):
     color: str = Field(pattern=WATERMARK_COLOR_REGEX)
 
 
+class ComicEpisodeBase(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    character_id: str = Field(min_length=1, max_length=120)
+    character_version_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode = "all_ages"
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    synopsis: str = Field(min_length=1, max_length=4000)
+    source_story_plan_json: Optional[str] = None
+    status: ComicEpisodeStatus = "draft"
+    continuity_summary: Optional[str] = Field(default=None, max_length=4000)
+    canon_delta: Optional[str] = Field(default=None, max_length=4000)
+    target_output: ComicTargetOutput = "oneshot_manga"
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicEpisodeBase":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
+
+
+class ComicEpisodeCreate(ComicEpisodeBase):
+    pass
+
+
+class ComicEpisodeSceneBase(BaseModel):
+    episode_id: str = Field(min_length=1, max_length=120)
+    scene_no: int = Field(ge=1, le=999)
+    premise: str = Field(min_length=1, max_length=2000)
+    location_label: Optional[str] = Field(default=None, max_length=240)
+    tension: Optional[str] = Field(default=None, max_length=1000)
+    reveal: Optional[str] = Field(default=None, max_length=1000)
+    continuity_notes: Optional[str] = Field(default=None, max_length=4000)
+    involved_character_ids: List[str] = Field(default_factory=list, max_length=16)
+    target_panel_count: Optional[int] = Field(default=None, ge=1, le=64)
+
+
+class ComicEpisodeSceneCreate(ComicEpisodeSceneBase):
+    pass
+
+
+class ComicScenePanelBase(BaseModel):
+    episode_scene_id: str = Field(min_length=1, max_length=120)
+    panel_no: int = Field(ge=1, le=999)
+    panel_type: ComicPanelType = "beat"
+    framing: Optional[str] = Field(default=None, max_length=240)
+    camera_intent: Optional[str] = Field(default=None, max_length=500)
+    action_intent: Optional[str] = Field(default=None, max_length=500)
+    expression_intent: Optional[str] = Field(default=None, max_length=500)
+    dialogue_intent: Optional[str] = Field(default=None, max_length=1000)
+    continuity_lock: Optional[str] = Field(default=None, max_length=4000)
+    page_target_hint: Optional[int] = Field(default=None, ge=1, le=999)
+    reading_order: int = Field(ge=1, le=999)
+
+
+class ComicScenePanelCreate(ComicScenePanelBase):
+    pass
+
+
+class ComicPanelDialogueBase(BaseModel):
+    scene_panel_id: str = Field(min_length=1, max_length=120)
+    type: ComicDialogueType
+    speaker_character_id: Optional[str] = Field(default=None, max_length=120)
+    text: str = Field(min_length=1, max_length=4000)
+    tone: Optional[str] = Field(default=None, max_length=240)
+    priority: int = Field(default=100, ge=0, le=999)
+    balloon_style_hint: Optional[str] = Field(default=None, max_length=240)
+    placement_hint: Optional[str] = Field(default=None, max_length=500)
+
+
+class ComicPanelDialogueCreate(ComicPanelDialogueBase):
+    pass
+
+
+class ComicPanelRenderAssetBase(BaseModel):
+    scene_panel_id: str = Field(min_length=1, max_length=120)
+    generation_id: Optional[str] = Field(default=None, max_length=120)
+    asset_role: ComicRenderAssetRole = "candidate"
+    storage_path: Optional[str] = Field(default=None, max_length=500)
+    prompt_snapshot: Optional[Dict[str, Any]] = None
+    quality_score: Optional[float] = None
+    bubble_safe_zones: List[Dict[str, Any]] = Field(default_factory=list)
+    crop_metadata: Optional[Dict[str, Any]] = None
+    render_notes: Optional[str] = Field(default=None, max_length=4000)
+    is_selected: bool = False
+
+
+class ComicPanelRenderAssetCreate(ComicPanelRenderAssetBase):
+    pass
+
+
+class ComicRenderJobResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    scene_panel_id: str
+    render_asset_id: str
+    generation_id: str
+    request_index: int
+    source_id: str
+    target_tool: str
+    executor_mode: str
+    executor_key: str
+    status: str
+    request_json: Optional[Dict[str, Any]] = None
+    external_job_id: Optional[str] = None
+    external_job_url: Optional[str] = None
+    output_path: Optional[str] = None
+    error_message: Optional[str] = None
+    submitted_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+def _parse_comic_render_job_request_json(raw: Any) -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Comic render job request_json must be valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("Comic render job request_json must be a JSON object")
+        return parsed
+    raise ValueError("Comic render job request_json must be a JSON object")
+
+
+def comic_render_job_response_from_row(row: Dict[str, Any]) -> ComicRenderJobResponse:
+    payload = dict(row)
+    payload["request_json"] = _parse_comic_render_job_request_json(
+        payload.get("request_json")
+    )
+    return ComicRenderJobResponse.model_validate(payload)
+
+
+class ComicPageAssemblyBase(BaseModel):
+    episode_id: str = Field(min_length=1, max_length=120)
+    page_no: int = Field(ge=1, le=999)
+    layout_template_id: Optional[str] = Field(default=None, max_length=120)
+    manuscript_profile_id: ComicManuscriptProfileId = "jp_manga_rightbound_v1"
+    ordered_panel_ids: List[str] = Field(default_factory=list, max_length=64)
+    export_state: ComicPageExportState = "draft"
+    preview_path: Optional[str] = Field(default=None, max_length=500)
+    master_path: Optional[str] = Field(default=None, max_length=500)
+    export_manifest: Optional[Dict[str, Any]] = None
+
+
+class ComicPageAssemblyCreate(ComicPageAssemblyBase):
+    pass
+
+
+class ComicEpisodeSceneDraft(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    scene_no: int = Field(ge=1, le=999)
+    premise: str = Field(min_length=1, max_length=2000)
+    location_label: Optional[str] = Field(default=None, max_length=240)
+    tension: Optional[str] = Field(default=None, max_length=1000)
+    reveal: Optional[str] = Field(default=None, max_length=1000)
+    continuity_notes: Optional[str] = Field(default=None, max_length=4000)
+    involved_character_ids: List[str] = Field(default_factory=list, max_length=16)
+    target_panel_count: Optional[int] = Field(default=None, ge=1, le=64)
+
+
+class ComicScenePanelDraft(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    scene_no: int = Field(ge=1, le=999)
+    panel_no: int = Field(ge=1, le=999)
+    panel_type: ComicPanelType = "beat"
+    framing: Optional[str] = Field(default=None, max_length=240)
+    camera_intent: Optional[str] = Field(default=None, max_length=500)
+    action_intent: Optional[str] = Field(default=None, max_length=500)
+    expression_intent: Optional[str] = Field(default=None, max_length=500)
+    dialogue_intent: Optional[str] = Field(default=None, max_length=1000)
+    continuity_lock: Optional[str] = Field(default=None, max_length=4000)
+    page_target_hint: Optional[int] = Field(default=None, ge=1, le=999)
+    reading_order: int = Field(ge=1, le=999)
+
+
+class ComicEpisodeDraft(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    character_version_id: str = Field(min_length=1, max_length=120)
+    content_mode: SequenceContentMode = "all_ages"
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    synopsis: str = Field(min_length=1, max_length=4000)
+    source_story_plan_json: str = Field(min_length=1)
+    status: ComicEpisodeStatus = "planned"
+    continuity_summary: Optional[str] = Field(default=None, max_length=4000)
+    canon_delta: Optional[str] = Field(default=None, max_length=4000)
+    target_output: ComicTargetOutput = "oneshot_manga"
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
+    scenes: List[ComicEpisodeSceneDraft] = Field(default_factory=list)
+    panels: List[ComicScenePanelDraft] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicEpisodeDraft":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
+
+
+class ComicStoryPlanImportRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    approved_plan: "StoryPlannerPlanResponse"
+    character_version_id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
+    panel_multiplier: int = Field(default=2, ge=1, le=8)
+    render_lane: ComicRenderLane = "legacy"
+    series_style_id: Optional[str] = Field(default=None, max_length=120)
+    character_series_binding_id: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_render_lane_metadata(self) -> "ComicStoryPlanImportRequest":
+        if self.render_lane != "character_canon_v2":
+            return self
+        if not self.series_style_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires series_style_id"
+            )
+        if not self.character_series_binding_id:
+            raise ValueError(
+                "render_lane=character_canon_v2 requires character_series_binding_id"
+            )
+        return self
+
+
 class SequenceBlueprintBase(BaseModel):
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     content_mode: SequenceContentMode
     policy_profile_id: str = Field(min_length=1, max_length=120)
     character_id: str = Field(min_length=1, max_length=120)
@@ -309,6 +591,9 @@ class SequenceBlueprintCreate(SequenceBlueprintBase):
 
 
 class SequenceBlueprintUpdate(BaseModel):
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
     content_mode: Optional[SequenceContentMode] = None
     policy_profile_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     character_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
@@ -460,6 +745,92 @@ class SequenceRunCreateRequest(BaseModel):
     target_tool: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
+class ProductionWorkCreate(BaseModel):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    format_family: ProductionFormatFamily
+    default_content_mode: SequenceContentMode
+    status: str = Field(default="draft", min_length=1, max_length=120)
+    canon_notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+class ProductionSeriesCreate(BaseModel):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    work_id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    delivery_mode: ProductionDeliveryMode
+    audience_mode: SequenceContentMode
+    visual_identity_notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+class ProductionEpisodeBase(BaseModel):
+    work_id: str = Field(min_length=1, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    synopsis: str = Field(min_length=1, max_length=4000)
+    content_mode: SequenceContentMode
+    target_outputs: List[ProductionTargetOutput] = Field(default_factory=list, max_length=4)
+    continuity_summary: Optional[str] = Field(default=None, max_length=4000)
+    status: str = Field(default="draft", min_length=1, max_length=120)
+
+
+class ProductionEpisodeCreate(ProductionEpisodeBase):
+    pass
+
+
+class ProductionWorkResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    title: str
+    format_family: ProductionFormatFamily
+    default_content_mode: SequenceContentMode
+    status: str
+    canon_notes: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ProductionSeriesResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    work_id: str
+    title: str
+    delivery_mode: ProductionDeliveryMode
+    audience_mode: SequenceContentMode
+    visual_identity_notes: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ProductionComicTrackLinkResponse(BaseModel):
+    id: str
+    status: str
+    target_output: ComicTargetOutput
+    character_id: str
+
+
+class ProductionAnimationTrackLinkResponse(BaseModel):
+    id: str
+    content_mode: SequenceContentMode
+    policy_profile_id: str
+    shot_count: int
+    executor_policy: str
+
+
+class ProductionEpisodeDetailResponse(ProductionEpisodeBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    comic_track: Optional[ProductionComicTrackLinkResponse] = None
+    animation_track: Optional[ProductionAnimationTrackLinkResponse] = None
+    comic_track_count: int = 0
+    animation_track_count: int = 0
+    created_at: str
+    updated_at: str
+
+
 class StoryPlannerCharacterCatalogEntry(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -480,6 +851,7 @@ class StoryPlannerLocationCatalogEntry(BaseModel):
     setting_anchor: str = Field(min_length=1, max_length=1000)
     visual_rules: List[str] = Field(min_length=1, max_length=12)
     restricted_elements: List[str] = Field(default_factory=list, max_length=12)
+    scene_cues: List[str] = Field(default_factory=list, max_length=12)
 
 
 class StoryPlannerPolicyPackCatalogEntry(BaseModel):
@@ -730,6 +1102,213 @@ class SequenceRunDetailResponse(BaseModel):
     blueprint: SequenceBlueprintResponse
     shots: List[SequenceRunShotDetailResponse] = Field(default_factory=list)
     rough_cut_candidates: List[SequenceRoughCutCandidateResponse] = Field(default_factory=list)
+
+
+class ComicEpisodeResponse(ComicEpisodeBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class ComicEpisodeSceneResponse(ComicEpisodeSceneBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class ComicScenePanelResponse(ComicScenePanelBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    remote_job_count: int = Field(default=0, ge=0)
+    pending_remote_job_count: int = Field(default=0, ge=0)
+    created_at: str
+    updated_at: str
+
+
+class ComicPanelDialogueResponse(ComicPanelDialogueBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class ComicPanelRenderAssetResponse(ComicPanelRenderAssetBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class ComicPanelRenderQueueResponse(BaseModel):
+    panel: ComicScenePanelResponse
+    execution_mode: ComicRenderExecutionMode = "local_preview"
+    requested_count: int = Field(ge=1)
+    queued_generation_count: int = Field(ge=0)
+    materialized_asset_count: int = Field(default=0, ge=0)
+    pending_render_job_count: int = Field(default=0, ge=0)
+    remote_job_count: int = Field(default=0, ge=0)
+    render_assets: List[ComicPanelRenderAssetResponse] = Field(default_factory=list)
+
+
+class ComicPageAssemblyResponse(ComicPageAssemblyBase):
+    model_config = {"from_attributes": True}
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class ComicCharacterResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    slug: str
+    name: str
+    status: str
+    tier: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ComicCharacterVersionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    character_id: str
+    version_name: str
+    purpose: str
+    checkpoint: str
+    workflow_lane: str
+    created_at: str
+    updated_at: str
+
+
+class ComicSceneDetailResponse(BaseModel):
+    scene: ComicEpisodeSceneResponse
+    panels: List[ComicScenePanelResponse] = Field(default_factory=list)
+
+
+class ComicPanelDetailResponse(BaseModel):
+    panel: ComicScenePanelResponse
+    dialogues: List[ComicPanelDialogueResponse] = Field(default_factory=list)
+    render_assets: List[ComicPanelRenderAssetResponse] = Field(default_factory=list)
+
+
+class ComicEpisodeDetailResponse(BaseModel):
+    episode: ComicEpisodeResponse
+    scenes: List[ComicSceneDetailResponse] = Field(default_factory=list)
+    pages: List[ComicPageAssemblyResponse] = Field(default_factory=list)
+
+
+class ComicEpisodeSummaryResponse(BaseModel):
+    episode: ComicEpisodeResponse
+    scene_count: int = Field(default=0, ge=0)
+    page_count: int = Field(default=0, ge=0)
+
+
+class ComicDialogueGenerationResponse(BaseModel):
+    panel: ComicScenePanelResponse
+    dialogues: List[ComicPanelDialogueResponse] = Field(default_factory=list)
+    generated_count: int = Field(default=0, ge=0)
+    overwrite_existing: bool = False
+    prompt_provider_profile_id: str = Field(
+        default="adult_local_llm", min_length=1, max_length=120
+    )
+
+
+class ComicManuscriptProfileResponse(BaseModel):
+    id: ComicManuscriptProfileId
+    label: str = Field(min_length=1, max_length=120)
+    binding_direction: Literal["right_to_left"]
+    finishing_tool: Literal["clip_studio_ex"]
+    print_intent: Literal["japanese_manga"]
+    trim_reference: str = Field(min_length=1, max_length=200)
+    bleed_reference: str = Field(min_length=1, max_length=200)
+    safe_area_reference: str = Field(min_length=1, max_length=200)
+    naming_pattern: str = Field(min_length=1, max_length=120)
+
+
+def list_comic_manuscript_profiles() -> list[ComicManuscriptProfileResponse]:
+    return [
+        ComicManuscriptProfileResponse(
+            id="jp_manga_rightbound_v1",
+            label="Japanese Manga Right-Bound v1",
+            binding_direction="right_to_left",
+            finishing_tool="clip_studio_ex",
+            print_intent="japanese_manga",
+            trim_reference="B5 monochrome manga manuscript preset",
+            bleed_reference="CLIP STUDIO EX Japanese comic print bleed preset",
+            safe_area_reference="CLIP STUDIO EX default inner safe area guide",
+            naming_pattern="page_{page_no:03d}.tif",
+        )
+    ]
+
+
+class ComicHandoffPageSummaryResponse(BaseModel):
+    page_id: str = Field(min_length=1, max_length=120)
+    page_no: int = Field(ge=1, le=999)
+    art_layer_status: Literal["complete", "warning", "blocked"]
+    frame_layer_status: Literal["complete", "warning", "blocked"]
+    balloon_layer_status: Literal["complete", "warning", "blocked"]
+    text_draft_layer_status: Literal["complete", "warning", "blocked"]
+    hard_block_count: int = Field(default=0, ge=0)
+    soft_warning_count: int = Field(default=0, ge=0)
+
+
+class ComicHandoffValidationIssueResponse(BaseModel):
+    code: str = Field(min_length=1, max_length=120)
+    page_id: str | None = Field(default=None, max_length=120)
+    page_no: int | None = Field(default=None, ge=1, le=999)
+    layer: str | None = Field(default=None, max_length=120)
+
+
+class ComicHandoffValidationResponse(BaseModel):
+    episode_id: str = Field(min_length=1, max_length=120)
+    hard_blocks: list[ComicHandoffValidationIssueResponse] = Field(default_factory=list)
+    soft_warnings: list[ComicHandoffValidationIssueResponse] = Field(default_factory=list)
+    page_summaries: list[ComicHandoffPageSummaryResponse] = Field(default_factory=list)
+    generated_at: str
+
+
+class ComicHandoffExportSummaryResponse(BaseModel):
+    export_zip_path: str = Field(min_length=1, max_length=500)
+    layered_manifest_path: str = Field(min_length=1, max_length=500)
+    handoff_validation_path: str = Field(min_length=1, max_length=500)
+    page_count: int = Field(default=0, ge=0)
+    hard_block_count: int = Field(default=0, ge=0)
+    soft_warning_count: int = Field(default=0, ge=0)
+    exported_at: str
+
+
+class ComicPageAssemblyBatchResponse(BaseModel):
+    episode_id: str = Field(min_length=1, max_length=120)
+    layout_template_id: ComicPageLayoutTemplateId
+    manuscript_profile: Dict[str, Any] = Field(default_factory=dict)
+    pages: List[ComicPageAssemblyResponse] = Field(default_factory=list)
+    export_manifest_path: str = Field(min_length=1, max_length=500)
+    layered_manifest_path: str = Field(min_length=1, max_length=500)
+    handoff_validation_path: str = Field(min_length=1, max_length=500)
+    handoff_validation: ComicHandoffValidationResponse
+    page_summaries: list[ComicHandoffPageSummaryResponse] = Field(default_factory=list)
+    latest_export_summary: ComicHandoffExportSummaryResponse | None = None
+    dialogue_json_path: str = Field(min_length=1, max_length=500)
+    panel_asset_manifest_path: str = Field(min_length=1, max_length=500)
+    page_assembly_manifest_path: str = Field(min_length=1, max_length=500)
+    teaser_handoff_manifest_path: str = Field(min_length=1, max_length=500)
+    manuscript_profile_manifest_path: str = Field(min_length=1, max_length=500)
+    handoff_readme_path: str = Field(min_length=1, max_length=500)
+    production_checklist_path: str = Field(min_length=1, max_length=500)
+
+
+class ComicPageExportResponse(ComicPageAssemblyBatchResponse):
+    export_zip_path: str = Field(min_length=1, max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -1282,6 +1861,7 @@ class AnimationJobCallbackPayload(BaseModel):
     external_job_id: Optional[str] = None
     external_job_url: Optional[str] = None
     output_path: Optional[str] = None
+    output_url: Optional[str] = None
     error_message: Optional[str] = None
     request_json: Optional[Dict[str, Any]] = None
 
@@ -1326,9 +1906,21 @@ class AnimationPresetResponse(BaseModel):
     request_json: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AnimationReconciliationResponse(BaseModel):
+    checked: int
+    updated: int
+    failed_restart: int
+    completed: int
+    cancelled: int
+    skipped_unreachable: int
+
+
 class AnimationPresetLaunchRequest(BaseModel):
     candidate_id: Optional[str] = None
     generation_id: Optional[str] = None
+    episode_id: Optional[str] = None
+    scene_panel_id: Optional[str] = None
+    selected_render_asset_id: Optional[str] = None
     publish_job_id: Optional[str] = None
     executor_mode: Optional[AnimationExecutorMode] = None
     executor_key: Optional[str] = None
@@ -1349,6 +1941,54 @@ class AnimationPresetLaunchResponse(BaseModel):
     animation_job: AnimationJobResponse
     dispatch: Optional[AnimationJobDispatchResponse] = None
     dispatch_error: Optional[str] = None
+    animation_shot_id: Optional[str] = None
+    animation_shot_variant_id: Optional[str] = None
+
+
+class AnimationShotResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    source_kind: str
+    episode_id: str
+    scene_panel_id: str
+    selected_render_asset_id: str
+    generation_id: Optional[str] = None
+    is_current: bool
+    created_at: str
+    updated_at: str
+
+
+class AnimationShotVariantResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    animation_shot_id: str
+    animation_job_id: str
+    preset_id: str
+    launch_reason: str
+    status: str
+    output_path: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
+
+class AnimationCurrentShotResponse(BaseModel):
+    shot: Optional[AnimationShotResponse] = None
+    variants: List[AnimationShotVariantResponse] = Field(default_factory=list)
+
+
+def animation_shot_response_from_row(row: Dict[str, Any]) -> AnimationShotResponse:
+    payload = dict(row)
+    payload["is_current"] = bool(payload.get("is_current"))
+    return AnimationShotResponse.model_validate(payload)
+
+
+def animation_shot_variant_response_from_row(
+    row: Dict[str, Any],
+) -> AnimationShotVariantResponse:
+    return AnimationShotVariantResponse.model_validate(dict(row))
 
 
 class ReadyPublishItemResponse(BaseModel):

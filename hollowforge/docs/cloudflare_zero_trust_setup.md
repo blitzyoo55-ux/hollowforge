@@ -55,18 +55,39 @@ Zero Trust -> Access -> Applications:
 ```bash
 cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.nginx.cloudflare.plist ~/Library/LaunchAgents/
 cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.cloudflared.plist ~/Library/LaunchAgents/
+cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.backend.plist ~/Library/LaunchAgents/
+cp /Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/deploy/launchd/com.mori.hollowforge.animation-worker.plist ~/Library/LaunchAgents/
 
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.nginx.cloudflare.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.cloudflared.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.backend.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mori.hollowforge.animation-worker.plist
 
 launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.nginx.cloudflare
 launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.cloudflared
+launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.backend
+launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.animation-worker
 ```
 
 ## 7) Verify
 
 - Open: `https://hollowforge.your-domain.com`
 - You should be redirected to Google login first.
+
+## Worker callback note
+
+If you use this protected hostname as `HOLLOWFORGE_PUBLIC_API_BASE_URL`, remote
+workers cannot post callbacks through it with a plain bearer callback token
+alone. Cloudflare Access will redirect unauthenticated worker requests to the
+login flow unless you either:
+
+- bypass Access for the callback path, or
+- give the worker a Cloudflare Access service token and send
+  `CF-Access-Client-Id` plus `CF-Access-Client-Secret` on callback requests
+
+Worker env mapping:
+- `WORKER_CF_ACCESS_CLIENT_ID=<service token client id>`
+- `WORKER_CF_ACCESS_CLIENT_SECRET=<service token client secret>`
 
 ## Logs
 
@@ -77,3 +98,9 @@ launchctl kickstart -k gui/$(id -u)/com.mori.hollowforge.cloudflared
 - Cloudflared:
   - `backend/logs/cloudflared_launchd_stdout.log`
   - `backend/logs/cloudflared_launchd_stderr.log`
+- Backend:
+  - `backend/logs/launchd_stdout.log`
+  - `backend/logs/launchd_stderr.log`
+- Animation worker:
+  - `lab451-animation-worker/logs/launchd_stdout.log`
+  - `lab451-animation-worker/logs/launchd_stderr.log`

@@ -43,5 +43,28 @@
       "crowded nightclub density",
       "derelict rooftop clutter"
     ]
+  },
+  {
+    "id": "artist_loft_morning",
+    "name": "Artist Loft Morning",
+    "setting_anchor": "Sunlit artist loft with tall factory windows, scattered canvases, a worktable with personal objects, and a quiet morning atmosphere that favors intimate visual storytelling.",
+    "visual_rules": [
+      "Keep tall windows, warm morning light, and practical studio clutter visible as scene anchors.",
+      "Use easels, canvases, sketches, a worktable, or personal objects to support lived-in creative space realism.",
+      "Favor intimate editorial calm over luxury spa polish or nightlife spectacle."
+    ],
+    "scene_cues": [
+      "tall factory windows",
+      "easel",
+      "canvas",
+      "worktable",
+      "coffee mug",
+      "sketchbook"
+    ],
+    "restricted_elements": [
+      "spa corridors",
+      "bathhouse steam rooms",
+      "nightclub lighting"
+    ]
   }
 ]

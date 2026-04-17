@@ -7,6 +7,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
@@ -66,6 +67,27 @@ def _parse_json_object(raw: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _optional_text(raw: Any) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _callback_output_path(raw: Any) -> str | None:
+    value = _optional_text(raw)
+    if value is None:
+        return None
+
+    parsed = urlparse(value)
+    normalized = parsed.path if parsed.scheme or parsed.netloc else value
+    if normalized.startswith("/data/"):
+        return normalized[len("/data/") :]
+    if normalized.startswith("data/"):
+        return normalized[len("data/") :]
+    return normalized.lstrip("/")
+
+
 def _row_to_response(row: dict[str, Any]) -> WorkerJobResponse:
     return WorkerJobResponse(
         id=row["id"],
@@ -77,7 +99,7 @@ def _row_to_response(row: dict[str, Any]) -> WorkerJobResponse:
         executor_mode=row["executor_mode"],
         executor_key=row["executor_key"],
         status=row["status"],
-        source_image_url=row["source_image_url"],
+        source_image_url=_optional_text(row.get("source_image_url")),
         generation_metadata=_parse_json_object(row.get("generation_metadata")),
         request_json=_parse_json_object(row.get("request_json")),
         callback_url=row.get("callback_url"),
@@ -102,6 +124,11 @@ async def _notify_hollowforge(row: dict[str, Any], payload: HollowForgeCallbackP
     callback_token = row.get("callback_token")
     if isinstance(callback_token, str) and callback_token:
         headers["Authorization"] = f"Bearer {callback_token}"
+    cf_access_client_id = settings.WORKER_CF_ACCESS_CLIENT_ID
+    cf_access_client_secret = settings.WORKER_CF_ACCESS_CLIENT_SECRET
+    if cf_access_client_id and cf_access_client_secret:
+        headers["CF-Access-Client-Id"] = cf_access_client_id
+        headers["CF-Access-Client-Secret"] = cf_access_client_secret
 
     try:
         async with httpx.AsyncClient(
@@ -138,6 +165,58 @@ async def _update_worker_job(worker_job_id: str, **fields: Any) -> dict[str, Any
     if row is None:
         raise RuntimeError(f"Worker job {worker_job_id} disappeared after update")
     return row
+
+
+async def _cleanup_stale_worker_jobs() -> int:
+    now = now_iso()
+    stale_statuses = ("queued", "submitted", "processing")
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT *
+            FROM worker_jobs
+            WHERE status IN ({", ".join("?" for _ in stale_statuses)})
+            ORDER BY updated_at ASC
+            """,
+            stale_statuses,
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            await db.execute(
+                """
+                UPDATE worker_jobs
+                SET status = ?, error_message = ?, completed_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("failed", "Worker restarted", now, now, row["id"]),
+            )
+        await db.commit()
+
+    callback_tasks = []
+    for row in rows:
+        if row.get("callback_url"):
+            callback_row = dict(row)
+            callback_row["status"] = "failed"
+            callback_row["error_message"] = "Worker restarted"
+            callback_row["completed_at"] = now
+            callback_row["updated_at"] = now
+            callback_tasks.append(
+                _notify_hollowforge(
+                    callback_row,
+                    HollowForgeCallbackPayload(
+                        status="failed",
+                        external_job_id=callback_row.get("external_job_id"),
+                        external_job_url=callback_row.get("external_job_url"),
+                        error_message="Worker restarted",
+                    ),
+                )
+            )
+
+    if callback_tasks:
+        await asyncio.gather(*callback_tasks, return_exceptions=True)
+
+    return len(rows)
 
 
 async def _run_worker_job(worker_job_id: str) -> None:
@@ -197,7 +276,8 @@ async def _run_worker_job(worker_job_id: str) -> None:
                 status="completed",
                 external_job_id=row.get("external_job_id"),
                 external_job_url=row.get("external_job_url"),
-                output_path=row.get("output_url"),
+                output_path=_callback_output_path(row.get("output_url")),
+                output_url=row.get("output_url"),
                 error_message=row.get("error_message"),
             ),
         )
@@ -231,6 +311,7 @@ def _schedule_job(app: FastAPI, worker_job_id: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _cleanup_stale_worker_jobs()
     settings.INPUTS_DIR.mkdir(parents=True, exist_ok=True)
     settings.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     app.state.worker_tasks = set()
@@ -238,9 +319,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Lab451 Animation Worker",
+    title="Lab451 Execution Worker",
     version="0.1.0",
-    description="Separate execution worker for HollowForge animation jobs",
+    description="Separate execution worker for HollowForge animation and comic still jobs",
     lifespan=lifespan,
 )
 
@@ -338,7 +419,7 @@ async def create_job(
                 payload.target_tool,
                 payload.executor_mode,
                 payload.executor_key,
-                str(payload.source_image_url),
+                str(payload.source_image_url) if payload.source_image_url else "",
                 json.dumps(payload.generation_metadata, ensure_ascii=False)
                 if payload.generation_metadata is not None
                 else None,

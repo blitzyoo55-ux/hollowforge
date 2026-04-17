@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mori.hollowforge.backend</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/backend/run_local_backend.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOLLOWFORGE_ANIMATION_EXECUTOR_MODE</key>
+    <string>remote_worker</string>
+    <key>HOLLOWFORGE_ANIMATION_EXECUTOR_KEY</key>
+    <string>local_animation_worker</string>
+    <key>HOLLOWFORGE_ANIMATION_REMOTE_BASE_URL</key>
+    <string>http://127.0.0.1:8600</string>
+    <key>HOLLOWFORGE_PUBLIC_API_BASE_URL</key>
+    <string>https://sec.hlfglll.com</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/backend</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/backend/logs/launchd_stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mori_arty/AI_Projects/04_AI_Creative/nsfw-market-research/hollowforge/backend/logs/launchd_stderr.log</string>
+</dict>
+</plist>
