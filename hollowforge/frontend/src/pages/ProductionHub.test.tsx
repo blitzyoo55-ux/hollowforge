@@ -137,6 +137,21 @@ test('renders all production creation panels', async () => {
   expect(screen.getByRole('heading', { name: /Create Production Episode/i })).toBeInTheDocument()
 })
 
+test('renders verification ops above the creation forms', async () => {
+  vi.mocked(listProductionWorks).mockResolvedValue([])
+  vi.mocked(listProductionSeries).mockResolvedValue([])
+  vi.mocked(listProductionEpisodes).mockResolvedValue([])
+
+  renderPage()
+
+  expect(await screen.findByRole('heading', { name: /Verification Ops/i })).toBeInTheDocument()
+  expect(screen.getByText(/Run Comic Verification Suite/i)).toBeInTheDocument()
+
+  const opsHeading = screen.getByRole('heading', { name: /Verification Ops/i })
+  const workHeading = screen.getByRole('heading', { name: /Create Production Work/i })
+  expect(opsHeading.compareDocumentPosition(workHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
 test('submits production work without requiring a raw id field', async () => {
   vi.mocked(listProductionWorks).mockResolvedValue([buildWork()])
   vi.mocked(listProductionSeries).mockResolvedValue([])
