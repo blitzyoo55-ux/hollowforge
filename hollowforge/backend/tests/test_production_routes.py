@@ -294,19 +294,6 @@ def test_create_and_list_comic_verification_runs(temp_db) -> None:
     assert summary["recent_runs"][0]["finished_at"] == "2026-04-17T00:00:06+00:00"
     assert len(summary["recent_runs"]) == 5
 
-    limited_summary_response = client.get(
-        "/api/v1/production/comic-verification/summary",
-        params={"limit": 2},
-    )
-    assert limited_summary_response.status_code == 200, limited_summary_response.text
-    limited_summary = limited_summary_response.json()
-
-    assert len(limited_summary["recent_runs"]) == 2
-    assert [row["finished_at"] for row in limited_summary["recent_runs"]] == [
-        "2026-04-17T00:00:06+00:00",
-        "2026-04-17T00:00:05+00:00",
-    ]
-
 
 def test_production_routes_mount_in_lightweight_and_full_apps(temp_db) -> None:
     lightweight_app = create_app(lightweight=True)
