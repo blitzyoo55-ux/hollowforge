@@ -52,6 +52,10 @@ Production image generation and orchestration console for Lab451.
   downstream pages stay in manual operator mode.
 - `backend/scripts/launch_production_hub_smoke.py` is the bounded smoke entry
   point for the shared production core plus linked comic and animation tracks.
+- `backend/scripts/run_comic_verification_suite.py` is the canonical operator
+  entry for comic verification. It runs `smoke -> full -> remote` by default
+  and supports `--smoke-only`, `--full-only`, `--remote-only`, and
+  `--continue-on-failure`.
 
 ## Canonical Re-entry Docs
 
@@ -90,9 +94,11 @@ cd backend
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_one_panel_verification.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_four_panel_benchmark.py
 ./.venv/bin/python -m pytest -q tests/test_launch_comic_teaser_animation_smoke.py
+./.venv/bin/python -m pytest -q tests/test_run_comic_verification_suite.py
 ./.venv/bin/python -m pytest -q tests/test_launch_camila_v2_comic_pilot.py tests/test_launch_camila_v2_teaser_pilot.py
 ./.venv/bin/python scripts/check_comic_remote_render_preflight.py --backend-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url http://127.0.0.1:8000
+./.venv/bin/python scripts/run_comic_verification_suite.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_one_panel_verification.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_comic_four_panel_benchmark.py --base-url http://127.0.0.1:8000
 ./.venv/bin/python scripts/launch_camila_v2_comic_pilot.py --base-url http://127.0.0.1:8000
@@ -176,6 +182,9 @@ cd backend
 ./.venv/bin/python scripts/check_comic_remote_render_preflight.py \
   --backend-url http://127.0.0.1:8000
 
+./.venv/bin/python scripts/run_comic_verification_suite.py \
+  --base-url http://127.0.0.1:8000
+
 ./.venv/bin/python scripts/launch_comic_remote_render_smoke.py \
   --base-url http://127.0.0.1:8000
 
@@ -229,21 +238,24 @@ The current dry-run success rule for comic handoff is:
 - ZIP contains the layered root files plus at least one page layer subtree
 
 Use `check_comic_remote_render_preflight.py` before the remote still lane, then
-use `launch_comic_remote_render_smoke.py` to confirm callback-driven
-materialization can produce at least one real selected panel asset through
-`execution_mode=remote_worker`. The preflight and smoke helpers only support
-local backend URLs for `--backend-url` and `--base-url`. The worker-facing
-callback base in `HOLLOWFORGE_PUBLIC_API_BASE_URL` must be a valid `http(s)` URL
-that resolves back to HollowForge; for non-local remote workers it must be
-worker-reachable via a public or reverse-proxied address, while loopback is
-only valid when the worker is co-located. Preflight now proves that callback
-base by probing `HOLLOWFORGE_PUBLIC_API_BASE_URL/api/v1/system/health`. Worker
-auth probing can also return `SKIP` when the worker does not expose the
-undocumented `GET /api/v1/jobs` probe used only to infer whether token auth is
-enforced. If the public callback hostname is protected by Cloudflare Access,
-plain worker callbacks will be redirected to the Access login flow unless the
-callback path is bypassed or the worker is taught to send Cloudflare Access
-service-token headers.
+use `run_comic_verification_suite.py` as the default operator path for
+`smoke -> full -> remote`. Use the single-stage flags only for targeted reruns
+after the suite has already identified the failing lane. The remote still lane
+uses the shared full verification poll budget of `360 * 2s` because the stable
+`comfyui_pipeline` worker can complete after the older 480-second window. The
+preflight and smoke helpers only support local backend URLs for `--backend-url`
+and `--base-url`. The worker-facing callback base in
+`HOLLOWFORGE_PUBLIC_API_BASE_URL` must be a valid `http(s)` URL that resolves
+back to HollowForge; for non-local remote workers it must be worker-reachable
+via a public or reverse-proxied address, while loopback is only valid when the
+worker is co-located. Preflight now proves that callback base by probing
+`HOLLOWFORGE_PUBLIC_API_BASE_URL/api/v1/system/health`. Worker auth probing can
+also return `SKIP` when the worker does not expose the undocumented
+`GET /api/v1/jobs` probe used only to infer whether token auth is enforced. If
+the public callback hostname is protected by Cloudflare Access, plain worker
+callbacks will be redirected to the Access login flow unless the callback path
+is bypassed or the worker is taught to send Cloudflare Access service-token
+headers.
 The canonical comic teaser helper also stays inside the local backend URL
 boundary, uses the default teaser preset `sdxl_ipadapter_microanim_v2`, and is
 intended for live validation only after the stable launchd backend plus stable

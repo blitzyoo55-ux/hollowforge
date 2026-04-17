@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-15
+Last updated: 2026-04-17
 
 ## Snapshot
 
@@ -45,6 +45,8 @@ Last updated: 2026-04-15
   `backend/scripts/launch_comic_four_panel_benchmark.py`.
 - The local one-panel verification helper entry point is
   `backend/scripts/launch_comic_one_panel_verification.py`.
+- The canonical comic verification operator entry point is
+  `backend/scripts/run_comic_verification_suite.py`.
 - The comic remote render preflight helper entry point is
   `backend/scripts/check_comic_remote_render_preflight.py`.
 - The comic remote render smoke helper entry point is
@@ -81,8 +83,9 @@ Last updated: 2026-04-15
   `--base-url`, even when the backend is driving callback-based animation
   validation.
 - The stable animation worker launchd lane runs `executor_backend=comfyui_pipeline`,
-  so the remote comic smoke should use an extended render poll budget such as
-  `--render-poll-attempts 360 --render-poll-sec 1.0`.
+  so the shared full verification profile now uses `render_poll_attempts=360`
+  and `render_poll_sec=2.0`; the older 480-second window proved too short for
+  real remote-worker completions.
 - The stable one-shot remote dry-run helper should currently be run with
   `--candidate-count 2` to keep the live production validation bounded.
 - Comic panel roles now resolve different render profiles; `establish` and
@@ -125,14 +128,19 @@ Last updated: 2026-04-15
 9. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
    http://127.0.0.1:8000` when you need a bounded end-to-end comic backend
    check against a running local API.
-10. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
-   --base-url http://127.0.0.1:8000` when you need a reproducible real-asset
-   local verification before attempting a full one-shot.
-11. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
+10. Use `backend/.venv/bin/python scripts/run_comic_verification_suite.py
+   --base-url http://127.0.0.1:8000` as the default operator entry for comic
+   verification. It runs `smoke -> full -> remote` in order, stops on the
+   first failure by default, and supports `--smoke-only`, `--full-only`,
+   `--remote-only`, and `--continue-on-failure`.
+11. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
+   --base-url http://127.0.0.1:8000` only when you need to rerun the `full`
+   lane in isolation after the suite has already narrowed the failure.
+12. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
    --base-url http://127.0.0.1:8000` when you need a measured local 4-panel
    throughput report, a fail-fast slow-panel cutoff, and a concrete
    `stay_local` vs `remote_worker_recommended` recommendation.
-12. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
+13. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
    --backend-url http://127.0.0.1:8000` before the remote still lane so the
    local backend, worker reachability, callback base URL, and auth-gated worker
    token state are checked in one place. This helper enforces the local backend
@@ -144,17 +152,17 @@ Last updated: 2026-04-15
    in Cloudflare Access, the worker still needs either an Access bypass on the
    callback path or service-token headers; otherwise remote callbacks get
    redirected to the login flow.
-13. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
+14. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
    --base-url http://127.0.0.1:8000` when you need a bounded callback-driven
    proof that the remote still lane can materialize and select one real panel
    asset through `execution_mode=remote_worker`. This helper stays inside the
    local backend URL boundary.
-14. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
+15. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
    when you need the production handoff validation path with a selected layout
    template and manuscript profile. Success now requires a real
    `layered_manifest_path`, a real `handoff_validation_path`, zero hard blocks,
    and layered ZIP contents for every exported page.
-15. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
+16. Use `backend/.venv/bin/python scripts/launch_comic_teaser_animation_smoke.py
    --base-url http://127.0.0.1:8000 --episode-id
    2d696b08-4899-4a3b-b499-adc37dbaa9f5 --panel-index 0 --preset-id
    sdxl_ipadapter_microanim_v2 --poll-sec 5 --timeout-sec 1800` when you need
@@ -162,17 +170,17 @@ Last updated: 2026-04-15
    the local backend URL boundary, emits `animation_shot_id` and
    `animation_shot_variant_id` markers, and assumes the stable launchd backend
    plus stable launchd animation worker are already healthy.
-16. If a teaser animation job is stuck non-terminal (`queued`, `submitted`, or
+17. If a teaser animation job is stuck non-terminal (`queued`, `submitted`, or
    `processing`), use `backend/.venv/bin/python scripts/reconcile_stale_animation_jobs.py
    --base-url http://127.0.0.1:8000` to mark it `failed / Worker restarted`.
    Once it is failed, rerun the existing teaser helper. Recovery is `fail then
    rerun`, not resume.
-17. Use `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py
+18. Use `backend/.venv/bin/python scripts/launch_camila_v2_comic_pilot.py
    --base-url http://127.0.0.1:8000` for the bounded Camila V2 still lane. The
    helper now defaults to `--panel-limit 1`, `--candidate-count 1`, and
    `--execution-mode remote_worker`, and emits explicit selected-render markers
    for the paired teaser helper.
-18. Use `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py
+19. Use `backend/.venv/bin/python scripts/launch_camila_v2_teaser_pilot.py
    --base-url http://127.0.0.1:8000 --episode-id
    09854884-5d52-4c94-9d5b-61800bfec677 --selected-scene-panel-id
    df540260-b759-4d42-b384-637bf60661ed --selected-render-asset-id
@@ -180,7 +188,7 @@ Last updated: 2026-04-15
    c7a2075b-f76c-4caf-85b5-406ed026db5f --selected-render-asset-storage-path
    outputs/051d5939-1216-4561-ad11-b9696da5cfb3.png --timeout-sec 1800` for the
    bounded Camila V2 teaser validation path.
-19. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
+20. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
    this file, and the roadmap do not drift.
 
 ## Active Priorities
@@ -220,6 +228,8 @@ Last updated: 2026-04-15
   `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py`
 - backend comic one-panel verification:
   `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py`
+- backend comic verification suite:
+  `backend/.venv/bin/python scripts/run_comic_verification_suite.py`
 - backend comic four-panel benchmark:
   `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py`
 - backend comic remote render preflight:
