@@ -223,6 +223,46 @@ def test_main_can_continue_after_failure_when_requested(
     assert "overall_success: false" in captured.out
 
 
+def test_main_keeps_each_failed_stage_error_summary_when_continue_on_failure(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    module = _load_module()
+    calls, persist_calls = _patch_stage_environment(
+        module,
+        monkeypatch,
+        tmp_path,
+        stage_exit_codes={"smoke": 1, "full": 2, "remote": 0},
+    )
+
+    assert (
+        module.main(
+            [
+                "--base-url",
+                "http://127.0.0.1:8012",
+                "--continue-on-failure",
+            ]
+        )
+        == 1
+    )
+
+    captured = capsys.readouterr()
+    assert calls == ["smoke", "full", "remote"]
+    assert len(persist_calls) == 1
+    payload = persist_calls[0][1]
+    assert payload["failure_stage"] == "smoke"
+    assert payload["error_summary"] == "stage smoke exited with code 1"
+    assert payload["stage_status"]["smoke"]["status"] == "failed"
+    assert payload["stage_status"]["smoke"]["error_summary"] == "stage smoke exited with code 1"
+    assert payload["stage_status"]["full"]["status"] == "failed"
+    assert payload["stage_status"]["full"]["error_summary"] == "stage full exited with code 2"
+    assert payload["stage_status"]["remote"]["status"] == "passed"
+    assert "failed_stage: smoke" in captured.out
+    assert "continue_on_failure: true" in captured.out
+    assert "overall_success: false" in captured.out
+
+
 def test_main_reports_missing_stage_script_before_execution(
     monkeypatch,
     tmp_path: Path,
