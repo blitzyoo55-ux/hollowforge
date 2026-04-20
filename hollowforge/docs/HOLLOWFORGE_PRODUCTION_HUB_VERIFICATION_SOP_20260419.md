@@ -111,6 +111,7 @@ The legacy backfill is conservative:
 - ambiguous clusters are reported and left unchanged
 - nothing is deleted
 - no historical `verification_run_id` values are invented
+- Production Hub intentionally does not expose backfill write controls; run this procedure from the terminal only
 
 Recommended operator sequence:
 
