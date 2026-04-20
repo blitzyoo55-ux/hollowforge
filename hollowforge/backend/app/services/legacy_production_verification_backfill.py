@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 from app.db import get_db
 
@@ -56,9 +56,9 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 def _timestamps_within_window(row: dict[str, Any]) -> bool:
     timestamps = [
-        _parse_iso(cast(str | None, row.get("work_created_at"))),
-        _parse_iso(cast(str | None, row.get("series_created_at"))),
-        _parse_iso(cast(str | None, row.get("production_episode_created_at"))),
+        _parse_iso(cast(Optional[str], row.get("work_created_at"))),
+        _parse_iso(cast(Optional[str], row.get("series_created_at"))),
+        _parse_iso(cast(Optional[str], row.get("production_episode_created_at"))),
     ]
     present = [stamp for stamp in timestamps if stamp is not None]
     if len(present) < 2:
@@ -70,19 +70,19 @@ def _timestamps_within_window(row: dict[str, Any]) -> bool:
 def _row_is_eligible(row: dict[str, Any]) -> bool:
     top_level_pairs = [
         (
-            cast(str | None, row.get("work_record_origin")),
-            cast(str | None, row.get("work_verification_run_id")),
+            cast(Optional[str], row.get("work_record_origin")),
+            cast(Optional[str], row.get("work_verification_run_id")),
         ),
         (
-            cast(str | None, row.get("production_episode_record_origin")),
-            cast(str | None, row.get("production_episode_verification_run_id")),
+            cast(Optional[str], row.get("production_episode_record_origin")),
+            cast(Optional[str], row.get("production_episode_verification_run_id")),
         ),
     ]
     if row.get("series_id") is not None:
         top_level_pairs.append(
             (
-                cast(str | None, row.get("series_record_origin")),
-                cast(str | None, row.get("series_verification_run_id")),
+                cast(Optional[str], row.get("series_record_origin")),
+                cast(Optional[str], row.get("series_verification_run_id")),
             )
         )
     return all(record_origin == "operator" and verification_run_id is None for record_origin, verification_run_id in top_level_pairs)
@@ -97,7 +97,7 @@ def _cluster_from_row(
 ) -> LegacyVerificationArtifactCluster:
     return LegacyVerificationArtifactCluster(
         work_id=cast(str, row["work_id"]),
-        series_id=cast(str | None, row.get("series_id")),
+        series_id=cast(Optional[str], row.get("series_id")),
         production_episode_id=cast(str, row["production_episode_id"]),
         comic_episode_ids=comic_episode_ids,
         sequence_blueprint_ids=sequence_blueprint_ids,
@@ -112,7 +112,7 @@ def _classify_cluster(
     sequence_rows: list[dict[str, Any]],
 ) -> tuple[str, LegacyVerificationArtifactCluster]:
     smoke_work = cast(str, row["work_title"]).startswith(SMOKE_WORK_PREFIX)
-    smoke_series = cast(str | None, row.get("series_title") or "").startswith(
+    smoke_series = cast(Optional[str], row.get("series_title") or "").startswith(
         SMOKE_SERIES_PREFIX
     )
     smoke_episode = (
