@@ -18,11 +18,13 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Scheduler = lazy(() => import('./pages/Scheduler'))
 const SeedanceStudio = lazy(() => import('./pages/SeedanceStudio'))
 const SequenceStudio = lazy(() => import('./pages/SequenceStudio'))
+const ProductionHub = lazy(() => import('./pages/ProductionHub'))
 const QueuePage = lazy(() => import('./pages/QueuePage'))
 const BatchImportPage = lazy(() => import('./pages/BatchImportPage'))
 const CurationPage = lazy(() => import('./pages/CurationPage'))
 const DirectionBoard = lazy(() => import('./pages/DirectionBoard'))
 const Marketing = lazy(() => import('./pages/Marketing'))
+const ComicStudio = lazy(() => import('./pages/ComicStudio'))
 const Favorites = lazy(() => import('./pages/Favorites'))
 const ReadyToGo = lazy(() => import('./pages/ReadyToGo'))
 const QualityPage = lazy(() => import('./pages/QualityPage'))
@@ -73,10 +75,12 @@ const navGroups: NavGroup[] = [
   {
     label: 'TOOLS',
     items: [
+      { to: '/production', label: 'Production Hub', icon: 'layers' },
       { to: '/lora-guide', label: 'LoRA Guide', icon: 'book' },
       { to: '/direction', label: 'Direction Board', icon: 'compass', leanHidden: true },
       { to: '/seedance', label: 'Seedance', icon: 'video-sparkles' },
-      { to: '/sequences', label: 'Sequences', icon: 'layers' },
+      { to: '/sequences', label: 'Animation Track', icon: 'layers' },
+      { to: '/comic', label: 'Comic Handoff', icon: 'book' },
       { to: '/marketing', label: 'Caption AI', icon: 'wand-sparkles', leanHidden: true },
       { to: '/timeline', label: 'Timeline', icon: 'timeline', leanHidden: true },
       { to: '/settings', label: 'Settings', icon: 'cog' },
@@ -263,7 +267,7 @@ export default function App() {
         <div className="px-6 py-5 border-b border-gray-800">
           <NavLink to="/" onClick={() => setSidebarOpen(false)} className="block">
             <h1 className="text-xl font-bold text-violet-400 tracking-tight hover:text-violet-300 transition-colors">HollowForge</h1>
-            <p className="text-xs text-gray-500 mt-0.5">ComfyUI Generation Manager</p>
+            <p className="text-xs text-gray-500 mt-0.5">Production Hub Console</p>
           </NavLink>
         </div>
         <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-4">
@@ -370,8 +374,11 @@ export default function App() {
               <Route path="/presets" element={<Presets />} />
               <Route path="/lora-guide" element={<LoraGuide />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/production" element={<ProductionHub />} />
               <Route path="/seedance" element={<SeedanceStudio />} />
               <Route path="/sequences" element={<SequenceStudio />} />
+              <Route path="/comic" element={<ComicStudio />} />
+              <Route path="/comic-studio" element={<ComicStudio />} />
               <Route path="/quality" element={<QualityPage />} />
               <Route path="/figma-character-board" element={<FigmaCharacterBoard />} />
               <Route path="/marketing" element={<Marketing />} />

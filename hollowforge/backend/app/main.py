@@ -35,6 +35,10 @@ def _iter_public_data_dirs() -> tuple[pathlib.Path, ...]:
         settings.IMAGES_DIR / "watermarked",
         settings.THUMBS_DIR,
         settings.WORKFLOWS_DIR,
+        settings.COMICS_DIR,
+        settings.COMICS_PREVIEWS_DIR,
+        settings.COMICS_EXPORTS_DIR,
+        settings.COMICS_MANIFESTS_DIR,
     )
 
 
@@ -65,23 +69,42 @@ def _mount_static_dirs(app: FastAPI) -> None:
         StaticFiles(directory=str(settings.WORKFLOWS_DIR)),
         name="data-workflows",
     )
+    app.mount(
+        "/data/comics/previews",
+        StaticFiles(directory=str(settings.COMICS_PREVIEWS_DIR)),
+        name="data-comics-previews",
+    )
+    app.mount(
+        "/data/comics/exports",
+        StaticFiles(directory=str(settings.COMICS_EXPORTS_DIR)),
+        name="data-comics-exports",
+    )
+    app.mount(
+        "/data/comics/manifests",
+        StaticFiles(directory=str(settings.COMICS_MANIFESTS_DIR)),
+        name="data-comics-manifests",
+    )
 
 
 def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     if lightweight:
-        from app.routes import sequences
+        from app.routes import comic, production, sequences
 
+        app.include_router(comic.router)
+        app.include_router(production.router)
         app.include_router(sequences.router)
         return
 
     from app.routes import (
         animation,
+        comic,
         collections,
         dreamactor,
         favorites,
         gallery,
         generations,
         loras,
+        production,
         presets,
         publishing,
         reproduce,
@@ -105,6 +128,8 @@ def _include_routers(app: FastAPI, *, lightweight: bool = False) -> None:
     app.include_router(publishing.router)
     app.include_router(reproduce.router)
     app.include_router(sequences.router)
+    app.include_router(comic.router)
+    app.include_router(production.router)
     app.include_router(export_router)
     app.include_router(seedance.router)
     app.include_router(quality_ai_router)

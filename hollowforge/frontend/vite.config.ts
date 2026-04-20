@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveBackendProxyTarget } from './devProxy'
 
 const rootDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(rootDir, '../../../../')
@@ -15,6 +16,7 @@ function existingDirs(candidates: Array<string | undefined>): string[] {
 }
 
 const pinokioRootFromEnv = process.env.PINOKIO_ROOT_DIR
+const backendProxyTarget = resolveBackendProxyTarget()
 const pinokioFsAllowDirs = existingDirs([
   process.env.PINOKIO_OUTPUT_DIR,
   process.env.PINOKIO_PEERS_DIR,
@@ -48,12 +50,12 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: backendProxyTarget,
         timeout: 300_000,
         proxyTimeout: 300_000,
       },
       '/data': {
-        target: 'http://localhost:8000',
+        target: backendProxyTarget,
         timeout: 300_000,
         proxyTimeout: 300_000,
       },

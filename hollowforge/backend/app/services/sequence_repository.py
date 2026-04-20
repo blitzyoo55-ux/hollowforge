@@ -145,6 +145,9 @@ async def create_blueprint(
             """
             INSERT INTO sequence_blueprints (
                 id,
+                work_id,
+                series_id,
+                production_episode_id,
                 content_mode,
                 policy_profile_id,
                 character_id,
@@ -156,10 +159,13 @@ async def create_blueprint(
                 executor_policy,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_id,
+                payload.work_id,
+                payload.series_id,
+                payload.production_episode_id,
                 payload.content_mode,
                 payload.policy_profile_id,
                 payload.character_id,
@@ -198,6 +204,7 @@ async def list_blueprints(
     *,
     content_mode: str | None = None,
     policy_profile_id: str | None = None,
+    production_episode_id: str | None = None,
 ) -> list[SequenceBlueprintResponse]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -207,6 +214,9 @@ async def list_blueprints(
     if policy_profile_id is not None:
         clauses.append("policy_profile_id = ?")
         params.append(policy_profile_id)
+    if production_episode_id is not None:
+        clauses.append("production_episode_id = ?")
+        params.append(production_episode_id)
 
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     async with get_db() as db:

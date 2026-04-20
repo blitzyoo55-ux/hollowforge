@@ -139,3 +139,36 @@ async def test_story_planner_plan_route_preserves_unresolved_registry_semantics(
     assert body["resolved_cast"][0]["character_id"] == "unknown_consultant"
     assert body["resolved_cast"][0]["character_name"] is None
     assert "not found" in body["resolved_cast"][0]["resolution_note"].lower()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/tools/story-planner/plan",
+        "/api/tools/story-planner/plan",
+    ],
+)
+async def test_story_planner_plan_route_supports_prompt_only_mode(path: str) -> None:
+    app = _build_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            path,
+            json={
+                "story_prompt": (
+                    "Hana Seo meets a quiet messenger in the Moonlit Bathhouse "
+                    "corridor after closing."
+                ),
+                "lane": "adult_nsfw",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved_cast"][0]["source_type"] == "freeform"
+    assert "Hana Seo" in body["resolved_cast"][0]["freeform_description"]
+    assert body["resolved_cast"][1]["source_type"] == "freeform"
+    assert "messenger" in body["resolved_cast"][1]["freeform_description"].lower()

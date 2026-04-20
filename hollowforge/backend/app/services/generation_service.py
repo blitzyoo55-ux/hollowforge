@@ -19,7 +19,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import GenerationCreate, GenerationResponse, GenerationStatus, LoraInput
 from app.services import adetailer_service
-from app.services.comfyui_client import ComfyUIClient
+from app.services.comfyui_client import ComfyUIClient, ComfyUIWaitCancelledError
 from app.services.image_service import (
     save_generation_image,
     save_upscaled_preview,
@@ -156,10 +156,15 @@ class GenerationService:
     """Manages the generation queue and background processing worker."""
 
     def __init__(self, client: ComfyUIClient | None = None) -> None:
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
         self._generation_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()
         self._interactive_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()
         self._favorite_backlog_queue: asyncio.Queue[_QueueJob] = asyncio.Queue()
         self._queue_event = asyncio.Event()
+        self._cancel_events: dict[str, asyncio.Event] = {}
         self._client = client or ComfyUIClient()
         self._owns_client = client is None
         self._worker_task: asyncio.Task[None] | None = None
@@ -259,6 +264,25 @@ class GenerationService:
             )
             return await cursor.fetchone()
 
+    def _get_cancel_event(self, gen_id: str) -> asyncio.Event:
+        event = self._cancel_events.get(gen_id)
+        if event is None:
+            event = asyncio.Event()
+            self._cancel_events[gen_id] = event
+        return event
+
+    async def _mark_generation_cancelled(self, gen_id: str) -> None:
+        async with get_db() as db:
+            await db.execute(
+                """UPDATE generations
+                   SET status = 'cancelled',
+                       completed_at = COALESCE(completed_at, ?)
+                   WHERE id = ?
+                     AND status NOT IN ('completed', 'failed', 'cancelled')""",
+                (_now_iso(), gen_id),
+            )
+            await db.commit()
+
     async def _set_postprocess_state(
         self,
         gen_id: str,
@@ -341,6 +365,16 @@ class GenerationService:
         seed = gen.resolved_seed()
         return await self._insert_generation_record(gen, seed)
 
+    async def create_generation_shell(
+        self,
+        gen: GenerationCreate,
+    ) -> GenerationResponse:
+        """Insert a queued generation row without enqueuing local worker work."""
+        gen = _apply_default_negative_prompt(gen)
+        await self._validate_lora_compatibility(gen)
+        seed = gen.resolved_seed()
+        return await self._insert_generation_record(gen, seed, enqueue=False)
+
     async def queue_generation_batch(
         self,
         gen: GenerationCreate,
@@ -395,6 +429,57 @@ class GenerationService:
 
         return base_seed, queued
 
+    async def create_generation_shell_batch(
+        self,
+        gen: GenerationCreate,
+        count: int,
+        seed_increment: int = 1,
+    ) -> tuple[int, list[GenerationResponse]]:
+        """Insert queued generation lineage shells without local worker enqueue."""
+        gen = _apply_default_negative_prompt(gen)
+        await self._validate_lora_compatibility(gen)
+        if count < 2:
+            raise ValueError("count must be >= 2 for batch generation")
+        if seed_increment < 1:
+            raise ValueError("seed_increment must be >= 1")
+        if gen.source_id:
+            existing_batch = await self._load_generations_by_source_id(gen.source_id)
+            if existing_batch:
+                if len(existing_batch) == count:
+                    return existing_batch[0].seed, existing_batch
+                if len(existing_batch) < count:
+                    raise ValueError(
+                        f"partial batch exists for source_id '{gen.source_id}': "
+                        f"expected {count}, found {len(existing_batch)}"
+                    )
+                raise ValueError(
+                    f"source_id '{gen.source_id}' already has {len(existing_batch)} "
+                    f"generations; expected {count}"
+                )
+
+        span = (count - 1) * seed_increment
+        if span > _MAX_SEED:
+            raise ValueError("Batch size and seed increment exceed valid seed range")
+
+        if gen.seed is None or gen.seed == -1:
+            base_seed = random.randint(0, _MAX_SEED - span)
+        else:
+            base_seed = gen.seed
+            if base_seed + span > _MAX_SEED:
+                raise ValueError(
+                    f"base seed {base_seed} with count={count} and seed_increment="
+                    f"{seed_increment} exceeds max seed {_MAX_SEED}"
+                )
+
+        queued: list[GenerationResponse] = []
+        for i in range(count):
+            seed = base_seed + (i * seed_increment)
+            queued.append(
+                await self._insert_generation_record(gen, seed, enqueue=False)
+            )
+
+        return base_seed, queued
+
     async def _load_generations_by_source_id(
         self,
         source_id: str,
@@ -410,7 +495,11 @@ class GenerationService:
         return [_row_to_response(row) for row in rows]
 
     async def _insert_generation_record(
-        self, gen: GenerationCreate, seed: int
+        self,
+        gen: GenerationCreate,
+        seed: int,
+        *,
+        enqueue: bool = True,
     ) -> GenerationResponse:
         gen_id = str(uuid.uuid4())
         now = _now_iso()
@@ -454,13 +543,14 @@ class GenerationService:
             )
             row = await cursor.fetchone()
 
-        self._enqueue_job(
-            _QueueJob(
-                kind="generation",
-                generation_id=gen_id,
-                queue_class="generation",
+        if enqueue:
+            self._enqueue_job(
+                _QueueJob(
+                    kind="generation",
+                    generation_id=gen_id,
+                    queue_class="generation",
+                )
             )
-        )
         return _row_to_response(row)
 
     async def _validate_lora_compatibility(self, gen: GenerationCreate) -> None:
@@ -681,6 +771,7 @@ class GenerationService:
         )
 
     async def cancel_generation(self, gen_id: str) -> bool:
+        cancel_event = self._get_cancel_event(gen_id)
         async with get_db() as db:
             cursor = await db.execute(
                 "SELECT id, status, comfyui_prompt_id FROM generations WHERE id = ?",
@@ -692,6 +783,8 @@ class GenerationService:
 
             if row["status"] in ("completed", "failed", "cancelled"):
                 return False
+
+            cancel_event.set()
 
             # Try to cancel in ComfyUI if running
             if row["status"] == "running" and row.get("comfyui_prompt_id"):
@@ -800,6 +893,8 @@ class GenerationService:
 
     async def _process_generation(self, gen_id: str) -> None:
         """Execute a single generation: build workflow, submit, poll, save."""
+        cancel_event = self._get_cancel_event(gen_id)
+
         # Fetch record
         async with get_db() as db:
             cursor = await db.execute(
@@ -807,13 +902,21 @@ class GenerationService:
             )
             row = await cursor.fetchone()
 
-        if row is None or row["status"] == "cancelled":
+        if row is None:
+            self._cancel_events.pop(gen_id, None)
+            return
+        if row["status"] == "cancelled" or cancel_event.is_set():
+            self._cancel_events.pop(gen_id, None)
             return
 
-        # Update status to running
+        # Claim the row for active processing and clear stale restart markers.
         async with get_db() as db:
             await db.execute(
-                "UPDATE generations SET status = ? WHERE id = ?",
+                """UPDATE generations
+                   SET status = ?,
+                       error_message = NULL,
+                       completed_at = NULL
+                   WHERE id = ?""",
                 ("running", gen_id),
             )
             await db.commit()
@@ -850,21 +953,41 @@ class GenerationService:
             # Save workflow to disk
             save_workflow(workflow, gen_id)
 
+            if cancel_event.is_set():
+                await self._mark_generation_cancelled(gen_id)
+                return
+
             # Submit to ComfyUI
             prompt_id = await self._client.submit_prompt(workflow)
 
-            # Store prompt_id
+            # Persist the prompt id and keep the row in a clean active state.
             async with get_db() as db:
                 await db.execute(
-                    "UPDATE generations SET comfyui_prompt_id = ? WHERE id = ?",
-                    (prompt_id, gen_id),
+                    """UPDATE generations
+                       SET status = ?,
+                           error_message = NULL,
+                           completed_at = NULL,
+                           comfyui_prompt_id = ?
+                       WHERE id = ?""",
+                    ("running", prompt_id, gen_id),
                 )
                 await db.commit()
 
+            if cancel_event.is_set():
+                await self._client.cancel_prompt(prompt_id)
+                await self._mark_generation_cancelled(gen_id)
+                return
+
             # Poll for completion
             images = await self._client.wait_for_completion(
-                prompt_id, save_node_id
+                prompt_id,
+                save_node_id,
+                cancel_check=cancel_event.is_set,
             )
+
+            if cancel_event.is_set():
+                await self._mark_generation_cancelled(gen_id)
+                return
 
             # Download first image
             image_bytes = await self._client.download_image(images[0])
@@ -896,6 +1019,7 @@ class GenerationService:
                     """UPDATE generations
                        SET status = ?, image_path = ?, thumbnail_path = ?,
                            workflow_path = ?, watermarked_path = ?,
+                           error_message = NULL,
                            generation_time_sec = ?,
                            completed_at = ?
                        WHERE id = ?""",
@@ -912,7 +1036,12 @@ class GenerationService:
                 )
                 await db.commit()
 
+        except ComfyUIWaitCancelledError:
+            await self._mark_generation_cancelled(gen_id)
         except Exception as exc:
+            if cancel_event.is_set():
+                await self._mark_generation_cancelled(gen_id)
+                return
             elapsed = time.perf_counter() - start_time
             logger.error(
                 "Generation %s failed after %.2fs: %s", gen_id, elapsed, exc
@@ -932,6 +1061,8 @@ class GenerationService:
                     ),
                 )
                 await db.commit()
+        finally:
+            self._cancel_events.pop(gen_id, None)
 
     async def _process_upscale(
         self,
