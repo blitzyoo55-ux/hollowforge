@@ -14,6 +14,62 @@ export interface LoraInput {
   category: string | null;
 }
 
+export interface ComicVerificationStageStatusResponse {
+  status: 'passed' | 'failed' | 'skipped' | string
+  duration_sec?: number | null
+  error_summary?: string | null
+}
+
+export interface ComicVerificationRunResponse {
+  id: string
+  run_mode: 'preflight' | 'suite' | 'full_only' | 'remote_only' | string
+  status: 'completed' | 'failed' | string
+  overall_success: boolean
+  failure_stage: string | null
+  error_summary: string | null
+  base_url: string
+  total_duration_sec: number | null
+  started_at: string
+  finished_at: string
+  stage_status: Record<string, ComicVerificationStageStatusResponse>
+  created_at: string
+  updated_at: string
+}
+
+export interface ComicVerificationSummaryResponse {
+  latest_preflight: ComicVerificationRunResponse | null
+  latest_suite: ComicVerificationRunResponse | null
+  recent_runs: ComicVerificationRunResponse[]
+}
+
+export interface ProductionVerificationStageStatusResponse {
+  status: 'passed' | 'failed' | 'skipped' | string
+  duration_sec?: number | null
+  error_summary?: string | null
+}
+
+export interface ProductionVerificationRunResponse {
+  id: string
+  run_mode: 'suite' | 'smoke_only' | 'ui_only' | string
+  status: 'completed' | 'failed' | string
+  overall_success: boolean
+  failure_stage: string | null
+  error_summary: string | null
+  base_url: string
+  total_duration_sec: number | null
+  started_at: string
+  finished_at: string
+  stage_status: Record<string, ProductionVerificationStageStatusResponse>
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionVerificationSummaryResponse {
+  latest_smoke_only: ProductionVerificationRunResponse | null
+  latest_suite: ProductionVerificationRunResponse | null
+  recent_runs: ProductionVerificationRunResponse[]
+}
+
 export interface GenerationCreate {
   prompt: string;
   negative_prompt?: string | null;
@@ -263,6 +319,20 @@ export interface LoraProfile {
 }
 
 export type LoraProfileResponse = LoraProfile
+
+export async function getProductionComicVerificationSummary(): Promise<ComicVerificationSummaryResponse> {
+  const response = await api.get<ComicVerificationSummaryResponse>(
+    '/production/comic-verification/summary',
+  )
+  return response.data
+}
+
+export async function getProductionVerificationSummary(): Promise<ProductionVerificationSummaryResponse> {
+  const response = await api.get<ProductionVerificationSummaryResponse>(
+    '/production/verification/summary',
+  )
+  return response.data
+}
 
 export interface LoraProfileCreate {
   display_name: string;
@@ -946,6 +1016,10 @@ export interface ComicEpisodeResponse {
   id: string
   character_id: string
   character_version_id: string
+  content_mode: SequenceContentMode
+  work_id: string | null
+  series_id: string | null
+  production_episode_id: string | null
   title: string
   synopsis: string
   source_story_plan_json: string | null
@@ -1067,11 +1141,21 @@ export interface ComicEpisodeDetailResponse {
   pages: ComicPageAssemblyResponse[]
 }
 
+export interface ComicEpisodeSummaryResponse {
+  episode: ComicEpisodeResponse
+  scene_count: number
+  page_count: number
+}
+
 export interface ComicStoryPlanImportRequest {
   approved_plan: StoryPlannerPlanResponse
   character_version_id: string
   title: string
   panel_multiplier?: number
+  work_id?: string | null
+  series_id?: string | null
+  production_episode_id?: string | null
+  content_mode?: SequenceContentMode | null
 }
 
 export interface ComicPanelRenderQueueRequest {
@@ -1330,6 +1414,9 @@ export interface QueueSummary {
 export type SequenceContentMode = 'all_ages' | 'adult_nsfw'
 
 export interface SequenceBlueprintCreate {
+  work_id?: string | null
+  series_id?: string | null
+  production_episode_id?: string | null
   content_mode: SequenceContentMode
   policy_profile_id: string
   character_id: string
@@ -1471,9 +1558,176 @@ export interface SequenceRunDetailResponse {
   rough_cut_candidates: SequenceRoughCutCandidateResponse[]
 }
 
+export type ProductionFormatFamily = 'comic' | 'animation' | 'mixed'
+export type ProductionDeliveryMode = 'oneshot' | 'serial' | 'anthology'
+export type ProductionTargetOutput = 'comic' | 'animation'
+export type ProductionRecordOrigin = 'operator' | 'verification_smoke'
+
+export interface ProductionWorkResponse {
+  id: string
+  title: string
+  format_family: ProductionFormatFamily
+  default_content_mode: SequenceContentMode
+  status: string
+  canon_notes: string | null
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionWorkCreate {
+  id?: string | null
+  title: string
+  format_family: ProductionFormatFamily
+  default_content_mode: SequenceContentMode
+  status?: string | null
+  canon_notes?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
+}
+
+export interface ProductionSeriesResponse {
+  id: string
+  work_id: string
+  title: string
+  delivery_mode: ProductionDeliveryMode
+  audience_mode: SequenceContentMode
+  visual_identity_notes: string | null
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionSeriesCreate {
+  id?: string | null
+  work_id: string
+  title: string
+  delivery_mode: ProductionDeliveryMode
+  audience_mode: SequenceContentMode
+  visual_identity_notes?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
+}
+
+export interface ProductionComicTrackLinkResponse {
+  id: string
+  status: string
+  target_output: ComicTargetOutput
+  character_id: string
+}
+
+export interface ProductionAnimationTrackLinkResponse {
+  id: string
+  content_mode: SequenceContentMode
+  policy_profile_id: string
+  shot_count: number
+  executor_policy: string
+}
+
+export interface ProductionEpisodeDetailResponse {
+  id: string
+  work_id: string
+  series_id: string | null
+  title: string
+  synopsis: string
+  content_mode: SequenceContentMode
+  target_outputs: ProductionTargetOutput[]
+  continuity_summary: string | null
+  status: string
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
+  comic_track: ProductionComicTrackLinkResponse | null
+  animation_track: ProductionAnimationTrackLinkResponse | null
+  comic_track_count: number
+  animation_track_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionEpisodeCreate {
+  work_id: string
+  series_id?: string | null
+  title: string
+  synopsis: string
+  content_mode: SequenceContentMode
+  target_outputs: ProductionTargetOutput[]
+  continuity_summary?: string | null
+  status?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
+}
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
+
+export async function listProductionEpisodes(query: {
+  work_id?: string
+  include_verification_artifacts?: boolean
+} = {}): Promise<ProductionEpisodeDetailResponse[]> {
+  const res = await api.get<ProductionEpisodeDetailResponse[]>('/production/episodes', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function listProductionWorks(query: {
+  include_verification_artifacts?: boolean
+} = {}): Promise<ProductionWorkResponse[]> {
+  const res = await api.get<ProductionWorkResponse[]>('/production/works', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function listProductionSeries(query: {
+  work_id?: string
+  include_verification_artifacts?: boolean
+} = {}): Promise<ProductionSeriesResponse[]> {
+  const res = await api.get<ProductionSeriesResponse[]>('/production/series', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function createProductionWork(
+  data: ProductionWorkCreate,
+): Promise<ProductionWorkResponse> {
+  const res = await api.post<ProductionWorkResponse>('/production/works', data)
+  return res.data
+}
+
+export async function createProductionSeries(
+  data: ProductionSeriesCreate,
+): Promise<ProductionSeriesResponse> {
+  const res = await api.post<ProductionSeriesResponse>('/production/series', data)
+  return res.data
+}
+
+export async function createProductionEpisode(
+  data: ProductionEpisodeCreate,
+): Promise<ProductionEpisodeDetailResponse> {
+  const res = await api.post<ProductionEpisodeDetailResponse>('/production/episodes', data)
+  return res.data
+}
+
+export async function listComicEpisodes(query: {
+  production_episode_id?: string
+} = {}): Promise<ComicEpisodeSummaryResponse[]> {
+  const res = await api.get<ComicEpisodeSummaryResponse[]>('/comic/episodes', {
+    params: query,
+  })
+  return res.data
+}
+
+export async function getComicEpisode(
+  episodeId: string,
+): Promise<ComicEpisodeDetailResponse> {
+  const res = await api.get<ComicEpisodeDetailResponse>(`/comic/episodes/${episodeId}`)
+  return res.data
+}
 
 export async function createSequenceBlueprint(
   data: SequenceBlueprintCreate,
@@ -1485,6 +1739,7 @@ export async function createSequenceBlueprint(
 export async function listSequenceBlueprints(query: {
   content_mode?: SequenceContentMode
   policy_profile_id?: string
+  production_episode_id?: string
 } = {}): Promise<SequenceBlueprintDetailResponse[]> {
   const res = await api.get<SequenceBlueprintDetailResponse[]>('/sequences/blueprints', {
     params: query,

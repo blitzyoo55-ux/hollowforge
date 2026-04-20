@@ -52,6 +52,12 @@ from app.services.comic_story_bridge_service import build_comic_draft_from_story
 router = APIRouter(prefix="/api/v1/comic", tags=["comic"])
 
 
+def _content_mode_from_story_lane(lane: str) -> str:
+    if lane == "adult_nsfw":
+        return "adult_nsfw"
+    return "all_ages"
+
+
 def _validate_story_plan_character_alignment(
     approved_plan: StoryPlannerPlanResponse,
     *,
@@ -193,6 +199,17 @@ async def import_story_plan(
             title=payload.title,
             panel_multiplier=payload.panel_multiplier,
         )
+        content_mode = payload.content_mode or _content_mode_from_story_lane(
+            payload.approved_plan.lane
+        )
+        draft = draft.model_copy(
+            update={
+                "content_mode": content_mode,
+                "work_id": payload.work_id,
+                "series_id": payload.series_id,
+                "production_episode_id": payload.production_episode_id,
+            }
+        )
         _bind_selected_character_to_draft(
             draft=draft,
             selected_character_id=character_id,
@@ -212,10 +229,12 @@ async def import_story_plan(
 async def get_comic_episodes(
     character_id: str | None = Query(default=None),
     status_filter: ComicEpisodeStatus | None = Query(default=None, alias="status"),
+    production_episode_id: str | None = Query(default=None),
 ) -> list[ComicEpisodeSummaryResponse]:
     return await list_comic_episodes(
         character_id=character_id,
         status=status_filter,
+        production_episode_id=production_episode_id,
     )
 
 

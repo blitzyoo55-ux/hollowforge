@@ -1,6 +1,6 @@
 # HollowForge State
 
-Last updated: 2026-04-05
+Last updated: 2026-04-13
 
 ## Snapshot
 
@@ -10,7 +10,13 @@ Last updated: 2026-04-05
 - The runtime stack is FastAPI + React 19 + Tailwind v4 + SQLite + ComfyUI.
 - The backend local entrypoint is `backend/run_local_backend.sh` and binds to
   `127.0.0.1:8000`.
-- The current phase is production dry run + Japanese handoff hardening.
+- The current phase is production hub core + boundary-first UI for comic and
+  animation tracks.
+- `/production` is now the shared production-core route for work, series, and
+  episode orchestration state.
+- `/comic` should now be read as Comic Handoff, not the final manga editor.
+- `/sequences` should now be read as Animation Track, not the final animation
+  editor.
 - The comic MVP scope is currently one character, one one-shot comic episode,
   and one teaser derivative path from that same source material.
 - `/comic` now carries manuscript profile selection, backed by
@@ -40,25 +46,27 @@ Last updated: 2026-04-05
 ## Resume Here
 
 1. Use `README.md` for the repo map and `ROADMAP.md` for full phase history.
-2. If a change touches frontend runtime behavior, run the relevant `frontend/`
+2. Use `/production` first when checking shared work, series, and episode
+   linkage state before dropping into `/comic` or `/sequences`.
+3. If a change touches frontend runtime behavior, run the relevant `frontend/`
    checks and do not treat the work as deploy-complete before `npm run build`.
-3. If a change touches animation execution, preserve the existing
+4. If a change touches animation execution, preserve the existing
    `request_json` and callback contract, then use the canonical preflight or
    smoke scripts from `docs/ANIMATION_WORKFLOW_PLAYBOOK_20260313.md`.
-4. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
+5. Comic MVP operator entry is `/comic`, with `/comic-studio` retained as a
    compatibility route for existing bookmarks, and manuscript profile selection
    is now part of the `/comic` workspace.
-5. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
+6. Use `backend/.venv/bin/python scripts/launch_comic_mvp_smoke.py --base-url
    http://127.0.0.1:8000` when you need a bounded end-to-end comic backend
    check against a running local API.
-6. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
+7. Use `backend/.venv/bin/python scripts/launch_comic_one_panel_verification.py
    --base-url http://127.0.0.1:8000` when you need a reproducible real-asset
    local verification before attempting a full one-shot.
-7. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
+8. Use `backend/.venv/bin/python scripts/launch_comic_four_panel_benchmark.py
    --base-url http://127.0.0.1:8000` when you need a measured local 4-panel
    throughput report, a fail-fast slow-panel cutoff, and a concrete
    `stay_local` vs `remote_worker_recommended` recommendation.
-8. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
+9. Use `backend/.venv/bin/python scripts/check_comic_remote_render_preflight.py
    --backend-url http://127.0.0.1:8000` before the remote still lane so the
    local backend, worker reachability, callback base URL, and auth-gated worker
    token state are checked in one place. This helper enforces the local backend
@@ -70,20 +78,22 @@ Last updated: 2026-04-05
    in Cloudflare Access, the worker still needs either an Access bypass on the
    callback path or service-token headers; otherwise remote callbacks get
    redirected to the login flow.
-9. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
+10. Use `backend/.venv/bin/python scripts/launch_comic_remote_render_smoke.py
    --base-url http://127.0.0.1:8000` when you need a bounded callback-driven
    proof that the remote still lane can materialize and select one real panel
    asset through `execution_mode=remote_worker`. This helper stays inside the
    local backend URL boundary.
-10. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
+11. Use `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
    when you need the production handoff validation path with a selected layout
    template and manuscript profile.
-11. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
+12. Record meaningful checkpoints in `00_Collaboration/project-hub` so the hub,
    this file, and the roadmap do not drift.
 
 ## Active Priorities
 
 - keep the production deploy path explicit, especially the frontend build step
+- keep `/production` as the source-of-truth surface for episode linkage and
+  content-mode normalization
 - keep the production dry-run and handoff export path explicit, including the
   manuscript profile selection and ZIP/report verification steps
 - continue the shift from random image generation toward character, episode,
@@ -100,6 +110,8 @@ Last updated: 2026-04-05
 ## Canonical Entry Points
 
 - backend runtime: `backend/run_local_backend.sh`
+- backend production hub smoke:
+  `backend/.venv/bin/python scripts/launch_production_hub_smoke.py`
 - backend animation preflight:
   `backend/.venv/bin/python scripts/check_local_animation_preflight.py`
 - backend animation smoke:
@@ -119,7 +131,9 @@ Last updated: 2026-04-05
   `backend/.venv/bin/python scripts/launch_comic_remote_one_shot_dry_run.py`
 - backend comic production dry run:
   `backend/.venv/bin/python scripts/launch_comic_production_dry_run.py`
+- frontend production route: `/production`
 - frontend comic route: `/comic`
+- frontend animation track route: `/sequences`
 - frontend checks: `frontend/package.json`
 - animation worker runtime: `lab451-animation-worker/run_local_animation_worker.sh`
 - animation worker launchd:

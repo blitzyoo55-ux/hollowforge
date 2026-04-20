@@ -37,6 +37,25 @@ def _character_context():
     )
 
 
+def _patch_comic_verification_persistence(
+    module,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    response: dict | None = None,
+    error: Exception | None = None,
+):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post_json(url: str, payload: dict[str, object]):  # type: ignore[no-untyped-def]
+        calls.append((url, payload))
+        if error is not None:
+            raise error
+        return response or {"id": "comic-verification-run-1"}
+
+    monkeypatch.setattr(module, "_post_json", fake_post_json)
+    return calls
+
+
 def test_preflight_run_passes_when_backend_worker_and_callback_contract_are_ready(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -61,6 +80,7 @@ def test_preflight_run_passes_when_backend_worker_and_callback_contract_are_read
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    post_calls = _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run([]) == 0
 
@@ -69,6 +89,54 @@ def test_preflight_run_passes_when_backend_worker_and_callback_contract_are_read
     assert "[PASS] remote_worker_health:" in output
     assert "[PASS] callback_base_url:" in output
     assert "[PASS] worker_api_token:" in output
+    assert "comic_verification_run_persisted: true" in output
+    assert post_calls[0][0] == "http://127.0.0.1:8000/api/v1/production/comic-verification/runs"
+    payload = post_calls[0][1]
+    assert payload["run_mode"] == "preflight"
+    assert payload["status"] == "completed"
+    assert payload["overall_success"] is True
+    assert payload["failure_stage"] is None
+    assert payload["error_summary"] is None
+    assert payload["base_url"] == "http://127.0.0.1:8000"
+    assert payload["stage_status"]["local_backend_health"]["status"] == "passed"
+    assert payload["stage_status"]["worker_api_token"]["status"] == "passed"
+
+
+def test_preflight_run_fails_when_persistence_post_fails_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script_module(
+        "check_comic_remote_render_preflight.py",
+        "check_comic_remote_render_preflight_persistence_failure",
+    )
+
+    monkeypatch.setattr(module.settings, "ANIMATION_REMOTE_BASE_URL", "http://worker.test")
+    monkeypatch.setattr(module.settings, "PUBLIC_API_BASE_URL", "https://hollowforge.example.com")
+    monkeypatch.setattr(module.settings, "ANIMATION_WORKER_API_TOKEN", "worker-secret")
+
+    def fake_fetch_json(url: str, headers=None):  # type: ignore[no-untyped-def]
+        if url == "http://127.0.0.1:8000/api/v1/system/health":
+            return {"status": "healthy", "db_ok": True}
+        if url == "https://hollowforge.example.com/api/v1/system/health":
+            return {"status": "healthy", "db_ok": True}
+        if url == "http://worker.test/healthz":
+            return {"status": "ready", "executor_backend": "stub"}
+        raise AssertionError(f"Unexpected url: {url}")
+
+    monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    _patch_comic_verification_persistence(
+        module,
+        monkeypatch,
+        error=RuntimeError("backend persistence failed"),
+    )
+
+    assert module.run([]) == 1
+
+    output = capsys.readouterr().out
+    assert "comic_verification_run_persisted: false" in output
+    assert "backend persistence failed" in output
 
 
 def test_preflight_fails_when_worker_auth_is_enabled_but_token_is_missing(
@@ -167,12 +235,16 @@ def test_preflight_run_fails_when_backend_health_is_degraded(
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    post_calls = _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run([]) == 1
 
     output = capsys.readouterr().out
     assert "[FAIL] local_backend_health:" in output
     assert "status='degraded'" in output
+    assert post_calls[0][1]["status"] == "failed"
+    assert post_calls[0][1]["failure_stage"] == "local_backend_health"
+    assert post_calls[0][1]["overall_success"] is False
 
 
 def test_preflight_run_rejects_non_local_backend_urls(
@@ -197,6 +269,7 @@ def test_preflight_run_rejects_non_local_backend_urls(
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run(["--backend-url", "https://remote.example.com"]) == 1
 
@@ -230,6 +303,7 @@ def test_preflight_run_skips_worker_token_when_auth_probe_is_inconclusive(
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: None)
+    _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run([]) == 0
 
@@ -259,6 +333,7 @@ def test_preflight_run_fails_when_remote_worker_uses_loopback_callback_base(
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run([]) == 1
 
@@ -291,6 +366,7 @@ def test_preflight_run_fails_when_callback_base_health_is_degraded(
 
     monkeypatch.setattr(module, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(module, "_detect_worker_auth_required", lambda base_url: True)
+    _patch_comic_verification_persistence(module, monkeypatch)
 
     assert module.run([]) == 1
 

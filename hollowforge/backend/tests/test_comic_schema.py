@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -12,6 +13,11 @@ from app.models import (
     comic_render_job_response_from_row,
     ComicManuscriptProfileResponse,
     list_comic_manuscript_profiles,
+    ProductionEpisodeCreate,
+    ProductionSeriesCreate,
+    ProductionVerificationRunCreate,
+    ProductionVerificationRunResponse,
+    ProductionWorkCreate,
 )
 
 
@@ -43,6 +49,17 @@ async def test_init_db_creates_comic_tables(temp_db) -> None:
 
 
 @pytest.mark.asyncio
+async def test_production_hub_core_tables_exist(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+        table_names = {row[0] for row in table_rows}
+    assert {"works", "series", "production_episodes"} <= table_names
+
+
+@pytest.mark.asyncio
 async def test_comic_episode_schema_contract(temp_db) -> None:
     await init_db()
 
@@ -68,6 +85,358 @@ async def test_comic_episode_schema_contract(temp_db) -> None:
     )
     assert character_version_fk[2] == "character_versions"
     assert character_version_fk[6] == "CASCADE"
+
+
+@pytest.mark.asyncio
+async def test_comic_and_sequence_tables_expose_production_link_columns(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        comic_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(comic_episodes)")
+        }
+    assert {"content_mode", "work_id", "series_id", "production_episode_id"} <= comic_columns
+
+
+@pytest.mark.asyncio
+async def test_comic_verification_run_table_exists(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "comic_verification_runs" in table_names
+
+
+@pytest.mark.asyncio
+async def test_production_verification_run_table_exists(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "production_verification_runs" in table_names
+
+
+@pytest.mark.asyncio
+async def test_comic_verification_run_schema_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        columns = {
+            row[1]: {
+                "type": row[2],
+                "notnull": row[3],
+                "default": row[4],
+                "pk": row[5],
+            }
+            for row in conn.execute("PRAGMA table_info(comic_verification_runs)").fetchall()
+        }
+        schema_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'comic_verification_runs'
+            """
+        ).fetchone()[0]
+
+    assert {
+        "id",
+        "run_mode",
+        "status",
+        "overall_success",
+        "failure_stage",
+        "error_summary",
+        "base_url",
+        "total_duration_sec",
+        "started_at",
+        "finished_at",
+        "stage_status_json",
+        "created_at",
+        "updated_at",
+    } <= set(columns)
+    assert columns["id"]["pk"] == 1
+    assert columns["run_mode"]["notnull"] == 1
+    assert columns["status"]["notnull"] == 1
+    assert columns["overall_success"]["notnull"] == 1
+    assert columns["base_url"]["notnull"] == 1
+    assert columns["started_at"]["notnull"] == 1
+    assert columns["finished_at"]["notnull"] == 1
+    assert columns["stage_status_json"]["notnull"] == 1
+    assert columns["stage_status_json"]["default"] == "'{}'"
+    assert columns["created_at"]["notnull"] == 1
+    assert columns["updated_at"]["notnull"] == 1
+
+    normalized_schema_sql = re.sub(r"\s+", " ", schema_sql).strip()
+    assert re.search(
+        r"run_mode TEXT NOT NULL CHECK \(\s*run_mode IN \('preflight', 'suite', 'full_only', 'remote_only'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"status TEXT NOT NULL CHECK \(\s*status IN \('completed', 'failed'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"overall_success INTEGER NOT NULL CHECK \(\s*overall_success IN \(0, 1\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert "stage_status_json TEXT NOT NULL DEFAULT '{}'" in normalized_schema_sql
+
+
+@pytest.mark.asyncio
+async def test_production_verification_run_schema_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        columns = {
+            row[1]: {
+                "type": row[2],
+                "notnull": row[3],
+                "default": row[4],
+                "pk": row[5],
+            }
+            for row in conn.execute("PRAGMA table_info(production_verification_runs)").fetchall()
+        }
+        schema_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'production_verification_runs'
+            """
+        ).fetchone()[0]
+
+    assert {
+        "id",
+        "run_mode",
+        "status",
+        "overall_success",
+        "failure_stage",
+        "error_summary",
+        "base_url",
+        "total_duration_sec",
+        "started_at",
+        "finished_at",
+        "stage_status_json",
+        "created_at",
+        "updated_at",
+    } <= set(columns)
+    assert columns["id"]["pk"] == 1
+    assert columns["run_mode"]["notnull"] == 1
+    assert columns["status"]["notnull"] == 1
+    assert columns["overall_success"]["notnull"] == 1
+    assert columns["base_url"]["notnull"] == 1
+    assert columns["started_at"]["notnull"] == 1
+    assert columns["finished_at"]["notnull"] == 1
+    assert columns["stage_status_json"]["notnull"] == 1
+    assert columns["stage_status_json"]["default"] == "'{}'"
+    assert columns["created_at"]["notnull"] == 1
+    assert columns["updated_at"]["notnull"] == 1
+
+    normalized_schema_sql = re.sub(r"\s+", " ", schema_sql).strip()
+    assert re.search(
+        r"run_mode TEXT NOT NULL CHECK \(\s*run_mode IN \('suite', 'smoke_only', 'ui_only'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"status TEXT NOT NULL CHECK \(\s*status IN \('completed', 'failed'\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert re.search(
+        r"overall_success INTEGER NOT NULL CHECK \(\s*overall_success IN \(0, 1\)\s*\)",
+        normalized_schema_sql,
+    )
+    assert "stage_status_json TEXT NOT NULL DEFAULT '{}'" in normalized_schema_sql
+
+
+def test_production_verification_artifact_origin_migration_contract() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "039_production_verification_artifact_origin.sql"
+    )
+
+    assert migration_path.exists()
+    normalized_sql = re.sub(r"\s+", " ", migration_path.read_text()).strip()
+
+    assert re.search(
+        r"ALTER TABLE works\s+ADD COLUMN record_origin TEXT NOT NULL DEFAULT 'operator'",
+        normalized_sql,
+    )
+    assert re.search(
+        r"ALTER TABLE works\s+ADD COLUMN verification_run_id TEXT",
+        normalized_sql,
+    )
+    assert re.search(
+        r"ALTER TABLE series\s+ADD COLUMN record_origin TEXT NOT NULL DEFAULT 'operator'",
+        normalized_sql,
+    )
+    assert re.search(
+        r"ALTER TABLE series\s+ADD COLUMN verification_run_id TEXT",
+        normalized_sql,
+    )
+    assert re.search(
+        r"ALTER TABLE production_episodes\s+ADD COLUMN record_origin TEXT NOT NULL DEFAULT 'operator'",
+        normalized_sql,
+    )
+    assert re.search(
+        r"ALTER TABLE production_episodes\s+ADD COLUMN verification_run_id TEXT",
+        normalized_sql,
+    )
+
+
+def test_production_models_expose_artifact_origin_defaults() -> None:
+    work = ProductionWorkCreate(
+        title="Pilot Work",
+        format_family="comic",
+        default_content_mode="all_ages",
+    )
+    series = ProductionSeriesCreate(
+        work_id="work-1",
+        title="Pilot Series",
+        delivery_mode="serial",
+        audience_mode="all_ages",
+    )
+    episode = ProductionEpisodeCreate(
+        work_id="work-1",
+        series_id="series-1",
+        title="Episode 1",
+        synopsis="Synopsis",
+        content_mode="all_ages",
+        target_outputs=["comic"],
+    )
+
+    assert work.record_origin == "operator"
+    assert work.verification_run_id is None
+    assert series.record_origin == "operator"
+    assert series.verification_run_id is None
+    assert episode.record_origin == "operator"
+    assert episode.verification_run_id is None
+
+
+def test_production_verification_run_models_accept_explicit_id() -> None:
+    payload = {
+        "id": "run-1",
+        "run_mode": "suite",
+        "status": "completed",
+        "overall_success": True,
+        "base_url": "http://localhost:8011",
+        "started_at": "2026-04-19T00:00:00+00:00",
+        "finished_at": "2026-04-19T00:01:00+00:00",
+        "stage_status": {},
+    }
+
+    create_model = ProductionVerificationRunCreate.model_validate(payload)
+    response_model = ProductionVerificationRunResponse.model_validate(
+        {
+            **payload,
+            "created_at": "2026-04-19T00:01:00+00:00",
+            "updated_at": "2026-04-19T00:01:00+00:00",
+        }
+    )
+
+    assert create_model.id == "run-1"
+    assert response_model.id == "run-1"
+
+
+@pytest.mark.asyncio
+async def test_comic_verification_run_indexes_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        index_rows = {
+            row[1]: row[4]
+            for row in conn.execute(
+                """
+                PRAGMA index_list(comic_verification_runs)
+                """
+            ).fetchall()
+        }
+        run_mode_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_run_mode_finished_created_id",),
+        ).fetchone()[0]
+        recent_runs_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_comic_verification_runs_finished_created_id",),
+        ).fetchone()[0]
+
+    assert {
+        "idx_comic_verification_runs_run_mode_finished_created_id",
+        "idx_comic_verification_runs_finished_created_id",
+    } <= set(index_rows)
+    assert index_rows["idx_comic_verification_runs_run_mode_finished_created_id"] == 0
+    assert index_rows["idx_comic_verification_runs_finished_created_id"] == 0
+    assert "run_mode, finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        run_mode_index_sql,
+    )
+    assert "finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        recent_runs_index_sql,
+    )
+
+
+@pytest.mark.asyncio
+async def test_production_verification_run_indexes_contract(temp_db) -> None:
+    await init_db()
+
+    with sqlite3.connect(temp_db) as conn:
+        index_rows = {
+            row[1]: row[4]
+            for row in conn.execute(
+                """
+                PRAGMA index_list(production_verification_runs)
+                """
+            ).fetchall()
+        }
+        run_mode_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_production_verification_runs_run_mode_finished_created_id",),
+        ).fetchone()[0]
+        recent_runs_index_sql = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?
+            """,
+            ("idx_production_verification_runs_finished_created_id",),
+        ).fetchone()[0]
+
+    assert {
+        "idx_production_verification_runs_run_mode_finished_created_id",
+        "idx_production_verification_runs_finished_created_id",
+    } <= set(index_rows)
+    assert index_rows["idx_production_verification_runs_run_mode_finished_created_id"] == 0
+    assert index_rows["idx_production_verification_runs_finished_created_id"] == 0
+    assert "run_mode, finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        run_mode_index_sql,
+    )
+    assert "finished_at DESC, created_at DESC, id DESC" in re.sub(
+        r"\s+",
+        " ",
+        recent_runs_index_sql,
+    )
 
 
 @pytest.mark.asyncio

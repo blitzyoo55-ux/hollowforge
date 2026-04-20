@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import aiosqlite
 
@@ -138,7 +138,7 @@ def _episode_response(row: dict[str, Any]) -> ComicEpisodeResponse:
 def _scene_response(row: dict[str, Any]) -> ComicEpisodeSceneResponse:
     payload = dict(row)
     payload["involved_character_ids"] = _decode_json_list(
-        cast(str | None, payload.get("involved_character_ids")),
+        cast(Optional[str], payload.get("involved_character_ids")),
         field_name="comic_episode_scenes.involved_character_ids",
     )
     return ComicEpisodeSceneResponse.model_validate(payload)
@@ -151,7 +151,7 @@ def _panel_response(row: dict[str, Any]) -> ComicScenePanelResponse:
 def _page_response(row: dict[str, Any]) -> ComicPageAssemblyResponse:
     payload = dict(row)
     payload["ordered_panel_ids"] = _decode_json_list(
-        cast(str | None, payload.get("ordered_panel_ids")),
+        cast(Optional[str], payload.get("ordered_panel_ids")),
         field_name="comic_page_assemblies.ordered_panel_ids",
     )
     payload["manuscript_profile_id"] = cast(
@@ -159,7 +159,7 @@ def _page_response(row: dict[str, Any]) -> ComicPageAssemblyResponse:
         payload.get("manuscript_profile_id") or "jp_manga_rightbound_v1",
     )
     payload["export_manifest"] = _decode_json_dict(
-        cast(str | None, payload.get("export_manifest")),
+        cast(Optional[str], payload.get("export_manifest")),
         field_name="comic_page_assemblies.export_manifest",
     )
     return ComicPageAssemblyResponse.model_validate(payload)
@@ -228,6 +228,10 @@ async def create_comic_episode(
                 id,
                 character_id,
                 character_version_id,
+                content_mode,
+                work_id,
+                series_id,
+                production_episode_id,
                 title,
                 synopsis,
                 source_story_plan_json,
@@ -237,12 +241,16 @@ async def create_comic_episode(
                 target_output,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_id,
                 payload.character_id,
                 payload.character_version_id,
+                payload.content_mode,
+                payload.work_id,
+                payload.series_id,
+                payload.production_episode_id,
                 payload.title,
                 payload.synopsis,
                 payload.source_story_plan_json,
@@ -302,6 +310,10 @@ async def create_comic_episode_from_draft(
                 id,
                 character_id,
                 character_version_id,
+                content_mode,
+                work_id,
+                series_id,
+                production_episode_id,
                 title,
                 synopsis,
                 source_story_plan_json,
@@ -311,12 +323,16 @@ async def create_comic_episode_from_draft(
                 target_output,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_id,
                 character_id,
                 draft.character_version_id,
+                draft.content_mode,
+                draft.work_id,
+                draft.series_id,
+                draft.production_episode_id,
                 draft.title,
                 draft.synopsis,
                 draft.source_story_plan_json,
@@ -421,6 +437,7 @@ async def list_comic_episodes(
     *,
     character_id: str | None = None,
     status: str | None = None,
+    production_episode_id: str | None = None,
 ) -> list[ComicEpisodeSummaryResponse]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -430,6 +447,9 @@ async def list_comic_episodes(
     if status is not None:
         clauses.append("e.status = ?")
         params.append(status)
+    if production_episode_id is not None:
+        clauses.append("e.production_episode_id = ?")
+        params.append(production_episode_id)
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     async with get_db() as db:
@@ -518,8 +538,8 @@ async def get_comic_episode_detail(
         remote_job_count_rows = await remote_job_count_cursor.fetchall()
         remote_job_counts_by_panel_id = {
             cast(str, row["scene_panel_id"]): {
-                "remote_job_count": cast(int | None, row["remote_job_count"]) or 0,
-                "pending_remote_job_count": cast(int | None, row["pending_remote_job_count"]) or 0,
+                "remote_job_count": cast(Optional[int], row["remote_job_count"]) or 0,
+                "pending_remote_job_count": cast(Optional[int], row["pending_remote_job_count"]) or 0,
             }
             for row in remote_job_count_rows
         }

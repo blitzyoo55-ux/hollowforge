@@ -8,6 +8,16 @@ import pytest
 from app.db import init_db
 
 
+@pytest.mark.asyncio
+async def test_sequence_blueprints_expose_production_link_columns(temp_db) -> None:
+    await init_db()
+    with sqlite3.connect(temp_db) as conn:
+        sequence_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(sequence_blueprints)")
+        }
+    assert {"work_id", "series_id", "production_episode_id"} <= sequence_columns
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
