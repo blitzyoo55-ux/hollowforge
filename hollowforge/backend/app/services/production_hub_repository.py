@@ -295,9 +295,11 @@ async def create_work(payload: ProductionWorkCreate) -> ProductionWorkResponse:
                 default_content_mode,
                 status,
                 canon_notes,
+                record_origin,
+                verification_run_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 work_id,
@@ -306,6 +308,8 @@ async def create_work(payload: ProductionWorkCreate) -> ProductionWorkResponse:
                 payload.default_content_mode,
                 payload.status,
                 payload.canon_notes,
+                payload.record_origin,
+                payload.verification_run_id,
                 now,
                 now,
             ),
@@ -333,9 +337,11 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
                 delivery_mode,
                 audience_mode,
                 visual_identity_notes,
+                record_origin,
+                verification_run_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 series_id,
@@ -344,6 +350,8 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
                 payload.delivery_mode,
                 payload.audience_mode,
                 payload.visual_identity_notes,
+                payload.record_origin,
+                payload.verification_run_id,
                 now,
                 now,
             ),
@@ -354,22 +362,41 @@ async def create_series(payload: ProductionSeriesCreate) -> ProductionSeriesResp
     return _series_response(cast(dict[str, Any], row))
 
 
-async def list_works() -> list[ProductionWorkResponse]:
+async def list_works(
+    *,
+    include_verification_artifacts: bool = False,
+) -> list[ProductionWorkResponse]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if not include_verification_artifacts:
+        clauses.append("record_origin = ?")
+        params.append("operator")
+    where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
     async with get_db() as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT *
             FROM works
+            {where_clause}
             ORDER BY created_at DESC, id DESC
-            """
+            """,
+            params,
         )
         rows = await cursor.fetchall()
     return [_work_response(cast(dict[str, Any], row)) for row in rows]
 
 
-async def list_series(*, work_id: Optional[str] = None) -> list[ProductionSeriesResponse]:
+async def list_series(
+    *,
+    work_id: Optional[str] = None,
+    include_verification_artifacts: bool = False,
+) -> list[ProductionSeriesResponse]:
     clauses: list[str] = []
     params: list[Any] = []
+    if not include_verification_artifacts:
+        clauses.append("record_origin = ?")
+        params.append("operator")
     if work_id is not None:
         clauses.append("work_id = ?")
         params.append(work_id)
@@ -420,9 +447,11 @@ async def create_production_episode(
                 target_outputs,
                 continuity_summary,
                 status,
+                record_origin,
+                verification_run_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 production_episode_id,
@@ -434,6 +463,8 @@ async def create_production_episode(
                 _encode_json_list(payload.target_outputs),
                 payload.continuity_summary,
                 payload.status,
+                payload.record_origin,
+                payload.verification_run_id,
                 now,
                 now,
             ),
@@ -469,9 +500,13 @@ async def get_production_episode_detail(
 async def list_production_episodes(
     *,
     work_id: Optional[str] = None,
+    include_verification_artifacts: bool = False,
 ) -> list[ProductionEpisodeDetailResponse]:
     clauses: list[str] = []
     params: list[Any] = []
+    if not include_verification_artifacts:
+        clauses.append("record_origin = ?")
+        params.append("operator")
     if work_id is not None:
         clauses.append("work_id = ?")
         params.append(work_id)

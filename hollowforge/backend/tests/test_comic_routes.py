@@ -1115,6 +1115,46 @@ def test_get_comic_episodes_lists_created_episode(temp_db) -> None:
     assert episode_summary["page_count"] == 0
 
 
+def test_get_comic_episodes_filters_by_production_episode_id(temp_db) -> None:
+    asyncio.run(
+        create_comic_episode(
+            ComicEpisodeCreate(
+                character_id="char_kaede_ren",
+                character_version_id="charver_kaede_ren_still_v1",
+                production_episode_id="prod_ep_linked",
+                title="Linked Episode",
+                synopsis="Linked into a shared production episode.",
+                target_output="oneshot_manga",
+            ),
+            episode_id="comic_ep_route_linked",
+        )
+    )
+    asyncio.run(
+        create_comic_episode(
+            ComicEpisodeCreate(
+                character_id="char_kaede_ren",
+                character_version_id="charver_kaede_ren_still_v1",
+                production_episode_id="prod_ep_other",
+                title="Other Episode",
+                synopsis="Bound to a different production episode.",
+                target_output="oneshot_manga",
+            ),
+            episode_id="comic_ep_route_other",
+        )
+    )
+    client = _build_client()
+
+    response = client.get(
+        "/api/v1/comic/episodes",
+        params={"production_episode_id": "prod_ep_linked"},
+    )
+
+    assert response.status_code == 200
+    assert [item["episode"]["production_episode_id"] for item in response.json()] == [
+        "prod_ep_linked"
+    ]
+
+
 def test_get_missing_comic_episode_returns_404(temp_db) -> None:
     client = _build_client()
 
@@ -1270,6 +1310,7 @@ def test_import_story_plan_route_persists_episode(temp_db) -> None:
     assert body["episode"]["character_id"] == "char_kaede_ren"
     assert body["episode"]["character_version_id"] == "charver_kaede_ren_still_v1"
 
+
 def test_import_story_plan_maps_lane_to_content_mode(temp_db) -> None:
     client = _build_client()
     approved_plan = _build_prompt_only_approved_plan()
@@ -1286,6 +1327,34 @@ def test_import_story_plan_maps_lane_to_content_mode(temp_db) -> None:
 
     assert response.status_code == 201
     assert response.json()["episode"]["content_mode"] == "adult_nsfw"
+
+
+def test_import_story_plan_route_persists_production_context(temp_db) -> None:
+    client = _build_client()
+    approved_plan = _build_prompt_only_approved_plan()
+
+    response = client.post(
+        "/api/v1/comic/episodes/import-story-plan",
+        json={
+            "approved_plan": approved_plan.model_dump(mode="json"),
+            "character_version_id": "charver_kaede_ren_still_v1",
+            "title": "Night Intake Linked",
+            "panel_multiplier": 2,
+            "work_id": "work_linked",
+            "series_id": "series_linked",
+            "production_episode_id": "prod_ep_linked",
+            "content_mode": "all_ages",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["episode"]["work_id"] == "work_linked"
+    assert body["episode"]["series_id"] == "series_linked"
+    assert body["episode"]["production_episode_id"] == "prod_ep_linked"
+    assert body["episode"]["content_mode"] == "all_ages"
+
+
 def test_import_story_plan_route_returns_four_scenes_and_two_panels_per_scene(
     temp_db,
 ) -> None:

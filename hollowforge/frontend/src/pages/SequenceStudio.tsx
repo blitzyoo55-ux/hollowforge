@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import {
   createSequenceBlueprint,
   createSequenceRun,
@@ -29,12 +30,36 @@ function formatDate(value: string): string {
 
 export default function SequenceStudio() {
   const queryClient = useQueryClient()
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const productionContext = useMemo(() => {
+    const productionEpisodeId = searchParams.get('production_episode_id')?.trim() || null
+    const contentModeValue = searchParams.get('content_mode')
+    const contentMode = contentModeValue === 'adult_nsfw' || contentModeValue === 'all_ages'
+      ? contentModeValue
+      : null
+
+    return {
+      productionEpisodeId,
+      workId: searchParams.get('work_id')?.trim() || null,
+      seriesId: searchParams.get('series_id')?.trim() || null,
+      contentMode,
+      title: searchParams.get('title')?.trim() || null,
+      mode: searchParams.get('mode')?.trim() || null,
+      sequenceBlueprintId: searchParams.get('sequence_blueprint_id')?.trim() || null,
+    }
+  }, [searchParams])
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(
+    productionContext.sequenceBlueprintId,
+  )
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
 
   const blueprintsQuery = useQuery({
-    queryKey: ['sequence-blueprints'],
-    queryFn: () => listSequenceBlueprints(),
+    queryKey: ['sequence-blueprints', productionContext.productionEpisodeId],
+    queryFn: () => listSequenceBlueprints(
+      productionContext.productionEpisodeId
+        ? { production_episode_id: productionContext.productionEpisodeId }
+        : {},
+    ),
     refetchInterval: 30_000,
   })
 
@@ -158,6 +183,7 @@ export default function SequenceStudio() {
         <SequenceBlueprintForm
           onSubmit={(payload) => createBlueprintMutation.mutate(payload)}
           isSubmitting={createBlueprintMutation.isPending}
+          productionContext={productionContext}
         />
 
         <section className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-5">

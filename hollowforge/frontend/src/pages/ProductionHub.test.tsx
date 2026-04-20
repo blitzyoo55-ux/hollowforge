@@ -5,16 +5,16 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 import {
   createProductionWork,
-  getProductionComicVerificationSummary,
+  getProductionVerificationSummary,
   listProductionEpisodes,
   listProductionSeries,
   listProductionWorks,
 } from '../api/client'
 import type {
-  ComicVerificationRunResponse,
-  ComicVerificationSummaryResponse,
   ProductionEpisodeDetailResponse,
   ProductionSeriesResponse,
+  ProductionVerificationRunResponse,
+  ProductionVerificationSummaryResponse,
   ProductionWorkResponse,
 } from '../api/client'
 import ProductionHub from './ProductionHub'
@@ -23,7 +23,7 @@ vi.mock('../api/client', () => ({
   listProductionEpisodes: vi.fn(),
   listProductionWorks: vi.fn(),
   listProductionSeries: vi.fn(),
-  getProductionComicVerificationSummary: vi.fn(),
+  getProductionVerificationSummary: vi.fn(),
   createProductionWork: vi.fn(),
   createProductionSeries: vi.fn(),
   createProductionEpisode: vi.fn(),
@@ -58,6 +58,8 @@ function buildEpisode(overrides: Partial<ProductionEpisodeDetailResponse> = {}):
     target_outputs: ['comic', 'animation'],
     continuity_summary: null,
     status: 'draft',
+    record_origin: 'operator',
+    verification_run_id: null,
     comic_track_count: 0,
     animation_track_count: 0,
     comic_track: {
@@ -81,6 +83,8 @@ function buildWork(overrides: Partial<ProductionWorkResponse> = {}): ProductionW
     default_content_mode: 'adult_nsfw',
     status: 'draft',
     canon_notes: null,
+    record_origin: 'operator',
+    verification_run_id: null,
     created_at: '2026-04-13T00:00:00+00:00',
     updated_at: '2026-04-13T00:00:00+00:00',
     ...overrides,
@@ -95,36 +99,38 @@ function buildSeries(overrides: Partial<ProductionSeriesResponse> = {}): Product
     delivery_mode: 'serial',
     audience_mode: 'adult_nsfw',
     visual_identity_notes: null,
+    record_origin: 'operator',
+    verification_run_id: null,
     created_at: '2026-04-13T00:00:00+00:00',
     updated_at: '2026-04-13T00:00:00+00:00',
     ...overrides,
   }
 }
 
-function buildVerificationRun(overrides: Partial<ComicVerificationRunResponse> = {}): ComicVerificationRunResponse {
+function buildVerificationRun(overrides: Partial<ProductionVerificationRunResponse> = {}): ProductionVerificationRunResponse {
   return {
     id: 'run-1',
-    run_mode: 'preflight',
+    run_mode: 'smoke_only',
     status: 'completed',
     overall_success: true,
     failure_stage: null,
     error_summary: null,
-    base_url: 'http://127.0.0.1:8000',
+    base_url: 'http://127.0.0.1:8014',
     total_duration_sec: 2.345,
-    started_at: '2026-04-17T00:00:00+00:00',
-    finished_at: '2026-04-17T00:00:02+00:00',
+    started_at: '2026-04-19T00:00:00+00:00',
+    finished_at: '2026-04-19T00:00:02+00:00',
     stage_status: {},
-    created_at: '2026-04-17T00:00:02+00:00',
-    updated_at: '2026-04-17T00:00:02+00:00',
+    created_at: '2026-04-19T00:00:02+00:00',
+    updated_at: '2026-04-19T00:00:02+00:00',
     ...overrides,
   }
 }
 
 function buildVerificationSummary(
-  overrides: Partial<ComicVerificationSummaryResponse> = {},
-): ComicVerificationSummaryResponse {
+  overrides: Partial<ProductionVerificationSummaryResponse> = {},
+): ProductionVerificationSummaryResponse {
   return {
-    latest_preflight: null,
+    latest_smoke_only: null,
     latest_suite: null,
     recent_runs: [],
     ...overrides,
@@ -132,8 +138,8 @@ function buildVerificationSummary(
 }
 
 beforeEach(() => {
-  vi.mocked(getProductionComicVerificationSummary).mockReset()
-  vi.mocked(getProductionComicVerificationSummary).mockResolvedValue(buildVerificationSummary())
+  vi.mocked(getProductionVerificationSummary).mockReset()
+  vi.mocked(getProductionVerificationSummary).mockResolvedValue(buildVerificationSummary())
 })
 
 test('renders production episodes with comic and animation track state', async () => {
@@ -143,8 +149,8 @@ test('renders production episodes with comic and animation track state', async (
 
   renderPage()
 
-  expect(await screen.findByRole('heading', { name: /Production Hub/i })).toBeInTheDocument()
-  expect(screen.getByText(/Shared Production Core/i)).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { level: 1, name: 'Production Hub' })).toBeInTheDocument()
+  expect(screen.getByText('Shared Production Core', { selector: 'span' })).toBeInTheDocument()
   expect(await screen.findByText(/Production Hub Smoke Episode/i)).toBeInTheDocument()
   expect(screen.getAllByText(/^adult_nsfw$/i).length).toBeGreaterThan(0)
   expect(screen.getByRole('heading', { name: /Comic Track/i })).toBeInTheDocument()
@@ -184,7 +190,9 @@ test('renders verification ops above the creation forms', async () => {
   renderPage()
 
   expect(await screen.findByRole('heading', { name: /Verification Ops/i })).toBeInTheDocument()
-  expect(screen.getByText(/Run Comic Verification Suite/i)).toBeInTheDocument()
+  expect(screen.getByText(/Run Production Hub Verification Suite/i)).toBeInTheDocument()
+  expect(screen.getByText(/Rerun Smoke Only/i)).toBeInTheDocument()
+  expect(screen.getByText(/Rerun UI Only/i)).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: /Verification History/i })).toBeInTheDocument()
 
   const opsHeading = screen.getByRole('heading', { name: /Verification Ops/i })
@@ -194,15 +202,35 @@ test('renders verification ops above the creation forms', async () => {
   expect(opsHeading.compareDocumentPosition(historyHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
+test('requests production lists with verification artifacts excluded by default', async () => {
+  vi.mocked(listProductionWorks).mockResolvedValue([])
+  vi.mocked(listProductionSeries).mockResolvedValue([])
+  vi.mocked(listProductionEpisodes).mockResolvedValue([])
+
+  renderPage()
+
+  await screen.findByRole('heading', { level: 1, name: /Production Hub/i })
+
+  expect(listProductionWorks).toHaveBeenCalledWith({
+    include_verification_artifacts: false,
+  })
+  expect(listProductionSeries).toHaveBeenCalledWith({
+    include_verification_artifacts: false,
+  })
+  expect(listProductionEpisodes).toHaveBeenCalledWith({
+    include_verification_artifacts: false,
+  })
+})
+
 test('renders verification history summary cards and recent runs', async () => {
   vi.mocked(listProductionWorks).mockResolvedValue([])
   vi.mocked(listProductionSeries).mockResolvedValue([])
   vi.mocked(listProductionEpisodes).mockResolvedValue([])
-  vi.mocked(getProductionComicVerificationSummary).mockResolvedValue(
+  vi.mocked(getProductionVerificationSummary).mockResolvedValue(
     buildVerificationSummary({
-      latest_preflight: buildVerificationRun({
-        id: 'preflight-1',
-        run_mode: 'preflight',
+      latest_smoke_only: buildVerificationRun({
+        id: 'smoke-1',
+        run_mode: 'smoke_only',
         overall_success: true,
       }),
       latest_suite: buildVerificationRun({
@@ -210,25 +238,25 @@ test('renders verification history summary cards and recent runs', async () => {
         run_mode: 'suite',
         status: 'failed',
         overall_success: false,
-        failure_stage: 'full',
-        error_summary: 'stage full exited with code 1',
+        failure_stage: 'ui',
+        error_summary: 'stage ui exited with code 1',
       }),
       recent_runs: [
         buildVerificationRun({
           id: 'suite-1',
-          run_mode: 'full_only',
+          run_mode: 'suite',
           status: 'failed',
           overall_success: false,
-          failure_stage: 'full',
-          error_summary: 'stage full exited with code 1',
+          failure_stage: 'ui',
+          error_summary: 'stage ui exited with code 1',
         }),
         buildVerificationRun({
-          id: 'remote-1',
-          run_mode: 'remote_only',
-          status: 'failed',
-          overall_success: false,
-          failure_stage: 'remote',
-          error_summary: 'stage remote exited with code 2',
+          id: 'ui-1',
+          run_mode: 'ui_only',
+          status: 'completed',
+          overall_success: true,
+          failure_stage: null,
+          error_summary: null,
         }),
       ],
     }),
@@ -237,15 +265,15 @@ test('renders verification history summary cards and recent runs', async () => {
   renderPage()
 
   expect(await screen.findByRole('heading', { name: /Verification History/i })).toBeInTheDocument()
-  const preflightHeading = await screen.findByText('Latest Preflight')
-  const preflightCard = preflightHeading.closest('article')
-  expect(preflightCard).not.toBeNull()
-  expect(within(preflightCard as HTMLElement).getByText('preflight')).toBeInTheDocument()
-  expect(within(preflightCard as HTMLElement).getByText('Status')).toBeInTheDocument()
-  expect(within(preflightCard as HTMLElement).getByText('Started')).toBeInTheDocument()
-  expect(within(preflightCard as HTMLElement).getByText('Finished')).toBeInTheDocument()
-  expect(within(preflightCard as HTMLElement).getByText('Duration')).toBeInTheDocument()
-  expect(within(preflightCard as HTMLElement).getByText('Failure Stage')).toBeInTheDocument()
+  const smokeHeading = await screen.findByText('Latest Smoke Only')
+  const smokeCard = smokeHeading.closest('article')
+  expect(smokeCard).not.toBeNull()
+  expect(within(smokeCard as HTMLElement).getByText('smoke only')).toBeInTheDocument()
+  expect(within(smokeCard as HTMLElement).getByText('Status')).toBeInTheDocument()
+  expect(within(smokeCard as HTMLElement).getByText('Started')).toBeInTheDocument()
+  expect(within(smokeCard as HTMLElement).getByText('Finished')).toBeInTheDocument()
+  expect(within(smokeCard as HTMLElement).getByText('Duration')).toBeInTheDocument()
+  expect(within(smokeCard as HTMLElement).getByText('Failure Stage')).toBeInTheDocument()
 
   const suiteHeading = screen.getByText('Latest Suite')
   const suiteCard = suiteHeading.closest('article')
@@ -256,7 +284,7 @@ test('renders verification history summary cards and recent runs', async () => {
   expect(within(suiteCard as HTMLElement).getByText('Finished')).toBeInTheDocument()
   expect(within(suiteCard as HTMLElement).getByText('Duration')).toBeInTheDocument()
   expect(within(suiteCard as HTMLElement).getByText('Failure Stage')).toBeInTheDocument()
-  expect(within(suiteCard as HTMLElement).getByText('full')).toBeInTheDocument()
+  expect(within(suiteCard as HTMLElement).getByText('ui')).toBeInTheDocument()
 
   expect(screen.getByRole('columnheader', { name: /Started/i })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: /Mode/i })).toBeInTheDocument()
@@ -265,15 +293,15 @@ test('renders verification history summary cards and recent runs', async () => {
   expect(screen.getByRole('columnheader', { name: /Duration/i })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: /Error Summary/i })).toBeInTheDocument()
 
-  const fullOnlyRow = screen.getByText('full only').closest('tr')
-  expect(fullOnlyRow).not.toBeNull()
-  expect(within(fullOnlyRow as HTMLElement).getByText('full')).toBeInTheDocument()
-  expect(within(fullOnlyRow as HTMLElement).getByText('stage full exited with code 1')).toBeInTheDocument()
+  const recentRunsTable = screen.getByRole('table')
+  const suiteRow = within(recentRunsTable).getByText('suite').closest('tr')
+  expect(suiteRow).not.toBeNull()
+  expect(within(suiteRow as HTMLElement).getByText('ui')).toBeInTheDocument()
+  expect(within(suiteRow as HTMLElement).getByText('stage ui exited with code 1')).toBeInTheDocument()
 
-  const remoteOnlyRow = screen.getByText('remote only').closest('tr')
-  expect(remoteOnlyRow).not.toBeNull()
-  expect(within(remoteOnlyRow as HTMLElement).getByText('remote')).toBeInTheDocument()
-  expect(within(remoteOnlyRow as HTMLElement).getByText('stage remote exited with code 2')).toBeInTheDocument()
+  const uiOnlyRow = within(recentRunsTable).getByText('ui only').closest('tr')
+  expect(uiOnlyRow).not.toBeNull()
+  expect(within(uiOnlyRow as HTMLElement).getByText('Pass')).toBeInTheDocument()
 })
 
 test('submits production work without requiring a raw id field', async () => {
@@ -347,8 +375,19 @@ test('builds comic and animation entry links from production track counts', asyn
       title: 'Track Count One Episode',
       comic_track_count: 1,
       animation_track_count: 1,
-      comic_track: null,
-      animation_track: null,
+      comic_track: {
+        id: 'comic-ep-linked-2',
+        status: 'planned',
+        target_output: 'oneshot_manga',
+        character_id: 'camila',
+      },
+      animation_track: {
+        id: 'blueprint-linked-2',
+        content_mode: 'adult_nsfw',
+        policy_profile_id: 'adult_stage1_v1',
+        shot_count: 6,
+        executor_policy: 'adult_remote_prod',
+      },
     }),
   ])
 
@@ -359,22 +398,22 @@ test('builds comic and animation entry links from production track counts', asyn
   expect(zeroCard).not.toBeNull()
   expect(within(zeroCard as HTMLElement).getByRole('link', { name: /Open Comic Handoff/i })).toHaveAttribute(
     'href',
-    '/comic?production_episode_id=prod-ep-1&mode=create_from_production',
+    '/comic?production_episode_id=prod-ep-1&mode=create_from_production&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Track+Count+Zero+Episode',
   )
   expect(within(zeroCard as HTMLElement).getByRole('link', { name: /Open Animation Track/i })).toHaveAttribute(
     'href',
-    '/sequences?production_episode_id=prod-ep-1&mode=create_from_production',
+    '/sequences?production_episode_id=prod-ep-1&mode=create_from_production&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Track+Count+Zero+Episode',
   )
 
   const oneCard = screen.getByRole('heading', { name: /Track Count One Episode/i }).closest('article')
   expect(oneCard).not.toBeNull()
   expect(within(oneCard as HTMLElement).getByRole('link', { name: /Open Comic Handoff/i })).toHaveAttribute(
     'href',
-    '/comic?production_episode_id=prod-ep-2&mode=open_current',
+    '/comic?production_episode_id=prod-ep-2&mode=open_current&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Track+Count+One+Episode&comic_episode_id=comic-ep-linked-2',
   )
   expect(within(oneCard as HTMLElement).getByRole('link', { name: /Open Animation Track/i })).toHaveAttribute(
     'href',
-    '/sequences?production_episode_id=prod-ep-2&mode=open_current',
+    '/sequences?production_episode_id=prod-ep-2&mode=open_current&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Track+Count+One+Episode&sequence_blueprint_id=blueprint-linked-2',
   )
 })
 
@@ -387,8 +426,19 @@ test('shows duplicate-track warnings and keeps open_current mode when track coun
       title: 'Ambiguous Track Episode',
       comic_track_count: 2,
       animation_track_count: 3,
-      comic_track: null,
-      animation_track: null,
+      comic_track: {
+        id: 'comic-ep-latest-3',
+        status: 'planned',
+        target_output: 'oneshot_manga',
+        character_id: 'camila',
+      },
+      animation_track: {
+        id: 'blueprint-latest-3',
+        content_mode: 'adult_nsfw',
+        policy_profile_id: 'adult_stage1_v1',
+        shot_count: 6,
+        executor_policy: 'adult_remote_prod',
+      },
     }),
   ])
 
@@ -402,10 +452,10 @@ test('shows duplicate-track warnings and keeps open_current mode when track coun
   expect(ambiguousCard).not.toBeNull()
   expect(within(ambiguousCard as HTMLElement).getByRole('link', { name: /Open Comic Handoff/i })).toHaveAttribute(
     'href',
-    '/comic?production_episode_id=prod-ep-3&mode=open_current',
+    '/comic?production_episode_id=prod-ep-3&mode=open_current&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Ambiguous+Track+Episode&comic_episode_id=comic-ep-latest-3',
   )
   expect(within(ambiguousCard as HTMLElement).getByRole('link', { name: /Open Animation Track/i })).toHaveAttribute(
     'href',
-    '/sequences?production_episode_id=prod-ep-3&mode=open_current',
+    '/sequences?production_episode_id=prod-ep-3&mode=open_current&work_id=work_demo&series_id=series_demo&content_mode=adult_nsfw&title=Ambiguous+Track+Episode&sequence_blueprint_id=blueprint-latest-3',
   )
 })

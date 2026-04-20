@@ -12,6 +12,9 @@ from app.models import (
     ComicVerificationSummaryResponse,
     ProductionEpisodeCreate,
     ProductionEpisodeDetailResponse,
+    ProductionVerificationRunCreate,
+    ProductionVerificationRunResponse,
+    ProductionVerificationSummaryResponse,
     ProductionSeriesCreate,
     ProductionSeriesResponse,
     ProductionWorkCreate,
@@ -29,6 +32,10 @@ from app.services.production_hub_repository import (
 from app.services.production_comic_verification_repository import (
     create_comic_verification_run,
     get_comic_verification_summary,
+)
+from app.services.production_verification_repository import (
+    create_production_verification_run,
+    get_production_verification_summary,
 )
 
 router = APIRouter(prefix="/api/v1/production", tags=["production"])
@@ -53,8 +60,12 @@ async def create_work_endpoint(payload: ProductionWorkCreate) -> ProductionWorkR
 
 
 @router.get("/works", response_model=list[ProductionWorkResponse])
-async def list_works_endpoint() -> list[ProductionWorkResponse]:
-    return await list_works()
+async def list_works_endpoint(
+    include_verification_artifacts: bool = Query(default=False),
+) -> list[ProductionWorkResponse]:
+    return await list_works(
+        include_verification_artifacts=include_verification_artifacts
+    )
 
 
 @router.post("/series", response_model=ProductionSeriesResponse, status_code=status.HTTP_201_CREATED)
@@ -68,8 +79,12 @@ async def create_series_endpoint(payload: ProductionSeriesCreate) -> ProductionS
 @router.get("/series", response_model=list[ProductionSeriesResponse])
 async def list_series_endpoint(
     work_id: Optional[str] = Query(default=None),
+    include_verification_artifacts: bool = Query(default=False),
 ) -> list[ProductionSeriesResponse]:
-    return await list_series(work_id=work_id)
+    return await list_series(
+        work_id=work_id,
+        include_verification_artifacts=include_verification_artifacts,
+    )
 
 
 @router.post(
@@ -89,8 +104,12 @@ async def create_production_episode_endpoint(
 @router.get("/episodes", response_model=list[ProductionEpisodeDetailResponse])
 async def list_production_episodes_endpoint(
     work_id: Optional[str] = Query(default=None),
+    include_verification_artifacts: bool = Query(default=False),
 ) -> list[ProductionEpisodeDetailResponse]:
-    return await list_production_episodes(work_id=work_id)
+    return await list_production_episodes(
+        work_id=work_id,
+        include_verification_artifacts=include_verification_artifacts,
+    )
 
 
 @router.get("/episodes/{production_episode_id}", response_model=ProductionEpisodeDetailResponse)
@@ -126,3 +145,25 @@ async def create_comic_verification_run_endpoint(
 )
 async def get_comic_verification_summary_endpoint() -> ComicVerificationSummaryResponse:
     return await get_comic_verification_summary(limit=5)
+
+
+@router.post(
+    "/verification/runs",
+    response_model=ProductionVerificationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_production_verification_run_endpoint(
+    payload: ProductionVerificationRunCreate,
+) -> ProductionVerificationRunResponse:
+    try:
+        return await create_production_verification_run(payload)
+    except ValueError as exc:
+        raise _http_error_from_value_error(exc) from exc
+
+
+@router.get(
+    "/verification/summary",
+    response_model=ProductionVerificationSummaryResponse,
+)
+async def get_production_verification_summary_endpoint() -> ProductionVerificationSummaryResponse:
+    return await get_production_verification_summary(limit=5)

@@ -19,8 +19,8 @@ export default function VerificationOpsCard() {
       <div className="space-y-2">
         <h2 className="text-lg font-semibold text-gray-100">Verification Ops</h2>
         <p className="text-sm text-gray-400">
-          Run Preflight first, then run the full suite. Use isolated reruns only after the suite narrows the failing
-          lane.
+          Launch the worktree stack first, then run the full production-hub suite. Use isolated reruns only after the
+          suite narrows the failing lane.
         </p>
       </div>
 

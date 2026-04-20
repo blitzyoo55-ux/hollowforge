@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 
 import {
-  getProductionComicVerificationSummary,
-  type ComicVerificationRunResponse,
-  type ComicVerificationSummaryResponse,
+  getProductionVerificationSummary,
+  type ProductionVerificationRunResponse,
+  type ProductionVerificationSummaryResponse,
 } from '../../api/client'
 import EmptyState from '../EmptyState'
 
@@ -17,9 +17,9 @@ function formatFinishedAt(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
-function getRunModeLabel(run: ComicVerificationRunResponse): string {
-  if (run.run_mode === 'full_only') return 'full only'
-  if (run.run_mode === 'remote_only') return 'remote only'
+function getRunModeLabel(run: ProductionVerificationRunResponse): string {
+  if (run.run_mode === 'smoke_only') return 'smoke only'
+  if (run.run_mode === 'ui_only') return 'ui only'
   return run.run_mode
 }
 
@@ -28,7 +28,7 @@ function SummaryRunCard({
   run,
 }: {
   title: string
-  run: ComicVerificationRunResponse | null
+  run: ProductionVerificationRunResponse | null
 }) {
   return (
     <article className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
@@ -36,7 +36,7 @@ function SummaryRunCard({
         <div>
           <p className="text-[11px] uppercase tracking-wide text-gray-500">{title}</p>
           <h3 className="mt-1 text-sm font-semibold text-gray-100">
-            {run ? run.run_mode : 'No run yet'}
+            {run ? getRunModeLabel(run) : 'No run yet'}
           </h3>
         </div>
         {run ? (
@@ -82,12 +82,12 @@ function SummaryRunCard({
   )
 }
 
-function RunsTable({ runs }: { runs: ComicVerificationRunResponse[] }) {
+function RunsTable({ runs }: { runs: ProductionVerificationRunResponse[] }) {
   if (runs.length === 0) {
     return (
       <EmptyState
         title="No verification runs yet"
-        description="Run the preflight check or verification suite to populate history."
+        description="Run the production hub suite or an isolated rerun to populate history."
       />
     )
   }
@@ -133,14 +133,14 @@ function RunsTable({ runs }: { runs: ComicVerificationRunResponse[] }) {
 }
 
 export default function VerificationHistoryPanel() {
-  const summaryQuery = useQuery<ComicVerificationSummaryResponse>({
-    queryKey: ['production-comic-verification-summary'],
-    queryFn: () => getProductionComicVerificationSummary(),
+  const summaryQuery = useQuery<ProductionVerificationSummaryResponse>({
+    queryKey: ['production-verification-summary'],
+    queryFn: () => getProductionVerificationSummary(),
     refetchInterval: 30_000,
   })
   const summary = summaryQuery.data
   const hasRuns =
-    Boolean(summary?.latest_preflight || summary?.latest_suite || (summary?.recent_runs.length ?? 0) > 0)
+    Boolean(summary?.latest_smoke_only || summary?.latest_suite || (summary?.recent_runs.length ?? 0) > 0)
 
   return (
     <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
@@ -148,7 +148,7 @@ export default function VerificationHistoryPanel() {
         <div>
           <h2 className="text-lg font-semibold text-gray-100">Verification History</h2>
           <p className="text-sm text-gray-400">
-            Review the latest preflight and suite outcomes alongside the five most recent runs.
+            Review the latest smoke-only and suite outcomes alongside the five most recent runs.
           </p>
         </div>
       </div>
@@ -163,12 +163,12 @@ export default function VerificationHistoryPanel() {
         </div>
       ) : summaryQuery.isError ? (
         <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Failed to load comic verification history.
+          Failed to load production verification history.
         </div>
       ) : summary && hasRuns ? (
         <div className="mt-4 space-y-5">
           <div className="grid gap-4 xl:grid-cols-2">
-            <SummaryRunCard title="Latest Preflight" run={summary.latest_preflight} />
+            <SummaryRunCard title="Latest Smoke Only" run={summary.latest_smoke_only} />
             <SummaryRunCard title="Latest Suite" run={summary.latest_suite} />
           </div>
 
@@ -184,7 +184,7 @@ export default function VerificationHistoryPanel() {
         <div className="mt-4">
           <EmptyState
             title="No verification history yet"
-            description="Run the preflight check or verification suite to start building history."
+            description="Run the production hub suite or an isolated rerun to start building history."
           />
         </div>
       )}

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import {
   assembleComicEpisodePages,
   exportComicEpisodePages,
   generateComicPanelDialogues,
   getComicCharacterVersions,
   getComicCharacters,
+  getComicEpisode,
   getComicPanelRenderJobs,
   importComicStoryPlan,
   queueComicPanelRenders,
@@ -435,9 +437,26 @@ function parseApprovedPlanJson(approvedPlanJson: string): {
 
 export default function ComicStudio() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const productionContext = useMemo(() => {
+    const contentModeValue = searchParams.get('content_mode')
+    const contentMode = contentModeValue === 'adult_nsfw' || contentModeValue === 'all_ages'
+      ? contentModeValue
+      : null
+
+    return {
+      productionEpisodeId: searchParams.get('production_episode_id')?.trim() || null,
+      workId: searchParams.get('work_id')?.trim() || null,
+      seriesId: searchParams.get('series_id')?.trim() || null,
+      contentMode,
+      title: searchParams.get('title')?.trim() || null,
+      mode: searchParams.get('mode')?.trim() || null,
+      comicEpisodeId: searchParams.get('comic_episode_id')?.trim() || null,
+    }
+  }, [searchParams])
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
   const [selectedCharacterVersionId, setSelectedCharacterVersionId] = useState<string | null>(null)
-  const [title, setTitle] = useState('Comic Episode Draft')
+  const [title, setTitle] = useState(productionContext.title ?? 'Comic Episode Draft')
   const [panelMultiplier, setPanelMultiplier] = useState(2)
   const [approvedPlanJson, setApprovedPlanJson] = useState(buildInitialApprovedPlanJson())
   const [currentEpisode, setCurrentEpisode] = useState<ComicEpisodeDetailResponse | null>(null)
@@ -517,6 +536,12 @@ export default function ComicStudio() {
   )
     ?? selectedSceneDetail?.panels[0]
     ?? null
+  const linkedComicEpisodeQuery = useQuery({
+    queryKey: ['comic-episode', productionContext.comicEpisodeId],
+    queryFn: () => getComicEpisode(productionContext.comicEpisodeId as string),
+    enabled: Boolean(productionContext.comicEpisodeId),
+    refetchOnWindowFocus: false,
+  })
   const currentEpisodeId = currentEpisode?.episode.id ?? null
   const allPanels = useMemo(
     () => currentEpisode?.scenes.flatMap((sceneDetail) => sceneDetail.panels) ?? [],
@@ -558,6 +583,10 @@ export default function ComicStudio() {
         character_version_id: effectiveCharacterVersionId,
         title,
         panel_multiplier: panelMultiplier,
+        work_id: productionContext.workId,
+        series_id: productionContext.seriesId,
+        production_episode_id: productionContext.productionEpisodeId,
+        content_mode: productionContext.contentMode,
       })
     },
     onSuccess: (episodeDetail) => {
@@ -587,6 +616,24 @@ export default function ComicStudio() {
     activeEpisodeIdRef.current = currentEpisodeId
     activeEpisodePanelIdsRef.current = new Set(allPanels.map((panel) => panel.id))
   }, [allPanels, currentEpisodeId])
+
+  useEffect(() => {
+    const episodeDetail = linkedComicEpisodeQuery.data
+    if (!episodeDetail) return
+
+    activeEpisodeIdRef.current = episodeDetail.episode.id
+    activeEpisodePanelIdsRef.current = new Set(
+      episodeDetail.scenes.flatMap((sceneDetail) => sceneDetail.panels.map((panel) => panel.id)),
+    )
+    setCurrentEpisode(episodeDetail)
+    setEpisodeCharacterVersion(null)
+    setTitle(episodeDetail.episode.title)
+    setSelectedPanelId(firstPanelId(episodeDetail))
+    setPanelAssets({})
+    setPanelQueueResponses({})
+    setPanelDialogues({})
+    setExportResult(null)
+  }, [linkedComicEpisodeQuery.data])
 
   const queueRenderMutation = useMutation({
     mutationFn: ({
@@ -759,31 +806,29 @@ export default function ComicStudio() {
     if (!currentEpisodeId || !selectedPanel?.id || selectedPanelRenderJobsQuery.data === undefined) return
     const panelId = selectedPanel.id
     const renderJobs = selectedPanelRenderJobsQuery.data
-    queueMicrotask(() => {
-      setPanelAssets((current) => {
-        const currentAssets = current[panelId] ?? []
-        const nextAssets = mergeRemoteJobOutputsIntoAssets(currentAssets, renderJobs)
-        if (nextAssets === currentAssets) return current
-        return {
-          ...current,
-          [panelId]: nextAssets,
-        }
-      })
+    setPanelAssets((current) => {
+      const currentAssets = current[panelId] ?? []
+      const nextAssets = mergeRemoteJobOutputsIntoAssets(currentAssets, renderJobs)
+      if (nextAssets === currentAssets) return current
+      return {
+        ...current,
+        [panelId]: nextAssets,
+      }
+    })
 
-      setPanelQueueResponses((current) => {
-        const existingState = current[panelId] ?? emptyComicPanelQueueResponseState()
-        const existingRemoteJobHint = getRemoteJobHintFromQueueState(existingState)
-        const remoteJobHint = resolveRemoteJobHintFromRenderJobs(
-          renderJobs,
-          existingRemoteJobHint ?? selectedPanelRemoteJobHint,
-        )
-        const nextState = mergeRemoteJobHintIntoQueueState(existingState, remoteJobHint)
-        if (nextState === existingState) return current
-        return {
-          ...current,
-          [panelId]: nextState,
-        }
-      })
+    setPanelQueueResponses((current) => {
+      const existingState = current[panelId] ?? emptyComicPanelQueueResponseState()
+      const existingRemoteJobHint = getRemoteJobHintFromQueueState(existingState)
+      const remoteJobHint = resolveRemoteJobHintFromRenderJobs(
+        renderJobs,
+        existingRemoteJobHint ?? selectedPanelRemoteJobHint,
+      )
+      const nextState = mergeRemoteJobHintIntoQueueState(existingState, remoteJobHint)
+      if (nextState === existingState) return current
+      return {
+        ...current,
+        [panelId]: nextState,
+      }
     })
   }, [currentEpisodeId, selectedPanel?.id, selectedPanelRemoteJobHint, selectedPanelRenderJobsQuery.data])
 
@@ -889,6 +934,15 @@ export default function ComicStudio() {
           </div>
         </div>
       </section>
+
+      {productionContext.productionEpisodeId ? (
+        <section className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4 text-sm text-sky-100">
+          <p className="font-medium">Production handoff active</p>
+          <p className="mt-1 text-sky-200/80">
+            {productionContext.title ?? 'Untitled production episode'} · {productionContext.productionEpisodeId}
+          </p>
+        </section>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
         <ComicEpisodeDraftPanel

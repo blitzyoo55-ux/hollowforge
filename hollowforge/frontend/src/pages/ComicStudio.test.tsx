@@ -10,6 +10,7 @@ import {
   generateComicPanelDialogues,
   getComicCharacterVersions,
   getComicCharacters,
+  getComicEpisode,
   getComicPanelRenderJobs,
   importComicStoryPlan,
   queueComicPanelRenders,
@@ -26,6 +27,7 @@ import ComicStudio from './ComicStudio'
 vi.mock('../api/client', () => ({
   getComicCharacters: vi.fn().mockResolvedValue([]),
   getComicCharacterVersions: vi.fn().mockResolvedValue([]),
+  getComicEpisode: vi.fn(),
   getComicPanelRenderJobs: vi.fn().mockResolvedValue([]),
   importComicStoryPlan: vi.fn(),
   queueComicPanelRenders: vi.fn(),
@@ -42,7 +44,7 @@ vi.mock('../lib/toast', () => ({
   },
 }))
 
-function renderWithProviders(ui: ReactElement) {
+function renderWithProviders(ui: ReactElement, initialEntries: string[] = ['/comic']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -53,7 +55,7 @@ function renderWithProviders(ui: ReactElement) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -61,12 +63,17 @@ function renderWithProviders(ui: ReactElement) {
 function buildEpisodeDetail(
   panelCount = 1,
   panelRemoteJobCounts: Record<string, { remote: number; pending: number }> = {},
+  episodeOverrides: Partial<ComicEpisodeDetailResponse['episode']> = {},
 ): ComicEpisodeDetailResponse {
   return {
     episode: {
       id: 'ep-1',
       character_id: 'char-1',
       character_version_id: 'charver-1',
+      content_mode: 'adult_nsfw',
+      work_id: null,
+      series_id: null,
+      production_episode_id: null,
       title: 'After Hours Intake',
       synopsis: 'A restrained corridor sequence.',
       source_story_plan_json: '{"plan":"ok"}',
@@ -76,6 +83,7 @@ function buildEpisodeDetail(
       target_output: 'oneshot_manga',
       created_at: '2026-04-04T00:00:00+00:00',
       updated_at: '2026-04-04T00:00:00+00:00',
+      ...episodeOverrides,
     },
     scenes: [
       {
@@ -376,6 +384,7 @@ beforeEach(() => {
     }
     return [buildCharacterVersion('charver-1', 'char-1', 'Still v1')]
   })
+  vi.mocked(getComicEpisode).mockResolvedValue(buildEpisodeDetail())
   vi.mocked(importComicStoryPlan).mockResolvedValue(buildEpisodeDetail())
   vi.mocked(queueComicPanelRenders).mockImplementation(async (panelId: string) => buildQueueResponse(panelId))
   vi.mocked(getComicPanelRenderJobs).mockResolvedValue([])
@@ -486,6 +495,66 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+test('imports a story plan with production handoff context from query params', async () => {
+  renderWithProviders(
+    <ComicStudio />,
+    [
+      '/comic?production_episode_id=prod-ep-22&mode=create_from_production&work_id=work-22&series_id=series-22&content_mode=all_ages&title=Production+Episode+22',
+    ],
+  )
+
+  expect(await screen.findByRole('heading', { name: /Comic Studio/i })).toBeInTheDocument()
+  fillApprovedPlanJson()
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Import Story Plan/i })).toBeEnabled()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /Import Story Plan/i }))
+
+  await waitFor(() => {
+    expect(importComicStoryPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Production Episode 22',
+        work_id: 'work-22',
+        series_id: 'series-22',
+        production_episode_id: 'prod-ep-22',
+        content_mode: 'all_ages',
+      }),
+    )
+  })
+})
+
+test('opens the linked comic episode from the production handoff query', async () => {
+  vi.mocked(getComicEpisode).mockResolvedValue(
+    buildEpisodeDetail(
+      1,
+      {},
+      {
+        id: 'comic-ep-linked-9',
+        title: 'Linked Comic Episode',
+        work_id: 'work-9',
+        series_id: 'series-9',
+        production_episode_id: 'prod-ep-9',
+      },
+    ),
+  )
+
+  renderWithProviders(
+    <ComicStudio />,
+    [
+      '/comic?production_episode_id=prod-ep-9&mode=open_current&comic_episode_id=comic-ep-linked-9&work_id=work-9&series_id=series-9&content_mode=adult_nsfw&title=Prod+Ep+9',
+    ],
+  )
+
+  await waitFor(() => {
+    expect(getComicEpisode).toHaveBeenCalledWith('comic-ep-linked-9')
+  })
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/Episode Title/i)).toHaveValue('Linked Comic Episode')
+  })
 })
 
 test('shows selected state only after explicit asset selection without blocking draft actions', async () => {
@@ -949,6 +1018,7 @@ test('persisted remote outputs remain visible after switching away from the sele
 })
 
 test('remote polling repeats while jobs are pending and stops after terminal results', async () => {
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.mocked(importComicStoryPlan).mockResolvedValue(
     buildEpisodeDetail(1, { 'panel-1': { remote: 2, pending: 1 } }),
@@ -1006,6 +1076,11 @@ test('remote polling repeats while jobs are pending and stops after terminal res
   })
 
   expect(getComicPanelRenderJobs).toHaveBeenCalledTimes(2)
+  expect(
+    consoleErrorSpy.mock.calls.some(([message]) =>
+      String(message).includes('not wrapped in act'),
+    ),
+  ).toBe(false)
 }, 12000)
 
 test('empty remote-job fetch does not clear persisted remote hints and polling continues until terminal jobs arrive', async () => {

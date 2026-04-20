@@ -1,4 +1,4 @@
-export type ProductionVerificationOpId = 'preflight' | 'suite' | 'full-only' | 'remote-only'
+export type ProductionVerificationOpId = 'stack' | 'suite' | 'smoke-only' | 'ui-only'
 
 export type ProductionVerificationOp = {
   id: ProductionVerificationOpId
@@ -10,37 +10,37 @@ export type ProductionVerificationOp = {
 
 export const PRODUCTION_VERIFICATION_OPS: ProductionVerificationOp[] = [
   {
-    id: 'preflight',
-    label: 'Run Preflight',
-    description: 'Confirm the remote still-render lane is reachable before the suite.',
+    id: 'stack',
+    label: 'Launch Worktree Handoff Stack',
+    description: 'Start the bounded alternate-port backend/frontend stack for production-hub verification.',
     priority: 'primary',
     command:
-      'cd backend\n./.venv/bin/python scripts/check_comic_remote_render_preflight.py --backend-url http://127.0.0.1:8000',
+      'cd frontend\n./scripts/run-worktree-handoff-stack.sh',
   },
   {
     id: 'suite',
-    label: 'Run Comic Verification Suite',
-    description: 'Canonical smoke -> full -> remote verification path.',
+    label: 'Run Production Hub Verification Suite',
+    description: 'Canonical smoke -> ui verification path for the shared production core.',
     priority: 'primary',
     command:
-      'cd backend\n./.venv/bin/python scripts/run_comic_verification_suite.py --base-url http://127.0.0.1:8000',
+      'cd backend\npython3 scripts/run_production_hub_verification_suite.py --base-url http://127.0.0.1:8014',
   },
   {
-    id: 'full-only',
-    label: 'Rerun Full Only',
-    description: 'Use only after the suite narrows the failure to the full lane.',
+    id: 'smoke-only',
+    label: 'Rerun Smoke Only',
+    description: 'Use only after the suite narrows the failure to the smoke lane.',
     priority: 'secondary',
     command:
-      'cd backend\n./.venv/bin/python scripts/run_comic_verification_suite.py --base-url http://127.0.0.1:8000 --full-only',
+      'cd backend\npython3 scripts/run_production_hub_verification_suite.py --base-url http://127.0.0.1:8014 --smoke-only',
   },
   {
-    id: 'remote-only',
-    label: 'Rerun Remote Only',
-    description: 'Use only after the suite narrows the failure to the remote lane.',
+    id: 'ui-only',
+    label: 'Rerun UI Only',
+    description: 'Use only after the suite narrows the failure to the ui lane.',
     priority: 'secondary',
     command:
-      'cd backend\n./.venv/bin/python scripts/run_comic_verification_suite.py --base-url http://127.0.0.1:8000 --remote-only',
+      'cd backend\npython3 scripts/run_production_hub_verification_suite.py --base-url http://127.0.0.1:8014 --ui-only',
   },
 ]
 
-export const PRODUCTION_VERIFICATION_SOP_PATH = 'docs/HOLLOWFORGE_COMIC_OPERATOR_SOP_20260408.md'
+export const PRODUCTION_VERIFICATION_SOP_PATH = 'docs/HOLLOWFORGE_PRODUCTION_HUB_VERIFICATION_SOP_20260419.md'

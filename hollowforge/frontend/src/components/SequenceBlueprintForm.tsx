@@ -4,6 +4,14 @@ import type { SequenceBlueprintCreate, SequenceContentMode } from '../api/client
 interface SequenceBlueprintFormProps {
   onSubmit: (payload: SequenceBlueprintCreate) => void
   isSubmitting?: boolean
+  productionContext?: {
+    workId: string | null
+    seriesId: string | null
+    productionEpisodeId: string | null
+    contentMode: SequenceContentMode | null
+    title: string | null
+    mode: string | null
+  } | null
 }
 
 interface ModeOption {
@@ -93,11 +101,14 @@ function selectDefault(options: ModeOption[]): string {
 export default function SequenceBlueprintForm({
   onSubmit,
   isSubmitting = false,
+  productionContext = null,
 }: SequenceBlueprintFormProps) {
-  const [contentMode, setContentMode] = useState<SequenceContentMode>('all_ages')
-  const [policyProfileId, setPolicyProfileId] = useState(selectDefault(POLICY_OPTIONS.all_ages))
-  const [executorPolicy, setExecutorPolicy] = useState(selectDefault(EXECUTOR_OPTIONS.all_ages))
-  const [beatGrammarId, setBeatGrammarId] = useState(selectDefault(BEAT_GRAMMAR_OPTIONS.all_ages))
+  const lockedContentMode = productionContext?.contentMode ?? null
+  const initialContentMode = lockedContentMode ?? 'all_ages'
+  const [contentMode, setContentMode] = useState<SequenceContentMode>(initialContentMode)
+  const [policyProfileId, setPolicyProfileId] = useState(selectDefault(POLICY_OPTIONS[initialContentMode]))
+  const [executorPolicy, setExecutorPolicy] = useState(selectDefault(EXECUTOR_OPTIONS[initialContentMode]))
+  const [beatGrammarId, setBeatGrammarId] = useState(selectDefault(BEAT_GRAMMAR_OPTIONS[initialContentMode]))
   const [characterId, setCharacterId] = useState('char_stage1')
   const [locationId, setLocationId] = useState('location_stage1')
   const [targetDurationSec, setTargetDurationSec] = useState('36')
@@ -113,7 +124,10 @@ export default function SequenceBlueprintForm({
   const activeBeatGrammar = beatGrammarOptions.find((option) => option.value === beatGrammarId)
   const canSubmit = Boolean(policyProfileId && executorPolicy && beatGrammarId && characterId.trim() && locationId.trim())
 
+  const effectiveContentMode = lockedContentMode ?? contentMode
+
   const handleContentModeChange = (nextMode: SequenceContentMode) => {
+    if (lockedContentMode) return
     setContentMode(nextMode)
     setPolicyProfileId(selectDefault(POLICY_OPTIONS[nextMode]))
     setExecutorPolicy(selectDefault(EXECUTOR_OPTIONS[nextMode]))
@@ -125,7 +139,10 @@ export default function SequenceBlueprintForm({
     if (!canSubmit) return
 
     onSubmit({
-      content_mode: contentMode,
+      work_id: productionContext?.workId ?? null,
+      series_id: productionContext?.seriesId ?? null,
+      production_episode_id: productionContext?.productionEpisodeId ?? null,
+      content_mode: effectiveContentMode,
       policy_profile_id: policyProfileId.trim(),
       character_id: characterId.trim(),
       location_id: locationId.trim(),
@@ -149,6 +166,15 @@ export default function SequenceBlueprintForm({
         </p>
       </div>
 
+      {productionContext?.productionEpisodeId ? (
+        <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          <p className="font-medium">Production handoff active</p>
+          <p className="mt-1 text-sky-200/80">
+            {productionContext.title ?? 'Untitled production episode'} · {productionContext.productionEpisodeId}
+          </p>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3 text-sm text-gray-300">
         <p className="font-medium text-violet-300">{activeMode?.label}</p>
         <p className="mt-1 text-gray-400">{activeMode?.description}</p>
@@ -159,8 +185,9 @@ export default function SequenceBlueprintForm({
           <span>Content Mode</span>
           <select
             aria-label="Content Mode"
-            value={contentMode}
+            value={effectiveContentMode}
             onChange={(event) => handleContentModeChange(event.target.value as SequenceContentMode)}
+            disabled={Boolean(lockedContentMode)}
             className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-gray-100 outline-none transition focus:border-violet-500"
           >
             {CONTENT_MODE_OPTIONS.map((option) => (

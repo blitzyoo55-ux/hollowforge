@@ -53,6 +53,7 @@ ComicRenderLane = Literal["legacy", "character_canon_v2"]
 ProductionFormatFamily = Literal["comic", "animation", "mixed"]
 ProductionDeliveryMode = Literal["oneshot", "serial", "anthology"]
 ProductionTargetOutput = Literal["comic", "animation"]
+ProductionRecordOrigin = Literal["operator", "verification_smoke"]
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +516,10 @@ class ComicStoryPlanImportRequest(BaseModel):
     character_version_id: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     panel_multiplier: int = Field(default=2, ge=1, le=8)
+    work_id: Optional[str] = Field(default=None, max_length=120)
+    series_id: Optional[str] = Field(default=None, max_length=120)
+    production_episode_id: Optional[str] = Field(default=None, max_length=120)
+    content_mode: Optional[SequenceContentMode] = None
 
 
 class SequenceBlueprintBase(BaseModel):
@@ -698,6 +703,8 @@ class ProductionWorkCreate(BaseModel):
     default_content_mode: SequenceContentMode
     status: str = Field(default="draft", min_length=1, max_length=120)
     canon_notes: Optional[str] = Field(default=None, max_length=4000)
+    record_origin: ProductionRecordOrigin = "operator"
+    verification_run_id: Optional[str] = Field(default=None, max_length=120)
 
 
 class ProductionSeriesCreate(BaseModel):
@@ -707,6 +714,8 @@ class ProductionSeriesCreate(BaseModel):
     delivery_mode: ProductionDeliveryMode
     audience_mode: SequenceContentMode
     visual_identity_notes: Optional[str] = Field(default=None, max_length=4000)
+    record_origin: ProductionRecordOrigin = "operator"
+    verification_run_id: Optional[str] = Field(default=None, max_length=120)
 
 
 class ProductionEpisodeBase(BaseModel):
@@ -718,6 +727,8 @@ class ProductionEpisodeBase(BaseModel):
     target_outputs: List[ProductionTargetOutput] = Field(default_factory=list, max_length=4)
     continuity_summary: Optional[str] = Field(default=None, max_length=4000)
     status: str = Field(default="draft", min_length=1, max_length=120)
+    record_origin: ProductionRecordOrigin = "operator"
+    verification_run_id: Optional[str] = Field(default=None, max_length=120)
 
 
 class ProductionEpisodeCreate(ProductionEpisodeBase):
@@ -733,6 +744,8 @@ class ProductionWorkResponse(BaseModel):
     default_content_mode: SequenceContentMode
     status: str
     canon_notes: Optional[str] = None
+    record_origin: ProductionRecordOrigin = "operator"
+    verification_run_id: Optional[str] = Field(default=None, max_length=120)
     created_at: str
     updated_at: str
 
@@ -746,6 +759,8 @@ class ProductionSeriesResponse(BaseModel):
     delivery_mode: ProductionDeliveryMode
     audience_mode: SequenceContentMode
     visual_identity_notes: Optional[str] = None
+    record_origin: ProductionRecordOrigin = "operator"
+    verification_run_id: Optional[str] = Field(default=None, max_length=120)
     created_at: str
     updated_at: str
 
@@ -1203,6 +1218,54 @@ class ComicVerificationSummaryResponse(BaseModel):
     latest_preflight: ComicVerificationRunResponse | None = None
     latest_suite: ComicVerificationRunResponse | None = None
     recent_runs: list[ComicVerificationRunResponse] = Field(default_factory=list)
+
+
+class ProductionVerificationStageStatusResponse(BaseModel):
+    status: str
+    duration_sec: float | None = None
+    error_summary: str | None = None
+
+
+class ProductionVerificationRunCreate(BaseModel):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    run_mode: Literal["suite", "smoke_only", "ui_only"]
+    status: Literal["completed", "failed"]
+    overall_success: bool
+    failure_stage: str | None = None
+    error_summary: str | None = None
+    base_url: str
+    total_duration_sec: float | None = None
+    started_at: str
+    finished_at: str
+    stage_status: dict[str, ProductionVerificationStageStatusResponse] = Field(
+        default_factory=dict
+    )
+
+
+class ProductionVerificationRunResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    run_mode: Literal["suite", "smoke_only", "ui_only"]
+    status: Literal["completed", "failed"]
+    overall_success: bool
+    failure_stage: str | None = None
+    error_summary: str | None = None
+    base_url: str
+    total_duration_sec: float | None = None
+    started_at: str
+    finished_at: str
+    stage_status: dict[str, ProductionVerificationStageStatusResponse] = Field(
+        default_factory=dict
+    )
+    created_at: str
+    updated_at: str
+
+
+class ProductionVerificationSummaryResponse(BaseModel):
+    latest_smoke_only: ProductionVerificationRunResponse | None = None
+    latest_suite: ProductionVerificationRunResponse | None = None
+    recent_runs: list[ProductionVerificationRunResponse] = Field(default_factory=list)
 
 
 class ComicDialogueGenerationResponse(BaseModel):

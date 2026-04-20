@@ -42,6 +42,34 @@ export interface ComicVerificationSummaryResponse {
   recent_runs: ComicVerificationRunResponse[]
 }
 
+export interface ProductionVerificationStageStatusResponse {
+  status: 'passed' | 'failed' | 'skipped' | string
+  duration_sec?: number | null
+  error_summary?: string | null
+}
+
+export interface ProductionVerificationRunResponse {
+  id: string
+  run_mode: 'suite' | 'smoke_only' | 'ui_only' | string
+  status: 'completed' | 'failed' | string
+  overall_success: boolean
+  failure_stage: string | null
+  error_summary: string | null
+  base_url: string
+  total_duration_sec: number | null
+  started_at: string
+  finished_at: string
+  stage_status: Record<string, ProductionVerificationStageStatusResponse>
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionVerificationSummaryResponse {
+  latest_smoke_only: ProductionVerificationRunResponse | null
+  latest_suite: ProductionVerificationRunResponse | null
+  recent_runs: ProductionVerificationRunResponse[]
+}
+
 export interface GenerationCreate {
   prompt: string;
   negative_prompt?: string | null;
@@ -295,6 +323,13 @@ export type LoraProfileResponse = LoraProfile
 export async function getProductionComicVerificationSummary(): Promise<ComicVerificationSummaryResponse> {
   const response = await api.get<ComicVerificationSummaryResponse>(
     '/production/comic-verification/summary',
+  )
+  return response.data
+}
+
+export async function getProductionVerificationSummary(): Promise<ProductionVerificationSummaryResponse> {
+  const response = await api.get<ProductionVerificationSummaryResponse>(
+    '/production/verification/summary',
   )
   return response.data
 }
@@ -981,6 +1016,10 @@ export interface ComicEpisodeResponse {
   id: string
   character_id: string
   character_version_id: string
+  content_mode: SequenceContentMode
+  work_id: string | null
+  series_id: string | null
+  production_episode_id: string | null
   title: string
   synopsis: string
   source_story_plan_json: string | null
@@ -1113,6 +1152,10 @@ export interface ComicStoryPlanImportRequest {
   character_version_id: string
   title: string
   panel_multiplier?: number
+  work_id?: string | null
+  series_id?: string | null
+  production_episode_id?: string | null
+  content_mode?: SequenceContentMode | null
 }
 
 export interface ComicPanelRenderQueueRequest {
@@ -1518,6 +1561,7 @@ export interface SequenceRunDetailResponse {
 export type ProductionFormatFamily = 'comic' | 'animation' | 'mixed'
 export type ProductionDeliveryMode = 'oneshot' | 'serial' | 'anthology'
 export type ProductionTargetOutput = 'comic' | 'animation'
+export type ProductionRecordOrigin = 'operator' | 'verification_smoke'
 
 export interface ProductionWorkResponse {
   id: string
@@ -1526,6 +1570,8 @@ export interface ProductionWorkResponse {
   default_content_mode: SequenceContentMode
   status: string
   canon_notes: string | null
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
   created_at: string
   updated_at: string
 }
@@ -1537,6 +1583,8 @@ export interface ProductionWorkCreate {
   default_content_mode: SequenceContentMode
   status?: string | null
   canon_notes?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
 }
 
 export interface ProductionSeriesResponse {
@@ -1546,6 +1594,8 @@ export interface ProductionSeriesResponse {
   delivery_mode: ProductionDeliveryMode
   audience_mode: SequenceContentMode
   visual_identity_notes: string | null
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
   created_at: string
   updated_at: string
 }
@@ -1557,6 +1607,8 @@ export interface ProductionSeriesCreate {
   delivery_mode: ProductionDeliveryMode
   audience_mode: SequenceContentMode
   visual_identity_notes?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
 }
 
 export interface ProductionComicTrackLinkResponse {
@@ -1584,6 +1636,8 @@ export interface ProductionEpisodeDetailResponse {
   target_outputs: ProductionTargetOutput[]
   continuity_summary: string | null
   status: string
+  record_origin: ProductionRecordOrigin
+  verification_run_id: string | null
   comic_track: ProductionComicTrackLinkResponse | null
   animation_track: ProductionAnimationTrackLinkResponse | null
   comic_track_count: number
@@ -1601,6 +1655,8 @@ export interface ProductionEpisodeCreate {
   target_outputs: ProductionTargetOutput[]
   continuity_summary?: string | null
   status?: string | null
+  record_origin?: ProductionRecordOrigin
+  verification_run_id?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,6 +1665,7 @@ export interface ProductionEpisodeCreate {
 
 export async function listProductionEpisodes(query: {
   work_id?: string
+  include_verification_artifacts?: boolean
 } = {}): Promise<ProductionEpisodeDetailResponse[]> {
   const res = await api.get<ProductionEpisodeDetailResponse[]>('/production/episodes', {
     params: query,
@@ -1616,13 +1673,18 @@ export async function listProductionEpisodes(query: {
   return res.data
 }
 
-export async function listProductionWorks(): Promise<ProductionWorkResponse[]> {
-  const res = await api.get<ProductionWorkResponse[]>('/production/works')
+export async function listProductionWorks(query: {
+  include_verification_artifacts?: boolean
+} = {}): Promise<ProductionWorkResponse[]> {
+  const res = await api.get<ProductionWorkResponse[]>('/production/works', {
+    params: query,
+  })
   return res.data
 }
 
 export async function listProductionSeries(query: {
   work_id?: string
+  include_verification_artifacts?: boolean
 } = {}): Promise<ProductionSeriesResponse[]> {
   const res = await api.get<ProductionSeriesResponse[]>('/production/series', {
     params: query,
@@ -1657,6 +1719,13 @@ export async function listComicEpisodes(query: {
   const res = await api.get<ComicEpisodeSummaryResponse[]>('/comic/episodes', {
     params: query,
   })
+  return res.data
+}
+
+export async function getComicEpisode(
+  episodeId: string,
+): Promise<ComicEpisodeDetailResponse> {
+  const res = await api.get<ComicEpisodeDetailResponse>(`/comic/episodes/${episodeId}`)
   return res.data
 }
 

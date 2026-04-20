@@ -23,6 +23,10 @@ import VerificationOpsCard from '../components/production/VerificationOpsCard'
 import { buildProductionTrackHref } from '../lib/productionEntry'
 import { notify } from '../lib/toast'
 
+const DEFAULT_PRODUCTION_LIST_QUERY = {
+  include_verification_artifacts: false,
+} as const
+
 function getErrorMessage(error: unknown, fallback: string): string {
   const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
   if (typeof detail === 'string' && detail.trim()) return detail
@@ -124,19 +128,19 @@ export default function ProductionHub() {
 
   const worksQuery = useQuery({
     queryKey: ['production-works'],
-    queryFn: () => listProductionWorks(),
+    queryFn: () => listProductionWorks(DEFAULT_PRODUCTION_LIST_QUERY),
     refetchInterval: 30_000,
   })
 
   const seriesQuery = useQuery({
     queryKey: ['production-series'],
-    queryFn: () => listProductionSeries(),
+    queryFn: () => listProductionSeries(DEFAULT_PRODUCTION_LIST_QUERY),
     refetchInterval: 30_000,
   })
 
   const episodesQuery = useQuery({
     queryKey: ['production-episodes'],
-    queryFn: () => listProductionEpisodes(),
+    queryFn: () => listProductionEpisodes(DEFAULT_PRODUCTION_LIST_QUERY),
     refetchInterval: 30_000,
   })
 
